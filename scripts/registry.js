@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import loadCommands from '../src/handlers/loaders/commands.js';
+import loadInteractions from '../src/handlers/loaders/interactions.js';
+import { commandArgAliases } from '../src/config/commands/commandAliases.js';
+const client = {};
+const commands = await loadCommands(client);
+await loadInteractions(client);
+assert.deepEqual(commands.map((command) => command.name), ['bourse']);
+assert.deepEqual([...client.buttons.keys()].sort(), ['bourse', 'bourseperk']);
+assert.ok(Object.values(commandArgAliases).every((alias) => alias.startsWith('bourse ')));
+console.log(JSON.stringify({ commands, prefixAliases: commandArgAliases, buttons: [...client.buttons.keys()], selectMenus: [], modals: [] }, null, 2));
