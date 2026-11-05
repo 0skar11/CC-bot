@@ -1,6 +1,6 @@
 # CC bot
 
-Private standalone stock-market extraction from [0skar11/DISbot](https://github.com/0skar11/DISbot), source commit `af35e8fd01995b59d0013ecc2a254ce0c477a97c` (MIT). Create the separate Discord application and bot with the name **CC bot**. One slash command, `bourse`, with its stock-only typed aliases and confirmation buttons. No general economy, games, store, moderation or utility commands.
+Standalone stock-market extraction from [0skar11/DISbot](https://github.com/0skar11/DISbot), source commit `af35e8fd01995b59d0013ecc2a254ce0c477a97c` (MIT). Create the separate Discord application and bot with the name **CC bot**. One slash command, `bourse`, with its stock-only typed aliases and confirmation buttons. No general economy, games, store, moderation or utility commands.
 
 ## Setup on Windows
 
@@ -18,9 +18,9 @@ npm start
 
 Enable **Message Content Intent** in the Discord developer portal for typed commands. Invite with `bot` and `applications.commands`, and grant View Channels, Send Messages, Embed Links and Read Message History. Trader roles additionally require Manage Roles, with the bot's role above the trader role and any configured anchor.
 
-For private setup, turn **Public Bot off** in the new application's Bot settings and keep installation limited to your own selected guilds. Use your own bot token only in the local `.env`. `BOURSE_GUILD_IDS` is a separate runtime allowlist: an unlisted guild cannot run stock commands or buttons. The code never installs itself or automatically registers commands into unrelated guilds.
+For public installation, turn **Public Bot on**, enable Guild Install and configure the Discord-provided install link with `bot` and `applications.commands`. Set `BOURSE_GUILD_IDS=*` with an explicit stable `ECONOMY_SCOPE_ID`; use the application ID as the namespace before any players start. The runtime then accepts every guild where the bot is installed. For an owner-only deployment, turn Public Bot off and configure a finite guild allowlist instead. Keep the token in local `.env` or host secrets only.
 
-`npm run register` replaces guild commands only in the configured guilds of the supplied application. Use the new application; the script is intentionally not run as part of install, tests or dry loading.
+`npm run register` replaces commands only for the supplied application: globally in public mode, or in each configured guild in finite-allowlist mode. It registers only `/bourse`. Use the new application; registration is not an install, test or dry-load side effect. [PUBLIC-MODE.md](PUBLIC-MODE.md) describes the two modes.
 
 ## Environment
 
@@ -28,8 +28,8 @@ For private setup, turn **Public Bot off** in the new application's Bot settings
 | --- | --- |
 | `DISCORD_TOKEN`, `DISCORD_CLIENT_ID` | New bot token and application ID. |
 | `DATABASE_URL` | Dedicated PostgreSQL connection URL; use your provider's required SSL URL options. |
-| `BOURSE_GUILD_IDS` | Required comma-separated allowed guild IDs. Empty allows none. All allowed guilds get the complete stock feature set. |
-| `ECONOMY_SCOPE_ID` | Stable shared economy namespace; use one of the allowed guild IDs. Defaults to the first ID in `BOURSE_GUILD_IDS`. Keep it stable to retain the same wallets, holdings and prices. |
+| `BOURSE_GUILD_IDS` | Required comma-separated allowed guild IDs, or exactly `*` for every installed guild. Empty allows none; mixed wildcard/ID lists are rejected. |
+| `ECONOMY_SCOPE_ID` | Stable shared economy namespace. Public mode requires an explicit Discord snowflake such as the application ID. Finite mode defaults to the first allowed guild and requires an allowed guild ID. Never change it when moving hosts. |
 | `BOURSE_CHANNEL_IDS` | Optional comma-separated channel/category IDs; empty permits all channels inside allowed guilds. |
 | `PREFIX` | Typed command prefix; default `!`. Stock aliases also work without it. |
 | `INITIAL_CC` | Starting CC for new member records; default `0`. Set a desired nonnegative whole amount **before members start** (for example `10000`) to fund a fresh stock-only economy. Existing records receive no grant/reset. No games, transfers or admin grant command exist. |
@@ -62,7 +62,13 @@ The prices panel sells the extracted **forecast (7,800 CC)** and optional **trad
 
 Deploy this private repository as a Node.js worker on your chosen host (Node 20.10 or newer). Install with `npm ci` and start with `npm start`; no HTTP server or public port is needed. Set the environment variables from `.env.example` in the host's secret settings, including this bot's token and a dedicated PostgreSQL URL. Never upload `.env`.
 
-Run `npm run migrate` against the dedicated database, then `npm run register` once for the configured guilds. Enable Message Content Intent for typed commands and keep Public Bot off for an owner-only installation. Registering commands and starting the process are separate operations.
+Run `npm run migrate` against the dedicated database, then `npm run register`. On Railway these can be the pre-deploy command `npm run migrate && npm run register`, with `npm start` as the start command. Enable Message Content Intent for typed commands. Registering commands and starting the process are separate operations.
+
+## Player data and moving hosts
+
+Wallets, holdings, prices, forecast locks and trader-role records live in PostgreSQL, not the bot container. A container restart does not reset them. Keep `ECONOMY_SCOPE_ID`, the bot token and the database connection stable when moving only the worker.
+
+If the database will move too, stop the old worker, export a current private snapshot with `npm run backup -- ./backups/move.json`, and restore to an empty migrated database with `npm run restore -- ./backups/move.json --confirm-empty-database`. The restore refuses existing data. Keep backups outside Railway and take a fresh one before removing the database or letting its hosting expire. Never run two workers during the move. Full steps and verification limits are in [DATA-MIGRATION.md](DATA-MIGRATION.md).
 
 ## Offline checks
 

@@ -5,3 +5,5 @@ coverage/
 MAIN_DISABLE.md
 .main-disable-pr.md
 cc-bot-*.jpg
+backups/
+*.bourse-backup.json

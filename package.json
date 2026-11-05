@@ -9,6 +9,8 @@
   "scripts": {
     "start": "node src/app.js",
     "migrate": "node scripts/migrate.js",
+    "backup": "node scripts/backup.js",
+    "restore": "node scripts/restore.js",
     "register": "node scripts/register.js",
     "registry:dry": "node scripts/registry.js",
     "check": "node scripts/check.js",
