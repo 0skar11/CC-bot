@@ -34,10 +34,11 @@ For public installation, turn **Public Bot on**, enable Guild Install and config
 | `PREFIX` | Typed command prefix, default `!`. Command aliases also work without it. |
 | `INITIAL_CC` | Starting CC for new member records; default `0`. Set a desired nonnegative whole amount **before members start** (for example `10000`) to fund a fresh stock-only economy. Existing records receive no grant/reset. No games, transfers or admin grant command exist. |
 | `TRADER_ROLE_ENABLED` | `true` enables trader role setup and its purchase button; default `false`. |
+| `STREAK_ENABLED` | `true` enables daily streaks in the existing CHAOS streak room. Defaults to `false`. |
 | `TRADER_ROLE_ANCHORS` | Optional `guildId:roleId,guildId:roleId` pairs. New trader roles are placed above these roles. Without an anchor, Discord's normal below-bot position is used. No leveling system is required. |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` or `silent`; default `info`. Logs go to the console. |
 
-The migration creates only `bourse_records` and its prefix index; rerunning it is safe. Its rows contain the shared market, per-user CC/holdings, and per-guild trader role setup markers. Back up this dedicated database before changing the shared scope. No original server, database or hosting configuration is used.
+The migration creates only `bourse_records` and its prefix index; rerunning it is safe. Its rows contain the shared market, per-user CC, holdings and streaks, and per-guild configuration. Back up this dedicated database before changing the shared scope.
 
 ## Commands
 

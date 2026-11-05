@@ -21,7 +21,7 @@ export async function getProfile(client, guildId, userId) {
     return readCC(await loadRecord(client, guildId, userId));
 }
 
-// The only balance mutation entry point: stock trades and the two stock perks.
+// The only balance mutation entry point for trades, perks and streak rewards.
 export async function updateCCState(client, guildId, userId, change) {
     const run = () => Mutex.runExclusive(`cc:${economyScope(guildId)}:${userId}`, async () => {
         const record = await loadRecord(client, guildId, userId);

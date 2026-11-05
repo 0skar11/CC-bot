@@ -11,6 +11,7 @@ export const economyScopeId = configuredEconomyScopeId || [...allowedGuildIds][0
 export const prefix = process.env.PREFIX || '!';
 export const initialCC = Number(process.env.INITIAL_CC || 0);
 export const traderRoleEnabled = process.env.TRADER_ROLE_ENABLED === 'true';
+export const streakEnabled = () => process.env.STREAK_ENABLED === 'true';
 export const traderRoleAnchors = new Map(ids(process.env.TRADER_ROLE_ANCHORS).map((pair) => pair.split(':')));
 
 export function isAllowedGuild(guildId) {

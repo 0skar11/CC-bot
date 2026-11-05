@@ -3,6 +3,7 @@ import { managedGuilds } from '../config/bourseGuild.js';
 import { ensureTraderRole } from '../services/cc/traderRoleService.js';
 import { logger } from '../utils/logger.js';
 import { startServersBoard } from '../services/serversBoard.js';
+import { startStreak } from '../services/cc/streakService.js';
 export default {
     name: 'clientReady', once: true,
     async execute(client) {
@@ -16,5 +17,7 @@ export default {
             try { logger.info(`Trader role in ${guild.id}: ${(await ensureTraderRole(client, guild)).status}`); }
             catch (error) { logger.warn(`Trader setup failed in ${guild.id}`, error.code || error.message); }
         }
+        const streak = await startStreak(client);
+        if (streak.status !== 'skipped') logger.info(`Streak board: ${streak.status}`);
     },
 };

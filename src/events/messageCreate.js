@@ -1,6 +1,7 @@
-import { isAllowedGuild, isAllowedChannel, prefix } from '../config/runtime.js';
+import { isAllowedGuild, isAllowedChannel, prefix, streakEnabled } from '../config/runtime.js';
 import { isBourseGuildCommand } from '../config/bourseGuild.js';
 import { applyWordAliases } from '../config/commands/commandAliases.js';
+import { handleStreakCommand, handleStreakMessage } from '../services/cc/streakService.js';
 import { logger } from '../utils/logger.js';
 
 const userArgument = /^(?:<@!?(\d{17,20})>|(\d{17,20}))$/u;
@@ -9,10 +10,15 @@ export default {
     name: 'messageCreate',
     async execute(message, client) {
         const guildId = message.guildId || message.guild?.id;
-        if (!isAllowedGuild(guildId) || message.author?.bot || !isAllowedChannel(message.channel, message.channelId)) return;
+        if (!isAllowedGuild(guildId) || message.author?.bot) return;
         const text = String(message.content || '').trim();
         const prefixed = text.startsWith(prefix);
         const [typed = '', ...words] = (prefixed ? text.slice(prefix.length) : text).trim().split(/\s+/u);
+        if (streakEnabled()) {
+            if (await handleStreakCommand(message, typed, words)) return;
+            await handleStreakMessage(message);
+        }
+        if (!isAllowedChannel(message.channel, message.channelId)) return;
         const parsed = applyWordAliases(typed.toLowerCase(), words, prefixed);
         if (!parsed || !isBourseGuildCommand(parsed.commandName)) return;
         const command = client.commands.get(parsed.commandName);
