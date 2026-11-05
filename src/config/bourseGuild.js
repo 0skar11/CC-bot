@@ -1,7 +1,7 @@
 import { isAllowedGuild } from './runtime.js';
-export const BOURSE_GUILD_COMMANDS = new Set(['bourse']);
+export const BOURSE_GUILD_COMMANDS = new Set(['bourse', 'cc', 'cctop']);
 export const BOURSE_GUILD_BUTTONS = new Set(['bourse', 'bourseperk']);
-export const BOURSE_GUILD_NOTICE = '❌ الأمر ده مش متاح هنا. البوت للبورصة بس في السيرفرات المحددة.';
+export const BOURSE_GUILD_NOTICE = '❌ الأمر ده مش متاح هنا.';
 export const isBourseGuild = isAllowedGuild;
 export const isBourseGuildCommand = (name) => BOURSE_GUILD_COMMANDS.has(String(name || '').toLowerCase());
 export function managedGuilds(client) {

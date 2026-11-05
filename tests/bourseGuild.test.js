@@ -20,19 +20,19 @@ function slash(guildId, commandName) {
 }
 
 describe('standalone bourse guild boundary', () => {
-    test('only configured guilds and the sole stock command are accepted', () => {
+    test('only configured guilds and the bourse and CC commands are accepted', () => {
         assert.ok(isBourseGuild(GUILD)); assert.ok(isBourseGuild(SECOND));
         assert.equal(isBourseGuild(OUTSIDE), false);
         assert.equal(isBourseGuild(null), false);
-        assert.ok(isBourseGuildCommand('bourse'));
-        for (const name of ['cc', 'cctop', 'ban', 'store', 'addcc', 'help', 'give']) assert.equal(isBourseGuildCommand(name), false);
+        for (const name of ['bourse', 'cc', 'cctop']) assert.ok(isBourseGuildCommand(name));
+        for (const name of ['ban', 'store', 'addcc', 'help', 'give']) assert.equal(isBourseGuildCommand(name), false);
     });
     test('automatic jobs only receive explicitly configured guilds', () => {
         const client = { guilds: { cache: new Collection([[GUILD, { id: GUILD }], [SECOND, { id: SECOND }], [OUTSIDE, { id: OUTSIDE }]]) } };
         assert.deepEqual(managedGuilds(client).map((guild) => guild.id), [GUILD, SECOND]);
     });
     test('unrelated slash and disallowed guild requests stop before command lookup', async () => {
-        for (const [guild, name] of [[GUILD, 'ban'], [GUILD, 'cc'], [OUTSIDE, 'bourse']]) {
+        for (const [guild, name] of [[GUILD, 'ban'], [GUILD, 'give'], [OUTSIDE, 'bourse'], [OUTSIDE, 'cc'], [OUTSIDE, 'cctop']]) {
             const interaction = slash(guild, name);
             await interactionCreate.execute(interaction, { commands: { get: () => assert.fail('lookup') } });
             assert.equal(interaction.replies[0].content, BOURSE_GUILD_NOTICE);
@@ -49,7 +49,7 @@ describe('standalone bourse guild boundary', () => {
         assert.equal(foreign.replies.length, 1);
     });
     test('unrelated typed commands, prose and links never touch the registry or moderate messages', async () => {
-        for (const content of ['ban @someone', '!help', 'cc', 'رصيد', 'بيع العربية دي', 'https://tenor.com/view/cat-gif-123']) {
+        for (const content of ['ban @someone', '!help', 'رصيد موبايلي خلص', 'بيع العربية دي', 'https://tenor.com/view/cat-gif-123']) {
             const sent = [];
             await messageCreate.execute({ guildId: GUILD, author: { id: USER, bot: false }, content, channel: { id: '400000000000000001', send: async (payload) => sent.push(payload) }, delete: () => assert.fail('delete') }, { commands: { get: () => assert.fail('lookup') } });
             assert.deepEqual(sent, []);
@@ -60,11 +60,13 @@ describe('standalone bourse guild boundary', () => {
         await loadEvents({ on: (name) => events.push(name), once: (name) => events.push(name) });
         assert.deepEqual(events.sort(), ['clientReady', 'interactionCreate', 'messageCreate']);
     });
-    test('dry registry contains exactly bourse and the two stock button namespaces', async () => {
+    test('dry registry contains exactly bourse, cc, cctop and the two stock button namespaces', async () => {
         const client = {};
         const commands = await loadCommands(client); await loadInteractions(client);
-        assert.deepEqual(commands.map((command) => command.name), ['bourse']);
+        assert.deepEqual(commands.map((command) => command.name), ['bourse', 'cc', 'cctop']);
         assert.deepEqual(commands[0].options.map((sub) => sub.name), ['prices', 'invest', 'sell', 'buymax', 'sellall', 'holdings']);
+        assert.deepEqual(commands[1].options.map(({ name, required }) => ({ name, required })), [{ name: 'user', required: false }]);
+        assert.deepEqual(commands[2].options, []);
         assert.deepEqual([...client.buttons.keys()].sort(), ['bourse', 'bourseperk']);
     });
     test('stock prefix aliases route without a prefix and accept multiword names', async () => {

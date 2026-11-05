@@ -11,7 +11,7 @@ ECONOMY_SCOPE_ID=YOUR_STABLE_DISCORD_SNOWFLAKE
 
 `*` must appear by itself. Public mode requires an explicitly configured economy scope; it never chooses a server automatically. A stable application ID or an existing allowed guild ID can serve as the namespace. Keep the exact same `ECONOMY_SCOPE_ID` and database when moving hosts so wallets, holdings and market prices remain attached to the existing records. If converting an existing finite installation to public mode, retain its current scope.
 
-After choosing public mode, run `npm run register` once. It registers exactly the stock command `/bourse` globally in the configured Discord application. Global commands become available in servers that install the app; Discord may take time to propagate changes. Typed stock aliases continue to work with Message Content Intent enabled.
+After choosing public mode, run `npm run register`. It registers `/bourse`, `/cc` and `/cctop` globally in the configured Discord application. Global commands become available in servers that install the app. Typed aliases require Message Content Intent.
 
 With a comma-separated finite list instead, registration remains guild-only and the scope must belong to that list. An empty list permits no guilds. Switching modes does not clear previously registered commands in the other scope; remove stale guild/global registrations separately if necessary, using the intended application's settings.
 

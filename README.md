@@ -1,6 +1,6 @@
 # CC bot
 
-Standalone stock-market extraction from [0skar11/DISbot](https://github.com/0skar11/DISbot), source commit `af35e8fd01995b59d0013ecc2a254ce0c477a97c` (MIT). Create the separate Discord application and bot with the name **CC bot**. One slash command, `bourse`, with its stock-only typed aliases and confirmation buttons. No general economy, games, store, moderation or utility commands.
+Standalone stock market, balance and leaderboard from [0skar11/DISbot](https://github.com/0skar11/DISbot) (MIT). **CC bot** uses a separate Discord application. Its slash commands are `/bourse`, `/cc` and `/cctop`.
 
 ## Setup on Windows
 
@@ -20,7 +20,7 @@ Enable **Message Content Intent** in the Discord developer portal for typed comm
 
 For public installation, turn **Public Bot on**, enable Guild Install and configure the Discord-provided install link with `bot` and `applications.commands`. Set `BOURSE_GUILD_IDS=*` with an explicit stable `ECONOMY_SCOPE_ID`; use the application ID as the namespace before any players start. The runtime then accepts every guild where the bot is installed. For an owner-only deployment, turn Public Bot off and configure a finite guild allowlist instead. Keep the token in local `.env` or host secrets only.
 
-`npm run register` replaces commands only for the supplied application: globally in public mode, or in each configured guild in finite-allowlist mode. It registers only `/bourse`. Use the new application; registration is not an install, test or dry-load side effect. [PUBLIC-MODE.md](PUBLIC-MODE.md) describes the two modes.
+`npm run register` registers `/bourse`, `/cc` and `/cctop` in the configured application. It replaces the global command list in public mode or each configured guild's list in finite-allowlist mode. [PUBLIC-MODE.md](PUBLIC-MODE.md) describes the two modes.
 
 ## Environment
 
@@ -31,7 +31,7 @@ For public installation, turn **Public Bot on**, enable Guild Install and config
 | `BOURSE_GUILD_IDS` | Required comma-separated allowed guild IDs, or exactly `*` for every installed guild. Empty allows none; mixed wildcard/ID lists are rejected. |
 | `ECONOMY_SCOPE_ID` | Stable shared economy namespace. Public mode requires an explicit Discord snowflake such as the application ID. Finite mode defaults to the first allowed guild and requires an allowed guild ID. Never change it when moving hosts. |
 | `BOURSE_CHANNEL_IDS` | Optional comma-separated channel/category IDs; empty permits all channels inside allowed guilds. |
-| `PREFIX` | Typed command prefix; default `!`. Stock aliases also work without it. |
+| `PREFIX` | Typed command prefix, default `!`. Command aliases also work without it. |
 | `INITIAL_CC` | Starting CC for new member records; default `0`. Set a desired nonnegative whole amount **before members start** (for example `10000`) to fund a fresh stock-only economy. Existing records receive no grant/reset. No games, transfers or admin grant command exist. |
 | `TRADER_ROLE_ENABLED` | `true` enables trader role setup and its purchase button; default `false`. |
 | `TRADER_ROLE_ANCHORS` | Optional `guildId:roleId,guildId:roleId` pairs. New trader roles are placed above these roles. Without an anchor, Discord's normal below-bot position is used. No leveling system is required. |
@@ -49,10 +49,14 @@ The migration creates only `bourse_records` and its prefix index; rerunning it i
 | `/bourse buymax asset:<name-or-number>` | Confirm as many units as balance and ownership cap permit. |
 | `/bourse sellall asset:<optional name-or-number>` | Confirm all holdings, or every unit of one asset. |
 | `/bourse holdings user:<optional member>` | Show your or another member's holdings, cost, value, profit and balance. |
+| `/cc user:<optional member>` | Show your CC balance or the selected member's. |
+| `/cctop` | Show the top 15 and your rank in the shared economy, ordered by CC balance plus holdings' sale value after fees. |
 
 Typed examples: `!bourse invest car 2`, `شراء سبيكة دهب 2`, `بيع عربية كلو`, `بيع كلو`, `ممتلكات @member`, `اسعار`. `bourse` alone shows prices. Names containing spaces stay together; assets also accept their English IDs or displayed list numbers.
 
 Stock aliases: `اسعار`, `أسعار`, `الاسعار`, `الأسعار`, `prices`, `بورصة`, `بورصه`, `البورصة`, `البورصه`; `شراء`, `اشتري`, `استثمار`, `استثمر`, `invest`; `بيع`, `sell`; `ممتلكاتي`, `ممتلكاتى`, `ممتلكات`, `holdings`. They work with or without `PREFIX`. The all-quantity words are `كلو`, `كله`, `كلهم`, `الكل`, `all`.
+
+For balances, use `cc`, `bal`, `balance`, `money`, `cash`, `credits`, `رصيد`, `رصيدي`, `رصيدى`, `فلوس` or `كريدت`, optionally followed by a mention or a user ID. For the leaderboard, use `cctop`, `top cc`, `توب cc` or `توب كريدت`. These work with or without `PREFIX` in allowed channels.
 
 Prices change lazily on the first read after each UTC hour boundary, replaying up to 168 missed hours. There is no background price timer or automatic board/channel creation. The nine assets, demand effects, limits and sell fee are preserved; the palace limit is five, other assets twenty-five.
 

@@ -20,6 +20,7 @@ export async function registerCommands({ rest, clientId = process.env.DISCORD_CL
 // Importing this module for offline tests never logs in or registers anything.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-    await registerCommands({ rest });
-    console.log(publicGuildsEnabled ? 'Registered bourse globally' : `Registered bourse in ${allowedGuildIds.size} configured guilds`);
+    const commands = await registerCommands({ rest });
+    const names = commands.map(({ name }) => `/${name}`).join(', ');
+    console.log(publicGuildsEnabled ? `Registered ${names} globally` : `Registered ${names} in ${allowedGuildIds.size} configured guilds`);
 }
