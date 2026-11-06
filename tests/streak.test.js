@@ -96,7 +96,8 @@ test('only the pinned guild and room count a member’s image, with typed comman
     await messageCreate.execute({ ...message, webhookId: '423456789012345678' }, client);
     assert.equal(store.has(walletKey), false);
     await messageCreate.execute({ ...message, content: 'كلام', attachments: new Map() }, client);
-    assert.match(replies.at(-1), /الكلام مابيتحسبش/u);
+    assert.deepEqual(replies, []);
+    assert.equal(store.has(walletKey), false);
     await messageCreate.execute(message, client);
     assert.equal(store.get(walletKey).cc, 250);
     await messageCreate.execute({ ...message, content: '!ستريك', attachments: new Map() }, client);
@@ -121,7 +122,7 @@ test('the streak guide answers only its exact words and leaves the other typed w
     }
     const text = sent[0].embeds[0].description;
     assert.match(text, new RegExp(`<#${STREAK_CHANNEL_ID}>`, 'u'));
-    assert.match(text, /صورة أو GIF.*الكلام مابيتحسبش/u);
+    assert.match(text, /صورة أو GIF أو ستيكر.*الكلام مابيتحسبش/u);
     assert.match(text, /يرجع من 1/u);
     assert.match(text, /`ستريك`.*`توب ستريك`/u);
     for (const [day, cc] of Object.entries(STREAK.milestones)) assert.ok(text.includes(`${day} يوم = **${cc.toLocaleString('en-US')}** CC`));
@@ -151,6 +152,54 @@ test('the streak guide answers only its exact words and leaves the other typed w
     sent.length = 0;
     await say('شرح ستريك');
     assert.equal(sent.length, 0);
+});
+
+test('text in the streak room is ignored silently while a sticker counts once a day', async () => {
+    const { client, guild, channel, store, sent } = setup({
+        // handleStreakMessage counts on the real clock, so the record is from the real yesterday.
+        [walletKey]: { cc: 300, ccStreak: { day: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10), count: 2, best: 2 } },
+    });
+    const replies = [];
+    const reactions = [];
+    const base = { guild, channel, channelId: channel.id, author: { id: userId }, content: '', attachments: new Map(),
+        reply: async (payload) => replies.push(payload.content), react: async (emoji) => reactions.push(emoji) };
+    const before = structuredClone(store.get(walletKey));
+
+    for (const content of ['ازيكم يا جماعة', 'صباح الخير 🌞', 'https://example.com/page']) {
+        await messageCreate.execute({ ...base, content }, client);
+    }
+    await messageCreate.execute({ ...base, content: 'كلام', stickers: new Collection() }, client);
+    assert.deepEqual(replies, []);
+    assert.deepEqual(reactions, []);
+    assert.deepEqual(sent, []);
+    assert.deepEqual(store.get(walletKey), before);
+
+    // Text in another room is left alone too.
+    const otherChannel = { id: '323456789012345678', send: async (payload) => sent.push(payload) };
+    await messageCreate.execute({ ...base, channel: otherChannel, channelId: otherChannel.id, content: 'كلام' }, client);
+    assert.deepEqual(replies, []);
+    assert.deepEqual(sent, []);
+
+    // Bots and webhooks are ignored, even with a sticker.
+    const stickers = new Collection([['sticker', { id: 'sticker', name: 'wave' }]]);
+    await messageCreate.execute({ ...base, stickers, author: { id: userId, bot: true } }, client);
+    await messageCreate.execute({ ...base, stickers, webhookId: '423456789012345678' }, client);
+    assert.deepEqual(replies, []);
+    assert.deepEqual(store.get(walletKey), before);
+
+    await messageCreate.execute({ ...base, stickers }, client);
+    assert.deepEqual(reactions, ['🔥']);
+    assert.equal(replies.length, 1);
+    assert.match(replies[0], /ستريكك اتحدث: \*\*3\*\* يوم/u);
+    assert.equal(store.get(walletKey).cc, 300 + STREAK.base);
+    assert.equal(store.get(walletKey).ccStreak.count, 3);
+
+    // A second sticker the same day gets the already-counted reply; an array of stickers counts as well.
+    await messageCreate.execute({ ...base, stickers: [{ id: 'sticker' }] }, client);
+    assert.deepEqual(reactions, ['🔥']);
+    assert.equal(replies.length, 2);
+    assert.match(replies[1], /ستريكك متحدث النهارده خلاص \(\*\*3\*\* يوم\)/u);
+    assert.equal(store.get(walletKey).cc, 300 + STREAK.base);
 });
 
 test('the live board survives a refresh and the imported reminder prevents a duplicate', async () => {

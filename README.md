@@ -68,6 +68,8 @@ Casino words (with or without `PREFIX`, in the casino rooms): `مينز 100 3` (
 
 Streak words (with `STREAK_ENABLED=true`, in the streak server, with or without `PREFIX`): `ستريك` or `streak` shows your streak (optionally followed by a mention or a user ID), `توب ستريك` or `top streak` shows the leaderboard, and `شرح ستريك`, `ستريك شرح`, `شرح الستريك`, `الستريك` or `streak help` explains how the streak works, with the amounts taken from `STREAK` in `src/services/cc/streakService.js`. Only the whole message counts, so a longer sentence containing these words is ignored.
 
+In the streak room, a picture, a GIF (Tenor, Giphy or `.gif` link, or its embed) or a sticker counts for the day: the bot reacts 🔥 and replies with the new streak, or replies that today was already counted. Text-only messages are ignored silently (no reply, no reaction), so members can chat in the room normally; they just don't count.
+
 ## Casino
 
 Every game takes the bet in the same save that starts it and pays in the same save that ends it, through the shared `updateCCState` (per-member lock plus the database transaction). Randomness comes from `crypto.randomInt`. Bets are whole CC from 10 to `CASINO_MAX_BET` and never above the balance. A member plays one game at a time (coinflip and slots wait for a running mines board), with a 3-second pause between starts. Statistics: `ccStats.spent`/`earned` and `ccCasinoStats` (`played`, `won`, `lost`, `wagered`, `paidOut`) in the member's record.

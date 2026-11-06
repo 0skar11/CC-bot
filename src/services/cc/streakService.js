@@ -48,8 +48,13 @@ export function isStreakChannel(channelId) {
     return channelId === STREAK_CHANNEL_ID;
 }
 
-/** Whether a message has a picture or a GIF: an image file, a GIF link (Tenor, Giphy, .gif) or its embed. */
+/**
+ * Whether a message has a picture, a GIF or a sticker: an image file, a GIF link (Tenor, Giphy, .gif)
+ * or its embed, or any sticker.
+ */
 export function hasStreakMedia(message) {
+    const stickers = message.stickers;
+    if ((stickers?.size ?? stickers?.length ?? 0) > 0) return true;
     const attachments = [...(message.attachments?.values?.() || [])];
     if (attachments.some((file) => (file.contentType ? file.contentType.startsWith('image/') : IMAGE_EXTENSION.test(file.name || '')))) return true;
     if ((message.embeds || []).some((embed) => ['gifv', 'image'].includes(embed.data?.type || embed.type))) return true;
@@ -125,9 +130,9 @@ export async function streakTopEmbed(client, guild, userId = null, now = Date.no
         color: 0xe67e22,
         title: STREAK_BOARD_TITLE,
         description: [
-            lines.join('\n') || 'لسه محدش عنده ستريك. ابعت صورة أو GIF هنا كل يوم!',
+            lines.join('\n') || 'لسه محدش عنده ستريك. ابعت صورة أو GIF أو ستيكر هنا كل يوم!',
             '',
-            `📸 ابعت صورة أو GIF في الروم دي كل يوم عشان الستريك يكمل (الكلام مابيتحسبش)، ولو فوّت يوم كامل يرجع من 1.`,
+            `📸 ابعت صورة أو GIF أو ستيكر في الروم دي كل يوم عشان الستريك يكمل (الكلام مابيتحسبش)، ولو فوّت يوم كامل يرجع من 1.`,
             `🌀 كل يوم: ${n(STREAK.base)} ${CC.short}، وكل ${STREAK.raiseEvery} أيام بتزيد ${n(STREAK.raiseBy)} لحد ${n(STREAK.cap)} • 🏅 ${Object.entries(STREAK.milestones).map(([day, cc]) => `${day} يوم = ${n(cc)}`).join(' • ')}`,
             '',
             summary.join(' • '),
@@ -141,11 +146,11 @@ export async function streakProfileLine(client, guildId, userId, now = Date.now(
     const count = liveStreak(record?.ccStreak, now);
     const best = record?.ccStreak?.best || 0;
     const today = record?.ccStreak?.day === utcDay(now);
-    if (!count) return `🔥 <@${userId}> معندوش ستريك دلوقتي${best ? ` (أحسن ستريك: **${best}** يوم)` : ''}. ابعت صورة أو GIF في روم الستريك النهارده عشان تبدأ.`;
+    if (!count) return `🔥 <@${userId}> معندوش ستريك دلوقتي${best ? ` (أحسن ستريك: **${best}** يوم)` : ''}. ابعت صورة أو GIF أو ستيكر في روم الستريك النهارده عشان تبدأ.`;
     const next = streakBonus(count + 1);
     return [
         `🔥 ستريك <@${userId}>: **${count}** يوم (أحسن: **${Math.max(best, count)}**)`,
-        today ? `✅ اتحسب النهارده. بكرة هتاخد **${next.total}** ${CC.short}.` : `⚠️ لسه مابعتش النهارده، ابعت صورة أو GIF في روم الستريك قبل ما اليوم يخلص عشان الستريك مايقعش.`,
+        today ? `✅ اتحسب النهارده. بكرة هتاخد **${next.total}** ${CC.short}.` : `⚠️ لسه مابعتش النهارده، ابعت صورة أو GIF أو ستيكر في روم الستريك قبل ما اليوم يخلص عشان الستريك مايقعش.`,
     ].join('\n');
 }
 
@@ -156,7 +161,7 @@ export function streakGuideEmbed() {
         color: 0xe67e22,
         title: '🔥 شرح الستريك',
         description: [
-            `📸 ابعت صورة أو GIF في <#${STREAK_CHANNEL_ID}> كل يوم عشان الستريك يكمل (الكلام مابيتحسبش).`,
+            `📸 ابعت صورة أو GIF أو ستيكر في <#${STREAK_CHANNEL_ID}> كل يوم عشان الستريك يكمل (الكلام مابيتحسبش).`,
             `🌀 كل يوم بتاخد **${n(STREAK.base)}** ${CC.short}، وكل ${STREAK.raiseEvery} أيام بتزيد **${n(STREAK.raiseBy)}** لحد **${n(STREAK.cap)}** ${CC.short} في اليوم.`,
             `🏅 جوايز زيادة: ${milestones}`,
             '💔 لو فوّت يوم كامل الستريك يرجع من 1.',
@@ -279,9 +284,8 @@ function scheduleStreakBoardRefresh(guild) {
     boardUpdateTimer.unref?.();
 }
 
-/** The reply to a message in the streak room: counted now, already counted today, or text only. */
-export function streakReplyText(userId, { result = null, current = 0, media = true } = {}) {
-    if (!media) return `📸 <@${userId}> الكلام مابيتحسبش في الستريك، ابعت صورة أو GIF.`;
+/** The reply to a picture, GIF or sticker in the streak room: counted now, or already counted today. */
+export function streakReplyText(userId, { result = null, current = 0 } = {}) {
     if (result) {
         const milestone = result.milestone ? ` 🏅 وجايزة **${n(result.milestone)}**` : '';
         const restarted = result.restarted ? ' (الستريك كان وقع ورجع من الأول)' : '';
@@ -295,19 +299,16 @@ async function replyInRoom(message, content) {
 }
 
 /**
- * messageCreate: every message in the streak room gets a reply. A picture or GIF counts for the
- * streak (🔥 on it, the reply names a milestone); one already counted today says so; text doesn't count.
- * Messages elsewhere are left alone. Never throws.
+ * messageCreate: a picture, GIF or sticker in the streak room counts for the streak (🔥 on it, the reply
+ * names a milestone); one already counted today says so. Text-only messages are ignored silently, so
+ * members can chat in the room. Messages elsewhere are left alone. Never throws.
  */
 export async function handleStreakMessage(message) {
     try {
         if (!isStreakGuild(message.guild?.id) || !isStreakChannel(message.channelId) || message.author?.bot || message.webhookId) return null;
         const client = message.client || message.guild.client;
         const userId = message.author?.id;
-        if (!hasStreakMedia(message)) {
-            await replyInRoom(message, streakReplyText(userId, { media: false }));
-            return null;
-        }
+        if (!hasStreakMedia(message)) return null;
         const result = await recordStreakMessage(client, message.guild.id, userId);
         if (result) {
             scheduleStreakBoardRefresh(message.guild);
@@ -360,7 +361,7 @@ export async function sendDailyReminder(guild, now = Date.now()) {
     const ids = ending.map((row) => row.userId);
     await channel.send({
         content: [
-            '⏰ **تذكير الستريك:** متنساش تبعت صورة أو GIF هنا النهارده عشان الستريك بتاعك يكمل! 🔥',
+            '⏰ **تذكير الستريك:** متنساش تبعت صورة أو GIF أو ستيكر هنا النهارده عشان الستريك بتاعك يكمل! 🔥',
             ...(ids.length ? ['', `⚠️ دول الستريك بتاعهم هيقع الليلة لو مابعتوش: ${ending.map((row) => `<@${row.userId}> (${row.count})`).join(' ')}`] : []),
         ].join('\n'),
         allowedMentions: { users: ids },
