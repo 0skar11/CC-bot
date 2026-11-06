@@ -5,7 +5,7 @@ import { commandArgAliases } from '../src/config/commands/commandAliases.js';
 const client = {};
 const commands = await loadCommands(client);
 await loadInteractions(client);
-assert.deepEqual(commands.map((command) => command.name), ['bourse', 'casino', 'cc', 'cctop']);
+assert.deepEqual(commands.map((command) => command.name), ['bourse', 'casino', 'cc', 'cctop', 'help']);
 assert.deepEqual(commands[1].options.map((sub) => sub.name), ['mines', 'coinflip', 'slots']);
 assert.deepEqual([...client.buttons.keys()].sort(), ['bourse', 'bourseperk', 'casino']);
 assert.ok(Object.values(commandArgAliases).every((alias) => client.commands.has(alias.split(' ')[0])));

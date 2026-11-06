@@ -28,7 +28,8 @@ const MEDALS = ['🥇', '🥈', '🥉'];
 const utcDay = (now) => new Date(now).toISOString().slice(0, 10);
 const streakEconomyKey = (guildId, userId) => getEconomyKey(economyScope(guildId), userId);
 
-function isStreakGuild(guildId) {
+/** Whether the streak works in this guild (STREAK_ENABLED and the streak server). */
+export function isStreakGuild(guildId) {
     return streakEnabled() && guildId === STREAK_GUILD_ID && isAllowedGuild(guildId);
 }
 const GIF_LINK = /https?:\/\/(?:\S+\.)?(?:tenor\.com|giphy\.com)\/\S+|https?:\/\/\S+\.gif(?:\?\S*)?(?:\s|$)/iu;
