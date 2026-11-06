@@ -1,5 +1,6 @@
-import { isAllowedGuild, isAllowedChannel, prefix, streakEnabled } from '../config/runtime.js';
+import { isAllowedGuild, isAllowedChannel, isCasinoChannel, prefix, streakEnabled } from '../config/runtime.js';
 import { isBourseGuildCommand } from '../config/bourseGuild.js';
+import { CASINO_COMMAND } from '../config/casino.js';
 import { applyWordAliases } from '../config/commands/commandAliases.js';
 import { handleStreakCommand, handleStreakMessage } from '../services/cc/streakService.js';
 import { logger } from '../utils/logger.js';
@@ -18,9 +19,11 @@ export default {
             if (await handleStreakCommand(message, typed, words)) return;
             await handleStreakMessage(message);
         }
-        if (!isAllowedChannel(message.channel, message.channelId)) return;
         const parsed = applyWordAliases(typed.toLowerCase(), words, prefixed);
         if (!parsed || !isBourseGuildCommand(parsed.commandName)) return;
+        // The casino is typed in its own rooms (CASINO_CHANNEL_IDS), everything else in the bot's channels.
+        const casino = parsed.commandName === CASINO_COMMAND;
+        if (!(casino ? isCasinoChannel(message.channel, message.channelId) : isAllowedChannel(message.channel, message.channelId))) return;
         const command = client.commands.get(parsed.commandName);
         if (!command) return;
         const send = (payload) => {
@@ -36,6 +39,11 @@ export default {
             try { await command.execute(interaction, {}, client); }
             catch (error) { logger.error('CC prefix command failed', error.code || error.message); await send({ content: '❌ حصل خطأ. حاول تاني بعد شوية.' }); }
         };
+        if (casino) {
+            const game = command.parsePrefixArgs(parsed.args);
+            if (game.error) return send({ content: game.error });
+            return execute(game.options);
+        }
         const stock = parsed.commandName === 'bourse';
         const [subcommand, ...stockValues] = stock ? command.normalizePrefixArgs([...parsed.args]) : [];
         const values = stock ? stockValues : parsed.args;

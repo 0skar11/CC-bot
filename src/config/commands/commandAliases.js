@@ -1,7 +1,12 @@
 import { findAsset, isSellAllWord } from '../store/bourse.js';
+import { coinSide } from '../casino.js';
 
-// Stock market and read-only CC aliases from DISbot.
+// Stock market and read-only CC aliases from DISbot, and the casino's games (`مينز 100 3`, `عملة 100 ملك`, `سلوت 100`).
 export const commandArgAliases = {
+    casino: 'casino', كازينو: 'casino', الكازينو: 'casino',
+    mines: 'casino mines', ماينز: 'casino mines', مينز: 'casino mines', الغام: 'casino mines', ألغام: 'casino mines',
+    coinflip: 'casino coinflip', cf: 'casino coinflip', عملة: 'casino coinflip', عمله: 'casino coinflip',
+    slots: 'casino slots', slot: 'casino slots', سلوت: 'casino slots', سلوتس: 'casino slots',
     شراء: 'bourse invest', اشتري: 'bourse invest',
     اسعار: 'bourse prices', أسعار: 'bourse prices', الاسعار: 'bourse prices', الأسعار: 'bourse prices', prices: 'bourse prices',
     بورصة: 'bourse prices', بورصه: 'bourse prices', البورصة: 'bourse prices', البورصه: 'bourse prices',
@@ -23,13 +28,18 @@ export function isBourseNameInvocation(typedCommand, args) {
     const words = /^\d+$/u.test(args[args.length - 1] || '') ? args.slice(0, -1) : args;
     return words.length > 0 && Boolean(findAsset(words.join(' ')));
 }
+// `عملة 100 ملك` without the prefix: a bet and a side of the coin, in any order.
+export function isCoinflipInvocation(typedCommand, args) {
+    if (commandArgAliases[typedCommand] !== 'casino coinflip' || args.length !== 2) return false;
+    return args.some((arg) => /^\d+$/u.test(arg)) && args.some((arg) => coinSide(arg) !== null);
+}
 export function applyWordAliases(typedCommand, args, prefixed) {
     const twoWord = `${typedCommand} ${(args[0] || '').toLowerCase()}`;
     if (Object.hasOwn(commandArgAliases, twoWord)) {
         return { commandName: commandArgAliases[twoWord], args: args.slice(1) };
     }
     if (!Object.hasOwn(commandArgAliases, typedCommand)) return { commandName: typedCommand, args };
-    if (!prefixed && !args.every((arg) => /^(?:\d+|<@!?\d{17,20}>)$/u.test(arg)) && !isBourseNameInvocation(typedCommand, args)) return null;
+    if (!prefixed && !args.every((arg) => /^(?:\d+|<@!?\d{17,20}>)$/u.test(arg)) && !isBourseNameInvocation(typedCommand, args) && !isCoinflipInvocation(typedCommand, args)) return null;
     const alias = commandArgAliases[typedCommand];
     const [commandName, ...leading] = alias.split(' ');
     return { commandName, args: [...leading, ...args] };
