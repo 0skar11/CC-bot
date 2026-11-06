@@ -7,7 +7,7 @@ const { default: messageCreate } = await import('../src/events/messageCreate.js'
 const { getEconomyKey, getGuildConfigKey } = await import('../src/utils/database/keys.js');
 const {
     getStreakLeaderboard, publishStreakBoard, recordStreakMessage, resetStreakCache,
-    sendDailyReminder, STREAK_CHANNEL_ID, STREAK_GUILD_ID,
+    sendDailyReminder, STREAK, STREAK_CHANNEL_ID, STREAK_GUILD_ID,
 } = await import('../src/services/cc/streakService.js');
 
 const scope = process.env.ECONOMY_SCOPE_ID;
@@ -101,6 +101,56 @@ test('only the pinned guild and room count a member’s image, with typed comman
     assert.equal(store.get(walletKey).cc, 250);
     await messageCreate.execute({ ...message, content: '!ستريك', attachments: new Map() }, client);
     assert.match(sent.at(-1).content, /ستريك.*\*\*1\*\* يوم/u);
+});
+
+test('the streak guide answers only its exact words and leaves the other typed words alone', async () => {
+    const { client, guild, sent } = setup();
+    const balances = [];
+    client.commands.set('cc', { execute: async (interaction) => balances.push(interaction.user.id) });
+    const otherChannel = { id: '323456789012345678', send: async (payload) => sent.push(payload) };
+    const say = (content) => messageCreate.execute({ guild, channel: otherChannel, channelId: otherChannel.id,
+        author: { id: userId }, content, attachments: new Map(), reply: async () => {} }, client);
+    const guide = () => sent.at(-1)?.embeds?.[0]?.title === '🔥 شرح الستريك';
+
+    for (const words of ['شرح ستريك', 'ستريك شرح', 'شرح الستريك', 'الستريك', 'streak help', 'STREAK HELP', '!شرح ستريك', '! الستريك']) {
+        sent.length = 0;
+        await say(words);
+        assert.equal(sent.length, 1, words);
+        assert.ok(guide(), words);
+        assert.deepEqual(sent[0].allowedMentions, { parse: [] });
+    }
+    const text = sent[0].embeds[0].description;
+    assert.match(text, new RegExp(`<#${STREAK_CHANNEL_ID}>`, 'u'));
+    assert.match(text, /صورة أو GIF.*الكلام مابيتحسبش/u);
+    assert.match(text, /يرجع من 1/u);
+    assert.match(text, /`ستريك`.*`توب ستريك`/u);
+    for (const [day, cc] of Object.entries(STREAK.milestones)) assert.ok(text.includes(`${day} يوم = **${cc.toLocaleString('en-US')}** CC`));
+
+    // Numbers come from STREAK, so changing a constant changes the guide.
+    const saved = { ...STREAK };
+    try {
+        Object.assign(STREAK, { base: 400, raiseEvery: 5, raiseBy: 75, cap: 2500 });
+        await say('شرح ستريك');
+        assert.match(sent.at(-1).embeds[0].description, /\*\*400\*\* CC، وكل 5 أيام بتزيد \*\*75\*\* لحد \*\*2,500\*\* CC/u);
+    } finally { Object.assign(STREAK, saved); }
+
+    sent.length = 0;
+    for (const chat of ['شرح ستريك لو سمحت', 'عايز شرح الستريك', 'الستريك ده حلو', 'streak help me', 'شرح']) await say(chat);
+    assert.equal(sent.length, 0);
+
+    await say('ستريك');
+    assert.match(sent.at(-1).content, /معندوش ستريك/u);
+    await say(`الستريك <@${userId}>`);
+    assert.match(sent.at(-1).content, /معندوش ستريك/u);
+    await say('توب ستريك');
+    assert.equal(sent.at(-1).embeds[0].title, '🔥 Top Streak');
+    await say('رصيد');
+    assert.deepEqual(balances, [userId]);
+
+    process.env.STREAK_ENABLED = 'false';
+    sent.length = 0;
+    await say('شرح ستريك');
+    assert.equal(sent.length, 0);
 });
 
 test('the live board survives a refresh and the imported reminder prevents a duplicate', async () => {

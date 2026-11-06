@@ -149,15 +149,38 @@ export async function streakProfileLine(client, guildId, userId, now = Date.now(
     ].join('\n');
 }
 
+/** `شرح ستريك`: how the streak works, with every number taken from STREAK. */
+export function streakGuideEmbed() {
+    const milestones = Object.entries(STREAK.milestones).map(([day, cc]) => `${day} يوم = **${n(cc)}** ${CC.short}`).join(' • ');
+    return {
+        color: 0xe67e22,
+        title: '🔥 شرح الستريك',
+        description: [
+            `📸 ابعت صورة أو GIF في <#${STREAK_CHANNEL_ID}> كل يوم عشان الستريك يكمل (الكلام مابيتحسبش).`,
+            `🌀 كل يوم بتاخد **${n(STREAK.base)}** ${CC.short}، وكل ${STREAK.raiseEvery} أيام بتزيد **${n(STREAK.raiseBy)}** لحد **${n(STREAK.cap)}** ${CC.short} في اليوم.`,
+            `🏅 جوايز زيادة: ${milestones}`,
+            '💔 لو فوّت يوم كامل الستريك يرجع من 1.',
+            '',
+            '🔥 اكتب `ستريك` تشوف الستريك بتاعك (أو `ستريك @عضو`)، و`توب ستريك` تشوف الترتيب.',
+        ].join('\n'),
+    };
+}
+
+// Whole typed messages (after the optional PREFIX) that ask for the guide; longer chat is ignored.
+const GUIDE_PHRASES = new Set(['شرح ستريك', 'ستريك شرح', 'شرح الستريك', 'الستريك', 'streak help']);
 const PROFILE_WORDS = new Set(['ستريك', 'streak', 'الستريك']);
 const TOP_WORDS = new Set(['توب', 'top']);
 const USER = /^<@!?(\d{17,20})>$|^(\d{17,20})$/u;
 
-/** `ستريك` / `top streak` typed in our server. Returns true when handled. */
+/** `ستريك` / `top streak` / `شرح ستريك` typed in our server. Returns true when handled. */
 export async function handleStreakCommand(message, commandName, args = []) {
     if (!isStreakGuild(message.guild?.id) || message.author?.bot || message.webhookId) return false;
     const first = String(commandName || '').toLowerCase();
     const client = message.guild.client;
+    if (GUIDE_PHRASES.has([first, ...args].join(' ').toLowerCase())) {
+        await message.channel.send({ embeds: [streakGuideEmbed()], allowedMentions: { parse: [] } }).catch(() => {});
+        return true;
+    }
     if (TOP_WORDS.has(first) && PROFILE_WORDS.has(String(args[0] || '').toLowerCase()) && args.length === 1) {
         const embed = await streakTopEmbed(client, message.guild, message.author.id);
         await message.channel.send({ embeds: [embed], allowedMentions: { parse: [] } }).catch(() => {});

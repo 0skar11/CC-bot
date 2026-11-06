@@ -66,6 +66,8 @@ For balances, use `cc`, `bal`, `balance`, `money`, `cash`, `credits`, `رصيد`
 
 Casino words (with or without `PREFIX`, in the casino rooms): `مينز 100 3` (also `ماينز`, `الغام`, `ألغام`, `mines`; the mine count is optional), `عملة 100 ملك` (also `عمله`, `coinflip`, `cf`; the side is `ملك`/`heads`/`h` or `كتابة`/`كتابه`/`tails`/`t`, in either order, default heads) and `سلوت 100` (also `سلوتس`, `slots`, `slot`). `كازينو` or `casino` alone shows how to play. Without the prefix a word only counts when followed by just the bet (and the mine count or side), so chat like `عملة رقمية` is ignored.
 
+Streak words (with `STREAK_ENABLED=true`, in the streak server, with or without `PREFIX`): `ستريك` or `streak` shows your streak (optionally followed by a mention or a user ID), `توب ستريك` or `top streak` shows the leaderboard, and `شرح ستريك`, `ستريك شرح`, `شرح الستريك`, `الستريك` or `streak help` explains how the streak works, with the amounts taken from `STREAK` in `src/services/cc/streakService.js`. Only the whole message counts, so a longer sentence containing these words is ignored.
+
 ## Casino
 
 Every game takes the bet in the same save that starts it and pays in the same save that ends it, through the shared `updateCCState` (per-member lock plus the database transaction). Randomness comes from `crypto.randomInt`. Bets are whole CC from 10 to `CASINO_MAX_BET` and never above the balance. A member plays one game at a time (coinflip and slots wait for a running mines board), with a 3-second pause between starts. Statistics: `ccStats.spent`/`earned` and `ccCasinoStats` (`played`, `won`, `lost`, `wagered`, `paidOut`) in the member's record.
