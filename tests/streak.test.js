@@ -135,7 +135,7 @@ test('the streak guide answers only its exact words and leaves the other typed w
     } finally { Object.assign(STREAK, saved); }
 
     sent.length = 0;
-    for (const chat of ['شرح ستريك لو سمحت', 'عايز شرح الستريك', 'الستريك ده حلو', 'streak help me', 'شرح']) await say(chat);
+    for (const chat of ['شرح ستريك لو سمحت', 'عايز شرح الستريك', 'الستريك ده حلو', 'streak help me', 'شرح البوت لو سمحت']) await say(chat);
     assert.equal(sent.length, 0);
 
     await say('ستريك');
@@ -144,6 +144,8 @@ test('the streak guide answers only its exact words and leaves the other typed w
     assert.match(sent.at(-1).content, /معندوش ستريك/u);
     await say('توب ستريك');
     assert.equal(sent.at(-1).embeds[0].title, '🔥 Top Streak');
+    await say('شرح');
+    assert.equal(sent.at(-1).embeds[0].title, '🌀 شرح CC bot');
     await say('رصيد');
     assert.deepEqual(balances, [userId]);
 

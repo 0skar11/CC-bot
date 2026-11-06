@@ -3,6 +3,7 @@ import { isBourseGuildCommand } from '../config/bourseGuild.js';
 import { CASINO_COMMAND } from '../config/casino.js';
 import { applyWordAliases } from '../config/commands/commandAliases.js';
 import { handleStreakCommand, handleStreakMessage } from '../services/cc/streakService.js';
+import { handleGuideCommand } from '../services/cc/guideUi.js';
 import { logger } from '../utils/logger.js';
 
 const userArgument = /^(?:<@!?(\d{17,20})>|(\d{17,20}))$/u;
@@ -15,12 +16,15 @@ export default {
         const text = String(message.content || '').trim();
         const prefixed = text.startsWith(prefix);
         const [typed = '', ...words] = (prefixed ? text.slice(prefix.length) : text).trim().split(/\s+/u);
+        // `شرح` / `مساعدة` / `help`: the whole guide, in any allowed channel (the streak's own words stay below).
+        if (await handleGuideCommand(message, typed, words)) return;
         if (streakEnabled()) {
             if (await handleStreakCommand(message, typed, words)) return;
             await handleStreakMessage(message);
         }
         const parsed = applyWordAliases(typed.toLowerCase(), words, prefixed);
-        if (!parsed || !isBourseGuildCommand(parsed.commandName)) return;
+        // `help` is typed only as the exact guide words above, so `help me` and the like stay chat.
+        if (!parsed || parsed.commandName === 'help' || !isBourseGuildCommand(parsed.commandName)) return;
         // The casino is typed in its own rooms (CASINO_CHANNEL_IDS), everything else in the bot's channels.
         const casino = parsed.commandName === CASINO_COMMAND;
         if (!(casino ? isCasinoChannel(message.channel, message.channelId) : isAllowedChannel(message.channel, message.channelId))) return;

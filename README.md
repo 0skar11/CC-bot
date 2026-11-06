@@ -1,6 +1,6 @@
 # CC bot
 
-Standalone stock market, balance and leaderboard from [0skar11/DISbot](https://github.com/0skar11/DISbot) (MIT), plus a small CC casino. **CC bot** uses a separate Discord application. Its slash commands are `/bourse`, `/casino`, `/cc` and `/cctop`.
+Standalone stock market, balance and leaderboard from [0skar11/DISbot](https://github.com/0skar11/DISbot) (MIT), plus a small CC casino. **CC bot** uses a separate Discord application. Its slash commands are `/bourse`, `/casino`, `/cc`, `/cctop` and `/help`.
 
 ## Setup on Windows
 
@@ -20,7 +20,7 @@ Enable **Message Content Intent** in the Discord developer portal for typed comm
 
 For public installation, turn **Public Bot on**, enable Guild Install and configure the Discord-provided install link with `bot` and `applications.commands`. Set `BOURSE_GUILD_IDS=*` with an explicit stable `ECONOMY_SCOPE_ID`; use the application ID as the namespace before any players start. The runtime then accepts every guild where the bot is installed. For an owner-only deployment, turn Public Bot off and configure a finite guild allowlist instead. Keep the token in local `.env` or host secrets only.
 
-`npm run register` registers `/bourse`, `/casino`, `/cc` and `/cctop` in the configured application. It replaces the global command list in public mode or each configured guild's list in finite-allowlist mode. [PUBLIC-MODE.md](PUBLIC-MODE.md) describes the two modes.
+`npm run register` registers `/bourse`, `/casino`, `/cc`, `/cctop` and `/help` in the configured application. It replaces the global command list in public mode or each configured guild's list in finite-allowlist mode. [PUBLIC-MODE.md](PUBLIC-MODE.md) describes the two modes.
 
 ## Environment
 
@@ -57,6 +57,7 @@ The migration creates only `bourse_records` and its prefix index; rerunning it i
 | `/casino slots bet:<integer>` | Three reels; three of a kind pays up to ×25, two of a kind gives the bet back. |
 | `/cc user:<optional member>` | Show your CC balance or the selected member's. |
 | `/cctop` | Show the top 15 and your rank in the shared economy, ordered by CC balance plus holdings' sale value after fees. |
+| `/help topic:<optional cc, bourse, casino or streak>` | The guide to the whole bot in Egyptian Arabic (CC, balance and leaderboard, the bourse, the casino and the streak); a topic shows only that part. |
 
 Typed examples: `!bourse invest car 2`, `شراء سبيكة دهب 2`, `بيع عربية كلو`, `بيع كلو`, `ممتلكات @member`, `اسعار`. `bourse` alone shows prices. Names containing spaces stay together; assets also accept their English IDs or displayed list numbers.
 
@@ -65,6 +66,8 @@ Stock aliases: `اسعار`, `أسعار`, `الاسعار`, `الأسعار`, `
 For balances, use `cc`, `bal`, `balance`, `money`, `cash`, `credits`, `رصيد`, `رصيدي`, `رصيدى`, `فلوس` or `كريدت`, optionally followed by a mention or a user ID. For the leaderboard, use `cctop`, `top cc`, `توب cc` or `توب كريدت`. These work with or without `PREFIX` in allowed channels.
 
 Casino words (with or without `PREFIX`, in the casino rooms): `مينز 100 3` (also `ماينز`, `الغام`, `ألغام`, `mines`; the mine count is optional), `عملة 100 ملك` (also `عمله`, `coinflip`, `cf`; the side is `ملك`/`heads`/`h` or `كتابة`/`كتابه`/`tails`/`t`, in either order, default heads) and `سلوت 100` (also `سلوتس`, `slots`, `slot`). `كازينو` or `casino` alone shows how to play. Without the prefix a word only counts when followed by just the bet (and the mine count or side), so chat like `عملة رقمية` is ignored.
+
+Guide words (with or without `PREFIX`, in allowed channels, no `STREAK_ENABLED` needed): `شرح`, `شرح cc`, `شرح البوت`, `مساعدة`, `help` or `الشرح` send the same guide as `/help`. Its amounts come from `CC`, `bourseSettings`, `CASINO`, `STREAK` and `perkPrices`, and its typed words from `commandArgAliases` (`src/services/cc/guideUi.js`). The streak part appears only where the streak works (`STREAK_ENABLED=true`, in the streak server). Only the whole message counts, and the streak guide's own words below keep answering with the streak guide.
 
 Streak words (with `STREAK_ENABLED=true`, in the streak server, with or without `PREFIX`): `ستريك` or `streak` shows your streak (optionally followed by a mention or a user ID), `توب ستريك` or `top streak` shows the leaderboard, and `شرح ستريك`, `ستريك شرح`, `شرح الستريك`, `الستريك` or `streak help` explains how the streak works, with the amounts taken from `STREAK` in `src/services/cc/streakService.js`. Only the whole message counts, so a longer sentence containing these words is ignored.
 
