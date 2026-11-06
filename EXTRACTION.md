@@ -2,7 +2,7 @@
 
 Source: [0skar11/DISbot](https://github.com/0skar11/DISbot), shallow clone at `af35e8fd01995b59d0013ecc2a254ce0c477a97c`, obtained with `git -c core.longpaths=true clone --depth 1`. The sibling `DISbot-src` checkout is read-only after cloning. Its MIT license is retained in `LICENSE`.
 
-This record describes the initial stock-market extraction. The current inventory in [README.md](README.md#commands) includes the later `/cc` and `/cctop` ports.
+This record describes the initial stock-market extraction. The current inventory in [README.md](README.md#commands) includes the later `/cc` and `/cctop` ports and the new `/casino` games (written for CC bot, not extracted).
 
 ## Exact command inventory
 
