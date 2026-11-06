@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 
 process.env.BOURSE_GUILD_IDS = '*';
+process.env.ECONOMY_SCOPE_ID ||= '100000000000000001';
 const { default: messageCreate } = await import('../src/events/messageCreate.js');
 const { default: help } = await import('../src/commands/Games/help.js');
 const { default: bourse } = await import('../src/commands/Games/bourse.js');
@@ -88,7 +89,37 @@ test('the streak words keep the streak guide, and the full guide adds the streak
     assert.equal(guideEmbeds(OTHER_GUILD).length, 3);
 });
 
-test('the typed guide only answers in the allowed channels', async () => {
+test('a picture captioned with a guide word is not a guide request and still counts for the streak', async () => {
+    process.env.STREAK_ENABLED = 'true';
+    const { STREAK_CHANNEL_ID } = await import('../src/services/cc/streakService.js');
+    const store = new Map();
+    const client = { commands: new Map(), users: { fetch: async () => null }, db: { get: async (key, fallback) => store.get(key) ?? fallback, set: async (key, value) => store.set(key, value), list: async () => [] } };
+    const guild = { id: STREAK_GUILD_ID, client, channels: { cache: new Map() } };
+    const sent = [];
+    const replies = [];
+    const post = (content, extra = {}) => messageCreate.execute({
+        guild, guildId: STREAK_GUILD_ID, client, channel: { id: STREAK_CHANNEL_ID, send: async (payload) => sent.push(payload) }, channelId: STREAK_CHANNEL_ID,
+        author: { id: userId }, content, attachments: new Map(), reply: async (payload) => { replies.push(payload); }, react: async () => {}, ...extra,
+    }, client);
+    const image = new Map([['1', { name: 'a.png', contentType: 'image/png' }]]);
+    for (const word of ['help', 'شرح', 'مساعدة']) {
+        sent.length = 0;
+        replies.length = 0;
+        await post(word, { attachments: image });
+        assert.equal(sent.length, 0, word);
+        assert.equal(replies.length, 1, word);
+        assert.match(replies[0].content, /🔥|ستريك/u, word);
+    }
+    assert.ok([...store.keys()].some((key) => String(key).includes(userId)), 'the streak was recorded');
+    // The same words as plain text still get the guide.
+    for (const word of ['help', 'شرح', 'مساعدة']) {
+        sent.length = 0;
+        await post(word);
+        assert.equal(sent.length, 1, word);
+    }
+});
+
+test('the typed guide only answers in the allowed channels',async () => {
     const { sent, say } = setup();
     allowedChannelIds.add('423456789012345678');
     await say('شرح');

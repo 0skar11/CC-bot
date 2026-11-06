@@ -144,6 +144,8 @@ export const GUIDE_PHRASES = new Set(['شرح', 'شرح cc', 'شرح البوت'
 /** `شرح` / `مساعدة` / `help` typed in an allowed channel. Returns true when handled. */
 export async function handleGuideCommand(message, commandName, args = []) {
     if (message.author?.bot || message.webhookId) return false;
+    // A picture/GIF/sticker post is never a guide request: its caption must reach the streak counting.
+    if (message.attachments?.size > 0 || message.embeds?.length > 0 || message.stickers?.size > 0) return false;
     if (!GUIDE_PHRASES.has([commandName, ...args].join(' ').toLowerCase())) return false;
     if (!isAllowedChannel(message.channel, message.channelId)) return false;
     const guildId = message.guildId || message.guild?.id;
