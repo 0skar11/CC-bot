@@ -180,3 +180,20 @@ test('give needs the sender to be in the server for 30 days (anti-alt); the rece
     await messageCreate.execute(mk(`تحويل <@${OTHER.id}> 100`, { self: Date.now() - 40 * day, other: Date.now() - 1 * day }, replies), client);
     assert.equal((await client.db.get(getEconomyKey(economyScopeId, SELF.id))).cc, 0);
 });
+
+test('the pasted StreakBot message (bullets, no fire emoji, day 2) is read, and the notice goes to its room', async () => {
+    const { parseStreakUpdate, handleStreakBotMessage, STREAKBOT_CHANNEL_ID } = await import('../src/services/cc/streakBotService.js');
+    const description = `・تم تحديث الستريك\n* <@${SELF.id}>\n   * <:fire:123456789012345678> ・2\n   * ・()\n\nv1.3.34`;
+    const message = { author: { bot: true, id: '9' }, content: '', embeds: [{ description }] };
+    assert.deepEqual(await parseStreakUpdate(message), { userId: SELF.id, count: 2 });
+    // The member is not in the text (a rendered name): the reply target is used.
+    const noMention = { ...message, embeds: [{ description: description.replace(`<@${SELF.id}>`, '@قطه') }], reference: { messageId: '1' }, fetchReference: async () => ({ author: SELF }) };
+    assert.deepEqual(await parseStreakUpdate(noMention), { userId: SELF.id, count: 2 });
+    const client = await setup();
+    const sent = [];
+    const live = { ...message, guildId: '1472405236000751778', channelId: STREAKBOT_CHANNEL_ID, client, channel: { id: STREAKBOT_CHANNEL_ID, send: async (p) => sent.push(p) } };
+    process.env.STREAKBOT_ID = '9';
+    // The test environment only allows its own guilds, so the handler stays quiet here.
+    assert.equal(await handleStreakBotMessage(live), false);
+    assert.equal(sent.length, 0);
+});
