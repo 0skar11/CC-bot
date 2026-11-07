@@ -75,17 +75,26 @@ export async function payStreakBotUpdate(client, guildId, userId, count, now = D
 export async function handleStreakBotMessage(message) {
     try {
         const guildId = message.guildId || message.guild?.id;
-        if (guildId !== STREAKBOT_GUILD_ID || (message.channelId || message.channel?.id) !== STREAKBOT_CHANNEL_ID || !isAllowedGuild(guildId) || !isStreakBotMessage(message)) return false;
+        const channelId = message.channelId || message.channel?.id;
+        if (guildId !== STREAKBOT_GUILD_ID || channelId !== STREAKBOT_CHANNEL_ID) return false;
+        if (!isAllowedGuild(guildId)) { logger.warn(`[STREAKBOT] Guild ${guildId} is not allowed (BOURSE_GUILD_IDS)`); return false; }
+        if (!streakBotId()) { logger.warn('[STREAKBOT] STREAKBOT_ID is not set, so no streak is paid'); return false; }
+        if (!isStreakBotMessage(message)) return false;
         const update = await parseStreakUpdate(message);
-        if (!update) return false;
+        if (!update) {
+            logger.info(`[STREAKBOT] A StreakBot message was not a readable streak update: ${messageText(message).replace(/\s+/gu, ' ').slice(0, 200)}`);
+            return false;
+        }
         const client = message.client || message.guild?.client;
         const paid = await payStreakBotUpdate(client, guildId, update.userId, update.count);
-        if (!paid) return true;
+        if (!paid) { logger.info(`[STREAKBOT] ${update.userId} was already paid today`); return true; }
+        logger.info(`[STREAKBOT] Paid ${paid.bonus.total} CC to ${update.userId} for day ${update.count}`);
         const milestone = paid.bonus.milestone ? ` 🏅 وجايزة اليوم ${update.count}: **${paid.bonus.milestone.toLocaleString('en-US')}**` : '';
         await message.channel.send({
-            content: `🔥 <@${update.userId}> ستريك **${update.count}** يوم: خدت ${formatCC(paid.bonus.total)}${milestone}\n💰 رصيدك: ${formatCC(paid.balance)}`,
+            content: `🔥 <@${update.userId}> ستريك **${update.count}** يوم: خدت ${formatCC(paid.bonus.total)}${milestone}
+💰 رصيدك: ${formatCC(paid.balance)}`,
             allowedMentions: { users: [update.userId] },
-        }).catch(() => null);
+        }).catch((error) => logger.warn(`[STREAKBOT] Could not send the notice in the streak room (check Send Messages): ${error.code || error.message}`));
         return true;
     } catch (error) {
         logger.warn(`[STREAKBOT] Could not pay a streak update: ${error.message}`);
