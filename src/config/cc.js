@@ -2,6 +2,7 @@ export const CC = {
     name: 'Chaos Credits', short: 'CC', emoji: '🌀',
     // `give`: the first `cheapPerWeek` transfers of the last 7 days pay `taxPercent`; each one after that pays
     // `extraPercentPerTransfer` more, up to `maxTaxPercent` (5%, 5%, 5%, 10%, 15%, ... 50%).
+    daily: { amount: 500 },
     transfer: { minAmount: 10, taxPercent: 5, cheapPerWeek: 3, extraPercentPerTransfer: 5, maxTaxPercent: 50 },
 };
 export function ccEmbed(title, description = '', { fields = [], thumbnail = null } = {}) {

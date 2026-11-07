@@ -14,6 +14,7 @@ export const commandArgAliases = {
     بيع: 'bourse sell', sell: 'bourse sell',
     ممتلكاتي: 'bourse holdings', ممتلكاتى: 'bourse holdings', ممتلكات: 'bourse holdings', holdings: 'bourse holdings',
     تحويل: 'give', حول: 'give', حوّل: 'give', transfer: 'give', 'cc give': 'give',
+    ديلي: 'daily', يومية: 'daily',
     bal: 'cc', balance: 'cc', money: 'cc', cash: 'cc', credits: 'cc',
     رصيد: 'cc', رصيدي: 'cc', رصيدى: 'cc', فلوس: 'cc', كريدت: 'cc',
     'top cc': 'cctop', 'توب cc': 'cctop', 'توب كريدت': 'cctop',

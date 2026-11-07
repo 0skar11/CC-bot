@@ -114,3 +114,30 @@ test('addcc is owner only and credits the CC bot balance; give moves CC with tax
     await messageCreate.execute(mk('تحويل', SELF, replies), client);
     assert.equal(replies.length, 0);
 });
+
+test('daily gives 500 CC once per UTC day', async () => {
+    const { claimDaily } = await import('../src/services/cc/ccService.js');
+    const client = await setup();
+    const day = Date.parse('2026-11-07T10:00:00Z');
+    const first = await claimDaily(client, GUILD, SELF.id, day);
+    assert.equal(first.ok, true); assert.equal(first.balance, 600);
+    const again = await claimDaily(client, GUILD, SELF.id, day + 3600_000);
+    assert.equal(again.ok, false); assert.equal(again.waitMs, 13 * 3600_000);
+    assert.equal((await claimDaily(client, GUILD, SELF.id, day + 24 * 3600_000)).balance, 1100);
+});
+
+test('a StreakBot update pays CC by streak day, once per day, only for StreakBot', async () => {
+    const { parseStreakUpdate, payStreakBotUpdate, isStreakBotMessage } = await import('../src/services/cc/streakBotService.js');
+    const client = await setup();
+    const embed = { title: 'تم تحديث الستريك', description: `<@${SELF.id}>\n🔥 · 8\n🛡️ · (🛡️)` };
+    const message = { author: { bot: true, id: '9', username: 'StreakBot' }, content: '', embeds: [embed] };
+    assert.equal(isStreakBotMessage(message), true);
+    assert.equal(isStreakBotMessage({ ...message, author: { bot: true, username: 'Other' } }), false);
+    assert.deepEqual(await parseStreakUpdate(message), { userId: SELF.id, count: 8 });
+    assert.equal(await parseStreakUpdate({ ...message, embeds: [{ title: 'hello', description: '🔥 · 8' }] }), null);
+    const now = Date.parse('2026-11-07T10:00:00Z');
+    const paid = await payStreakBotUpdate(client, GUILD, SELF.id, 8, now);
+    assert.equal(paid.bonus.total, 300); assert.equal(paid.balance, 400);
+    assert.equal(await payStreakBotUpdate(client, GUILD, SELF.id, 8, now + 1000), null);
+    assert.equal((await payStreakBotUpdate(client, GUILD, SELF.id, 7, now + 86_400_000)).bonus.total, 1250);
+});

@@ -101,3 +101,16 @@ export async function transferCC(client, guildId, fromId, toId, amount, { now = 
     logger.info('[CC] Transfer', { guildId, fromId, toId, amount, tax: sent.tax, taxPercent: sent.taxPercent });
     return { ok: true, amount, tax: sent.tax, taxPercent: sent.taxPercent, received, balance: sent.balance, nextTaxPercent: sent.nextTaxPercent };
 }
+
+/** `daily`: CC.daily.amount once per UTC day. Returns `{ ok: false, waitMs }` when already claimed today. */
+export async function claimDaily(client, guildId, userId, now = Date.now()) {
+    const today = new Date(now).toISOString().slice(0, 10);
+    const nextMidnight = Date.parse(`${today}T00:00:00Z`) + 24 * 60 * 60 * 1000;
+    return updateCCState(client, guildId, userId, (state, record) => {
+        if (record.ccDailyDay === today) return { ok: false, skipSave: true, waitMs: nextMidnight - now };
+        state.cc += CC.daily.amount;
+        state.stats.earned += CC.daily.amount;
+        record.ccDailyDay = today;
+        return { ok: true };
+    });
+}
