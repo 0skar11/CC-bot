@@ -11,7 +11,6 @@ import { logger } from '../../utils/logger.js';
 export const CLOVER_BOT_ID = '1006332825571692544';
 const WIN_MESSAGE = /^\s*👑️?\s*\|?\s*<@!?(\d{17,20})>\s*$/mu;
 const ANSWER_MESSAGE = /^\s*(?:✅️?|<a?:\w+:\d+>)?\s*\|?\s*قام\s+<@!?(\d{17,20})>\s+بكتابة\s+ال[اإأ]جابة\s+الصحيحة/mu;
-const NOTICE_DELETE_MS = 15_000;
 const PAID_MEMORY = 500;
 const paidMessages = new Set();
 const utcDay = (now) => new Date(now).toISOString().slice(0, 10);
@@ -62,8 +61,8 @@ export async function handleGamesBotWin(message) {
         const text = paid.amount > 0
             ? `🌀 <@${win.userId}> كسب +${formatCC(paid.amount)} • رصيدك: ${formatCC(paid.balance)}`
             : `🌀 <@${win.userId}> وصلت لحد الـ CC من الألعاب النهارده (${CC.gamesBot.dailyCap.toLocaleString('en-US')} ${CC.short}).`;
-        const notice = await message.reply({ content: text, allowedMentions: { parse: [] } }).catch(() => null);
-        if (notice) setTimeout(() => notice.delete().catch(() => {}), NOTICE_DELETE_MS).unref?.();
+        // The notice stays: it is never deleted.
+        await message.reply({ content: text, allowedMentions: { parse: [] } }).catch((error) => logger.warn(`[GAMESBOT] Could not send the notice: ${error.code || error.message}`));
         return true;
     } catch (error) {
         logger.warn(`[GAMESBOT] Could not pay a games bot win: ${error.message}`);
