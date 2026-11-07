@@ -48,6 +48,18 @@ export default {
             if (game.error) return send({ content: game.error });
             return execute(game.options);
         }
+        // `addcc [@member] 500` and `give @member 100` (also `تحويل @member 100`): a member and a whole amount, in any order.
+        if (parsed.commandName === 'addcc' || parsed.commandName === 'give') {
+            const amountWord = parsed.args.find((arg) => /^\d{1,10}$/u.test(arg));
+            const userWord = parsed.args.find((arg) => userArgument.test(arg));
+            const usage = parsed.commandName === 'give' ? '❌ اكتب: `تحويل @عضو 100`' : '❌ اكتب: `addcc 500` أو `addcc @عضو 500`';
+            const wellFormed = parsed.args.length === (amountWord ? 1 : 0) + (userWord ? 1 : 0) && parsed.args.length > 0 && amountWord;
+            if (!wellFormed || (parsed.commandName === 'give' && !userWord)) return prefixed ? send({ content: usage }) : undefined;
+            const match = userWord ? userArgument.exec(userWord) : null;
+            const user = match ? await client.users.fetch(match[1] || match[2]).catch(() => null) : null;
+            if (match && !user) return send({ content: '❌ العضو مش موجود.' });
+            return execute({ getUser: () => user, getInteger: () => Number(amountWord) });
+        }
         const stock = parsed.commandName === 'bourse';
         const [subcommand, ...stockValues] = stock ? command.normalizePrefixArgs([...parsed.args]) : [];
         const values = stock ? stockValues : parsed.args;

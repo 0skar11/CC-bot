@@ -93,3 +93,24 @@ test('top CC slash and typed aliases rank CC plus net sale value in the shared e
         assert.deepEqual(reply.allowedMentions, { parse: [] });
     }
 });
+
+test('addcc is owner only and credits the CC bot balance; give moves CC with tax', async () => {
+    const client = await setup();
+    const owner = { id: '1159601661392715906' };
+    const mk = (content, author, replies) => ({ content, guildId: GUILD, author, guild: { members: { fetch: async () => ({}) } }, channel: { send: async (p) => replies.push(p) } });
+    let replies = [];
+    await messageCreate.execute(mk('addcc 500', SELF, replies), client);
+    assert.match(replies[0].content, /للأونر/u);
+    replies = [];
+    await messageCreate.execute(mk('addcc 500', owner, replies), client);
+    assert.match(replies[0].embeds[0].description, /500/u);
+    await messageCreate.execute(mk(`addcc <@${SELF.id}> 40`, owner, replies), client);
+    assert.equal((await client.db.get(getEconomyKey(economyScopeId, SELF.id))).cc, 140);
+    replies = [];
+    await messageCreate.execute(mk(`تحويل <@${OTHER.id}> 100`, SELF, replies), client);
+    assert.equal((await client.db.get(getEconomyKey(economyScopeId, SELF.id))).cc, 40);
+    assert.equal((await client.db.get(getEconomyKey(economyScopeId, OTHER.id))).cc, 196);
+    replies = [];
+    await messageCreate.execute(mk('تحويل', SELF, replies), client);
+    assert.equal(replies.length, 0);
+});

@@ -24,15 +24,15 @@ describe('standalone bourse guild boundary', () => {
         assert.ok(isBourseGuild(GUILD)); assert.ok(isBourseGuild(SECOND));
         assert.equal(isBourseGuild(OUTSIDE), false);
         assert.equal(isBourseGuild(null), false);
-        for (const name of ['bourse', 'casino', 'cc', 'cctop', 'help']) assert.ok(isBourseGuildCommand(name));
-        for (const name of ['ban', 'store', 'addcc', 'give']) assert.equal(isBourseGuildCommand(name), false);
+        for (const name of ['addcc', 'bourse', 'casino', 'cc', 'cctop', 'give', 'help']) assert.ok(isBourseGuildCommand(name));
+        for (const name of ['ban', 'store']) assert.equal(isBourseGuildCommand(name), false);
     });
     test('automatic jobs only receive explicitly configured guilds', () => {
         const client = { guilds: { cache: new Collection([[GUILD, { id: GUILD }], [SECOND, { id: SECOND }], [OUTSIDE, { id: OUTSIDE }]]) } };
         assert.deepEqual(managedGuilds(client).map((guild) => guild.id), [GUILD, SECOND]);
     });
     test('unrelated slash and disallowed guild requests stop before command lookup', async () => {
-        for (const [guild, name] of [[GUILD, 'ban'], [GUILD, 'give'], [OUTSIDE, 'bourse'], [OUTSIDE, 'cc'], [OUTSIDE, 'cctop']]) {
+        for (const [guild, name] of [[GUILD, 'ban'], [OUTSIDE, 'bourse'], [OUTSIDE, 'cc'], [OUTSIDE, 'cctop']]) {
             const interaction = slash(guild, name);
             await interactionCreate.execute(interaction, { commands: { get: () => assert.fail('lookup') } });
             assert.equal(interaction.replies[0].content, BOURSE_GUILD_NOTICE);
@@ -60,16 +60,18 @@ describe('standalone bourse guild boundary', () => {
         await loadEvents({ on: (name) => events.push(name), once: (name) => events.push(name) });
         assert.deepEqual(events.sort(), ['clientReady', 'interactionCreate', 'messageCreate']);
     });
-    test('dry registry contains exactly bourse, casino, cc, cctop, help, the two stock button namespaces and the casino buttons', async () => {
+    test('dry registry contains exactly addcc, bourse, casino, cc, cctop, give, help, the two stock button namespaces and the casino buttons', async () => {
         const client = {};
         const commands = await loadCommands(client); await loadInteractions(client);
-        assert.deepEqual(commands.map((command) => command.name), ['bourse', 'casino', 'cc', 'cctop', 'help']);
-        assert.deepEqual(commands[0].options.map((sub) => sub.name), ['prices', 'invest', 'sell', 'buymax', 'sellall', 'holdings']);
-        assert.deepEqual(commands[1].options.map((sub) => [sub.name, sub.options.map(({ name, required }) => `${name}${required ? '' : '?'}`)]), [
+        assert.deepEqual(commands.map((command) => command.name), ['addcc', 'bourse', 'casino', 'cc', 'cctop', 'give', 'help']);
+        assert.deepEqual(commands[1].options.map((sub) => sub.name), ['prices', 'invest', 'sell', 'buymax', 'sellall', 'holdings']);
+        assert.deepEqual(commands[2].options.map((sub) => [sub.name, sub.options.map(({ name, required }) => `${name}${required ? '' : '?'}`)]), [
             ['mines', ['bet', 'mines?']], ['coinflip', ['bet', 'side?']], ['slots', ['bet']],
         ]);
-        assert.deepEqual(commands[2].options.map(({ name, required }) => ({ name, required })), [{ name: 'user', required: false }]);
-        assert.deepEqual(commands[3].options, []);
+        assert.deepEqual(commands[3].options.map(({ name, required }) => ({ name, required })), [{ name: 'user', required: false }]);
+        assert.deepEqual(commands[4].options, []);
+        assert.deepEqual(commands[0].options.map(({ name }) => name), ['user', 'amount']);
+        assert.deepEqual(commands[5].options.map(({ name }) => name), ['user', 'amount']);
         assert.deepEqual([...client.buttons.keys()].sort(), ['bourse', 'bourseperk', 'casino']);
     });
     test('stock prefix aliases route without a prefix and accept multiword names', async () => {

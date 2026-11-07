@@ -1,6 +1,6 @@
 # CC bot
 
-Standalone stock market, balance and leaderboard from [0skar11/DISbot](https://github.com/0skar11/DISbot) (MIT), plus a small CC casino. **CC bot** uses a separate Discord application. Its slash commands are `/bourse`, `/casino`, `/cc`, `/cctop` and `/help`.
+Standalone stock market, balance and leaderboard from [0skar11/DISbot](https://github.com/0skar11/DISbot) (MIT), plus a small CC casino. **CC bot** uses a separate Discord application. Its slash commands are `/bourse`, `/casino`, `/cc`, `/cctop`, `/give`, `/addcc` and `/help`.
 
 ## Setup on Windows
 
@@ -32,12 +32,13 @@ For public installation, turn **Public Bot on**, enable Guild Install and config
 | `ECONOMY_SCOPE_ID` | Stable shared economy namespace. Public mode requires an explicit Discord snowflake such as the application ID. Finite mode defaults to the first allowed guild and requires an allowed guild ID. Never change it when moving hosts. |
 | `BOURSE_CHANNEL_IDS` | Optional comma-separated channel/category IDs; empty permits all channels inside allowed guilds. |
 | `PREFIX` | Typed command prefix, default `!`. Command aliases also work without it. |
-| `INITIAL_CC` | Starting CC for new member records; default `0`. Set a desired nonnegative whole amount **before members start** (for example `10000`) to fund a fresh stock-only economy. Existing records receive no grant/reset. No transfers or admin grant command exist; besides the streak, CC is won (and lost) only in the [casino](#casino). |
+| `INITIAL_CC` | Starting CC for new member records; default `0`. Set a desired nonnegative whole amount **before members start** (for example `10000`) to fund a fresh stock-only economy. Existing records receive no grant/reset. Besides the streak, CC comes from the [casino](#casino), `give` transfers and the owner-only `addcc`. |
 | `TRADER_ROLE_ENABLED` | `true` enables trader role setup and its purchase button; default `false`. |
 | `STREAK_ENABLED` | `true` enables daily streaks in the existing CHAOS streak room. Defaults to `false`. |
 | `CASINO_CHANNEL_IDS` | Optional comma-separated channel/category IDs where `/casino` and its typed words work (threads inside them too). Empty uses the same channels as everything else (`BOURSE_CHANNEL_IDS`, or every channel when that is empty too). Elsewhere the slash form answers privately with the casino rooms and typed words are ignored. |
 | `CASINO_MAX_BET` | Most CC one casino bet can take, a whole number from `10` to `1000000000`; default `50000`. A bet is also never more than the balance. The slash option limit is set at registration, so run `npm run register` after changing it. |
 | `TRADER_ROLE_ANCHORS` | Optional `guildId:roleId,guildId:roleId` pairs. New trader roles are placed above these roles. Without an anchor, Discord's normal below-bot position is used. No leveling system is required. |
+| `OWNER_IDS` | Comma-separated Discord user IDs allowed to use `addcc` (default: the original owner). Owner list lives in `src/config/owners.js`. |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` or `silent`; default `info`. Logs go to the console. |
 
 The migration creates only `bourse_records` and its prefix index; rerunning it is safe. Its rows contain the shared market, per-user CC, holdings and streaks, and per-guild configuration. Back up this dedicated database before changing the shared scope.

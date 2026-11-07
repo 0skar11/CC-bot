@@ -1,6 +1,6 @@
 import 'dotenv/config';
 
-const ids = (value) => String(value || '').split(',').map((id) => id.trim()).filter(Boolean);
+export const ids = (value) => String(value || '').split(',').map((id) => id.trim()).filter(Boolean);
 const snowflake = /^\d{17,20}$/u;
 const configuredGuildIds = ids(process.env.BOURSE_GUILD_IDS);
 const configuredEconomyScopeId = process.env.ECONOMY_SCOPE_ID?.trim() || '';
