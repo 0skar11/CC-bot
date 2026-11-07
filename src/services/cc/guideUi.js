@@ -14,6 +14,8 @@ import { perkPrices } from './boursePerks.js';
 import { slotsTableText } from './casinoUi.js';
 import { isStreakGuild, streakGuideEmbed } from './streakService.js';
 
+export const GUIDE_SENT = '📬 بعتلك الشرح في الخاص.';
+export const GUIDE_DM_CLOSED = '❌ مقدرتش أبعتلك في الخاص، افتح الرسايل الخاصة من السيرفر وجرّب تاني.';
 export const GUIDE_TOPICS = ['cc', 'bourse', 'casino', 'streak'];
 
 const number = (value) => Number(value || 0).toLocaleString('en-US');
@@ -47,7 +49,8 @@ function ccGuideEmbed({ streak }) {
         '',
         '💸 **تجيب CC منين؟**',
         ...earn,
-        '🚫 مفيش تحويل CC بين الأعضاء.',
+        `🎁 \`daily\` ・ ${number(CC.daily.amount)} ${CC.short} كل يوم.`,
+        `🔁 \`تحويل @عضو 100\` ・ تحويل CC لعضو تاني (ضريبة ${CC.transfer.taxPercent}% وبتزيد لو حوّلت كتير في الأسبوع، أقل تحويل ${number(CC.transfer.minAmount)}). لازم الاتنين يكونوا في السيرفر بقالهم **${CC.transfer.minServerDays} يوم** على الأقل.`,
         '',
         '💰 **رصيدك والترتيب**',
         `👛 \`/cc\` رصيدك، و\`/cc user:\` رصيد أي عضو. مكتوبة: ${code(['cc', ...aliasesFor('cc')])} (وممكن بعدها منشن أو ID).`,
@@ -149,6 +152,8 @@ export async function handleGuideCommand(message, commandName, args = []) {
     if (!GUIDE_PHRASES.has([commandName, ...args].join(' ').toLowerCase())) return false;
     if (!isAllowedChannel(message.channel, message.channelId)) return false;
     const guildId = message.guildId || message.guild?.id;
-    await message.channel.send(guidePayload(guildId)).catch(() => {});
+    // The guide goes to the member's DM; the chat only gets a short note.
+    const sent = await message.author.send(guidePayload(guildId)).then(() => true).catch(() => false);
+    await message.channel.send({ content: `<@${message.author.id}> ${sent ? GUIDE_SENT : GUIDE_DM_CLOSED}`, allowedMentions: { users: [message.author.id] } }).catch(() => {});
     return true;
 }

@@ -1,5 +1,5 @@
 import { SlashCommandBuilder } from 'discord.js';
-import { guidePayload } from '../../services/cc/guideUi.js';
+import { GUIDE_DM_CLOSED, GUIDE_SENT, guidePayload } from '../../services/cc/guideUi.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 
 // `/help [topic]`: the guide to the whole bot (src/services/cc/guideUi.js). The typed `شرح` / `مساعدة` /
@@ -21,6 +21,8 @@ export default {
 
     async execute(interaction) {
         const topic = interaction.options?.getString?.('topic') || null;
-        return InteractionHelper.safeReply(interaction, guidePayload(interaction.guildId, topic));
+        // Sent to the member's DM; the channel only gets a short note.
+        const sent = await interaction.user.send(guidePayload(interaction.guildId, topic)).then(() => true).catch(() => false);
+        return InteractionHelper.safeReply(interaction, { content: sent ? GUIDE_SENT : GUIDE_DM_CLOSED, allowedMentions: { parse: [] } });
     },
 };

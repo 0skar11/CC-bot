@@ -97,7 +97,7 @@ test('top CC slash and typed aliases rank CC plus net sale value in the shared e
 test('addcc is owner only and credits the CC bot balance; give moves CC with tax', async () => {
     const client = await setup();
     const owner = { id: '1159601661392715906' };
-    const mk = (content, author, replies) => ({ content, guildId: GUILD, author, guild: { members: { fetch: async () => ({}) } }, channel: { send: async (p) => replies.push(p) } });
+    const mk = (content, author, replies) => ({ content, guildId: GUILD, author, guild: { members: { fetch: async () => ({ joinedTimestamp: Date.now() - 40 * 86_400_000 }) } }, channel: { send: async (p) => replies.push(p) } });
     let replies = [];
     await messageCreate.execute(mk('addcc 500', SELF, replies), client);
     assert.match(replies[0].content, /للأونر/u);
@@ -166,4 +166,20 @@ test('removecc is owner only and never takes a balance below zero', async () => 
     await messageCreate.execute(mk(`removecc <@${OTHER.id}> 5000`, owner, replies), client);
     assert.equal((await client.db.get(getEconomyKey(economyScopeId, OTHER.id))).cc, 0);
     assert.match(replies[1].embeds[0].description, /كل رصيده/u);
+});
+
+test('give needs both members to be in the server for 30 days (anti-alt)', async () => {
+    const client = await setup();
+    const mk = (content, joined, replies) => ({ content, guildId: GUILD, author: SELF, guild: { members: { fetch: async (id) => ({ joinedTimestamp: id === OTHER.id ? joined.other : joined.self }) } }, channel: { send: async (p) => replies.push(p) } });
+    const day = 86_400_000;
+    let replies = [];
+    await messageCreate.execute(mk(`تحويل <@${OTHER.id}> 100`, { self: Date.now() - 2 * day, other: Date.now() - 40 * day }, replies), client);
+    assert.match(replies[0].content, /ليك في السيرفر 30 يوم/u);
+    replies = [];
+    await messageCreate.execute(mk(`تحويل <@${OTHER.id}> 100`, { self: Date.now() - 40 * day, other: Date.now() - 2 * day }, replies), client);
+    assert.match(replies[0].content, /أقل من 30 يوم/u);
+    assert.equal((await client.db.get(getEconomyKey(economyScopeId, SELF.id))).cc, 100);
+    replies = [];
+    await messageCreate.execute(mk(`تحويل <@${OTHER.id}> 100`, { self: Date.now() - 40 * day, other: Date.now() - 31 * day }, replies), client);
+    assert.equal((await client.db.get(getEconomyKey(economyScopeId, SELF.id))).cc, 0);
 });

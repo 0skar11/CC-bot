@@ -39,7 +39,7 @@ export default {
         };
         const execute = async (options) => {
             const interaction = {
-                id: message.id, guildId, guild: message.guild, user: message.author,
+                id: message.id, guildId, guild: message.guild, user: message.author, member: message.member,
                 channel: message.channel, channelId: message.channelId, _sourceMessage: message,
                 options, reply: send,
             };

@@ -107,10 +107,11 @@ test('only the pinned guild and room count a member’s image, with typed comman
 test('the streak guide answers only its exact words and leaves the other typed words alone', async () => {
     const { client, guild, sent } = setup();
     const balances = [];
+    const dms = [];
     client.commands.set('cc', { execute: async (interaction) => balances.push(interaction.user.id) });
     const otherChannel = { id: '323456789012345678', send: async (payload) => sent.push(payload) };
     const say = (content) => messageCreate.execute({ guild, channel: otherChannel, channelId: otherChannel.id,
-        author: { id: userId }, content, attachments: new Map(), reply: async () => {} }, client);
+        author: { id: userId, send: async (payload) => dms.push(payload) }, content, attachments: new Map(), reply: async () => {} }, client);
     const guide = () => sent.at(-1)?.embeds?.[0]?.title === '🔥 شرح الستريك';
 
     for (const words of ['شرح ستريك', 'ستريك شرح', 'شرح الستريك', 'الستريك', 'streak help', 'STREAK HELP', '!شرح ستريك', '! الستريك']) {
@@ -146,7 +147,7 @@ test('the streak guide answers only its exact words and leaves the other typed w
     await say('توب ستريك');
     assert.equal(sent.at(-1).embeds[0].title, '🔥 Top Streak');
     await say('شرح');
-    assert.equal(sent.at(-1).embeds[0].title, '🌀 شرح CC bot');
+    assert.equal(dms.at(-1).embeds[0].title, '🌀 شرح CC bot');
     await say('رصيد');
     assert.deepEqual(balances, [userId]);
 

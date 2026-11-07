@@ -20,6 +20,7 @@ const text = (embeds) => embeds.map((embed) => [embed.title, embed.description, 
 
 function setup(guildId = OTHER_GUILD) {
     const sent = [];
+    const dms = [];
     const ran = [];
     const client = { commands: new Map(), users: { fetch: async () => null }, db: { get: async (_key, fallback) => fallback, list: async () => [] } };
     for (const name of ['cc', 'cctop', 'casino', 'bourse', 'help']) {
@@ -33,9 +34,9 @@ function setup(guildId = OTHER_GUILD) {
     const guild = { id: guildId, client };
     const say = (content, channelId = ROOM) => messageCreate.execute({
         guild, guildId, channel: { id: channelId, send: async (payload) => sent.push(payload) }, channelId,
-        author: { id: userId }, content, attachments: new Map(), reply: async () => {},
+        author: { id: userId, send: async (payload) => dms.push(payload) }, content, attachments: new Map(), reply: async () => {},
     }, client);
-    return { sent, ran, say };
+    return { sent, dms, ran, say };
 }
 
 afterEach(() => {
@@ -44,13 +45,18 @@ afterEach(() => {
 });
 
 test('the typed guide answers its exact words, with or without the prefix, and never pings', async () => {
-    const { sent, ran, say } = setup();
+    const { sent, dms, ran, say } = setup();
     for (const words of [...GUIDE_PHRASES, 'HELP', 'شرح CC', `${prefix}شرح`, `${prefix} مساعدة`, `${prefix}help`]) {
         sent.length = 0;
+        dms.length = 0;
         await say(words);
+        // The guide goes to the member's DM; the channel only gets a short note.
+        assert.equal(dms.length, 1, words);
+        assert.deepEqual(titles(dms[0]), ['🌀 شرح CC bot', '📈 شرح البورصة', '🎰 شرح الكازينو'], words);
+        assert.deepEqual(dms[0].allowedMentions, { parse: [] });
         assert.equal(sent.length, 1, words);
-        assert.deepEqual(titles(sent[0]), ['🌀 شرح CC bot', '📈 شرح البورصة', '🎰 شرح الكازينو'], words);
-        assert.deepEqual(sent[0].allowedMentions, { parse: [] });
+        assert.match(sent[0].content, /بعتلك الشرح في الخاص/u);
+        assert.equal(sent[0].embeds, undefined);
     }
     assert.deepEqual(ran, []);
 });
@@ -70,21 +76,21 @@ test('longer sentences and the other typed words are left alone', async () => {
 
 test('the streak words keep the streak guide, and the full guide adds the streak only where it works', async () => {
     process.env.STREAK_ENABLED = 'true';
-    const { sent, say } = setup(STREAK_GUILD_ID);
+    const { sent, dms, say } = setup(STREAK_GUILD_ID);
     for (const words of ['شرح ستريك', 'ستريك شرح', 'شرح الستريك', 'الستريك', 'streak help']) {
         sent.length = 0;
         await say(words);
         assert.deepEqual(titles(sent[0]), ['🔥 شرح الستريك'], words);
     }
     await say('شرح');
-    assert.deepEqual(titles(sent.at(-1)), ['🌀 شرح CC bot', '📈 شرح البورصة', '🎰 شرح الكازينو', '🔥 شرح الستريك']);
-    assert.match(sent.at(-1).embeds[0].description, /الستريك/u);
+    assert.deepEqual(titles(dms.at(-1)), ['🌀 شرح CC bot', '📈 شرح البورصة', '🎰 شرح الكازينو', '🔥 شرح الستريك']);
+    assert.match(dms.at(-1).embeds[0].description, /الستريك/u);
 
     // Without STREAK_ENABLED (or outside the streak server) the guide doesn't claim the streak works.
     delete process.env.STREAK_ENABLED;
     await say('شرح');
-    assert.equal(sent.at(-1).embeds.length, 3);
-    assert.doesNotMatch(sent.at(-1).embeds[0].description, /الستريك/u);
+    assert.equal(dms.at(-1).embeds.length, 3);
+    assert.doesNotMatch(dms.at(-1).embeds[0].description, /الستريك/u);
     process.env.STREAK_ENABLED = 'true';
     assert.equal(guideEmbeds(OTHER_GUILD).length, 3);
 });
@@ -99,7 +105,7 @@ test('a picture captioned with a guide word is not a guide request and still cou
     const replies = [];
     const post = (content, extra = {}) => messageCreate.execute({
         guild, guildId: STREAK_GUILD_ID, client, channel: { id: STREAK_CHANNEL_ID, send: async (payload) => sent.push(payload) }, channelId: STREAK_CHANNEL_ID,
-        author: { id: userId }, content, attachments: new Map(), reply: async (payload) => { replies.push(payload); }, react: async () => {}, ...extra,
+        author: { id: userId, send: async () => {} }, content, attachments: new Map(), reply: async (payload) => { replies.push(payload); }, react: async () => {}, ...extra,
     }, client);
     const image = new Map([['1', { name: 'a.png', contentType: 'image/png' }]]);
     for (const word of ['help', 'شرح', 'مساعدة']) {
@@ -130,21 +136,26 @@ test('the typed guide only answers in the allowed channels',async () => {
 
 test('/help shows everything or one topic', async () => {
     const replies = [];
-    const interaction = (topic) => ({ guildId: OTHER_GUILD, options: { getString: () => topic }, reply: async (payload) => replies.push(payload) });
+    const dms = [];
+    const interaction = (topic) => ({ guildId: OTHER_GUILD, user: { send: async (payload) => dms.push(payload) }, options: { getString: () => topic }, reply: async (payload) => replies.push(payload) });
     assert.equal(help.data.name, 'help');
     assert.equal(help.data.description, 'شرح CC bot');
     assert.deepEqual(help.data.toJSON().options[0].choices.map((choice) => choice.value), ['cc', 'bourse', 'casino', 'streak']);
     await help.execute(interaction(null));
-    assert.equal(replies.at(-1).embeds.length, 3);
+    assert.equal(dms.at(-1).embeds.length, 3);
+    assert.match(replies.at(-1).content, /بعتلك الشرح في الخاص/u);
     await help.execute(interaction('casino'));
-    assert.deepEqual(titles(replies.at(-1)), ['🎰 شرح الكازينو']);
+    assert.deepEqual(titles(dms.at(-1)), ['🎰 شرح الكازينو']);
     await help.execute(interaction('streak'));
-    assert.equal(replies.at(-1).embeds, undefined);
-    assert.match(replies.at(-1).content, /الستريك مش شغال/u);
+    assert.equal(dms.at(-1).embeds, undefined);
+    assert.match(dms.at(-1).content, /الستريك مش شغال/u);
     process.env.STREAK_ENABLED = 'true';
     await help.execute({ ...interaction('streak'), guildId: STREAK_GUILD_ID });
-    assert.deepEqual(titles(replies.at(-1)), ['🔥 شرح الستريك']);
-    for (const payload of replies) assert.deepEqual(payload.allowedMentions, { parse: [] });
+    assert.deepEqual(titles(dms.at(-1)), ['🔥 شرح الستريك']);
+    // Closed DMs: the member is told to open them.
+    await help.execute({ ...interaction(null), user: { send: async () => { throw new Error('closed'); } } });
+    assert.match(replies.at(-1).content, /افتح الرسايل الخاصة/u);
+    for (const payload of [...replies, ...dms]) assert.deepEqual(payload.allowedMentions, { parse: [] });
 });
 
 test('every bourse subcommand is explained and the embeds stay inside Discord limits', () => {
