@@ -12,13 +12,13 @@ export default {
         .setDescription(`Owner only: add ${CC.name} (${CC.short}) to yourself or another member`)
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .setDMPermission(false)
-        .addUserOption((option) => option.setName('user').setDescription('Who gets the CC (default: you)').setRequired(false))
         .addIntegerOption((option) => option
             .setName('amount')
             .setDescription(`How much ${CC.short} to add`)
             .setMinValue(1)
             .setMaxValue(1_000_000_000)
-            .setRequired(true)),
+            .setRequired(true))
+        .addUserOption((option) => option.setName('user').setDescription('Who gets the CC (default: you)').setRequired(false)),
 
     async execute(interaction, _config, client) {
         const reply = (payload) => InteractionHelper.safeReply(interaction, { allowedMentions: { parse: [] }, ...payload });

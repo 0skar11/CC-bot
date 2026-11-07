@@ -70,7 +70,7 @@ describe('standalone bourse guild boundary', () => {
         ]);
         assert.deepEqual(commands[3].options.map(({ name, required }) => ({ name, required })), [{ name: 'user', required: false }]);
         assert.deepEqual(commands[4].options, []);
-        assert.deepEqual(commands[0].options.map(({ name }) => name), ['user', 'amount']);
+        assert.deepEqual(commands[0].options.map(({ name }) => name), ['amount', 'user']);
         assert.deepEqual(commands[5].options.map(({ name }) => name), ['user', 'amount']);
         assert.deepEqual([...client.buttons.keys()].sort(), ['bourse', 'bourseperk', 'casino']);
     });
