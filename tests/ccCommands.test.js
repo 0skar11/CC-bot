@@ -197,3 +197,15 @@ test('the pasted StreakBot message (bullets, no fire emoji, day 2) is read, and 
     assert.equal(await handleStreakBotMessage(live), false);
     assert.equal(sent.length, 0);
 });
+
+test('a components-v2 StreakBot message (container > text displays) is read through toJSON', async () => {
+    const { parseStreakUpdate } = await import('../src/services/cc/streakBotService.js');
+    const tree = { type: 17, components: [
+        { type: 9, components: [{ type: 10, content: `・تم تحديث الستريك\n<@${SELF.id}>\n・🔥 ・28\n・()\nv1.3.34` }], accessory: { type: 11, media: { url: 'https://x/y.png' } } },
+        { type: 10, content: '-# v1.3.34' },
+    ] };
+    // `.data` holds only the container's own fields, like discord.js' ContainerComponent.
+    const container = { data: { type: 17 }, toJSON: () => tree };
+    const message = { author: { bot: true, id: '9' }, content: '', embeds: [], components: [container] };
+    assert.deepEqual(await parseStreakUpdate(message), { userId: SELF.id, count: 28 });
+});

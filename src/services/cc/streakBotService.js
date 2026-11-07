@@ -28,7 +28,8 @@ function collectText(value, out) {
 export function messageText(message) {
     const parts = [message.content || ''];
     for (const embed of message.embeds || []) collectText(embed.data || embed, parts);
-    for (const row of message.components || []) collectText(row.data || row.toJSON?.() || row, parts);
+    // Components v2 (containers, text displays) keep their children outside `.data`; `toJSON()` has the whole tree.
+    for (const row of message.components || []) collectText(row.toJSON?.() ?? row.data ?? row, parts);
     return parts.join('\n');
 }
 
