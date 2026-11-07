@@ -1,9 +1,12 @@
-// casino.js — the CC casino (الكازينو), played with a CC bet. Solo games: mines, coinflip, slots, crash and
-// dice. Group games, one shared round per room: roulette and rocket (a group crash).
-// Run by src/services/cc/casinoService.js (the solo games' money and rules), casinoUi.js (their embeds and
-// buttons), casinoSessions.js (the live mines boards and the crash animation), casinoGroupService.js,
-// casinoGroupSessions.js and casinoGroupUi.js (the group rounds) and gamesMenuUi.js (the `العاب` menu); the
-// commands are src/commands/Games/casino.js and games.js.
+// casino.js — the CC casino (الكازينو), played with a CC bet. Solo games: mines, coinflip, slots and dice.
+// Group games, one shared round per room: roulette and rocket (a group crash). Crash is the rocket: the typed
+// `كراش` / `crash` run the same group rocket as `صاروخ` / `rocket` (src/config/commands/commandAliases.js), and
+// there is no solo crash any more (its crash point, below, is the rocket's).
+// Run by src/services/cc/casinoService.js (the solo games' money and rules, and the crash point),
+// casinoUi.js (their embeds and buttons), casinoSessions.js (the live mines boards), casinoGroupService.js,
+// casinoGroupSessions.js and casinoGroupUi.js (the group rounds) and gamesMenuUi.js (the `العاب` / `games` menu);
+// the commands are src/commands/Games/casino.js and games.js. Everything a member reads is in Arabic or English,
+// following the command (src/services/cc/lang.js); a round's shared message stays in its opener's language.
 //
 // Every game keeps a small house edge, written into its payouts (tests/casino.test.js and
 // tests/casinoGames.test.js check the math):
@@ -15,21 +18,21 @@
 //   slots     4%: three reels of 5 equally likely symbols, 125 spins in all. Three of a kind (5 spins) pays
 //                 the table below, 60 in total; two of a kind (60 spins) gives the bet back, 60; the other
 //                 60 spins lose. (60 + 60) / 125 = 0.96 of the bet comes back on average.
-//   crash     3%: the crash point is ×0.97 × N / (N − u) for u drawn uniformly from 0 … N − 1 (N = 2^32,
+//   crash     3%: the rocket's crash point is ×0.97 × N / (N − u) for u drawn uniformly from 0 … N − 1 (N = 2^32,
 //                 crypto.randomInt), kept in hundredths rounded down. It reaches ×m (any m from ×0.97) with
 //                 probability ⌊0.97 × N / m⌋ / N, just under 0.97 / m. A target ×m pays bet × m when the crash
 //                 point reaches it, so every target returns 97% of the bet (less under 1 / N). About 4% of
-//                 rockets crash at ×1.00 straight away.
+//                 rockets crash at ×1.00 straight away. (`crash` is no game of its own: see rocket.)
 //   dice      3%: the dice lands on 0.00–99.99 (10,000 equally likely rolls). `تحت 30` wins below 30.00 (a 30%
 //                 chance), `فوق 70` wins from 70.00 up (also 30%). A win with a c% chance pays bet × 97 / c, so
 //                 it returns c% × 97 / c = 97% whatever the number.
 //   roulette  2.70%: a single zero, 37 equally likely pockets. Red or black (18 pockets each) pays ×2 and one
 //                 number (0 is the green one) pays ×36: 18 × 2 / 37 = 36 / 37 = 97.30% back for every bet.
-//   rocket    3%: the group crash, with crash's crash point drawn once for the whole round. An automatic
-//                 cash-out at ×m (`صاروخ 100 2`) is crash's bet exactly (97%). A cash-out by button pays the
-//                 multiplier at the click, rounded down to ×0.01, and only counts while the crash point is still
-//                 above it, which only adds to the edge. The rocket stops at ×100 at the latest and pays ×100 to
-//                 everybody still on board (the same as a ×100 target, 97%).
+//   rocket    3%: the group crash (also typed `كراش` / `crash`), with crash's crash point drawn once for the whole
+//                 round. An automatic cash-out at ×m (`صاروخ 100 2`, `crash 100 2`) is a crash target exactly (97%).
+//                 A cash-out by button pays the multiplier at the click, rounded down to ×0.01, and only counts
+//                 while the crash point is still above it, which only adds to the edge. The rocket stops at ×100
+//                 at the latest and pays ×100 to everybody still on board (the same as a ×100 target, 97%).
 // Payouts are rounded down to whole CC, so rounding only ever adds to the edge, by under 1 CC per paid game:
 // under 1 point from 100 CC bets, more on the smallest ones (a 10 CC coinflip win pays 19, a 5% edge; 10 CC
 // with 1 mine cashed out after one cell pays back just the 10, an 11% edge).
@@ -42,7 +45,7 @@ export const CASINO_BUTTON_PREFIX = 'casino';
 // `/games` and the typed `العاب`: the menu of every game (src/commands/Games/games.js).
 export const GAMES_COMMAND = 'games';
 // The `/casino` games played by one member against the house, and the ones played by the whole room.
-export const SOLO_GAMES = ['mines', 'coinflip', 'slots', 'crash', 'dice'];
+export const SOLO_GAMES = ['mines', 'coinflip', 'slots', 'dice'];
 export const GROUP_GAMES = ['roulette', 'rocket'];
 
 export const CASINO = {
@@ -64,18 +67,18 @@ export const CASINO = {
         triple: { '🍒': 4, '🍋': 6, '🍇': 10, '💎': 15, '🌀': 25 },
         pair: 1,
     },
+    // The rocket's crash point and its automatic cash-out targets (crash is played as the group rocket).
     crash: {
         edgePercent: 3,
         // The crash point comes from this many equally likely draws (crypto.randomInt allows up to 2^48).
         draws: 2 ** 32,
-        // Targets in hundredths (×1.01 to ×100; `كراش 100` alone aims for ×2). maxTarget is also the
-        // rocket's top: it keeps every payout far inside Number.MAX_SAFE_INTEGER at the bet ceiling.
+        // Targets in hundredths (×1.01 to ×100). maxTarget is also the rocket's top: it keeps every payout far
+        // inside Number.MAX_SAFE_INTEGER at the bet ceiling. defaultTarget and frames only serve the crash
+        // engine kept in casinoService.js (playCrash, crashFrames) for its tests; no command plays it.
         minTarget: 101,
         maxTarget: 10_000,
         defaultTarget: 200,
-        // The animation: at most this many steps of the climbing multiplier, one message edit each, this long apart.
         frames: 5,
-        frameMs: 1_000,
     },
     dice: {
         edgePercent: 3,
@@ -180,8 +183,9 @@ export function targetHundredths(value, fallback = null) {
 }
 
 /**
- * The typed words after a new game's name, the bet first: `كراش 100 2.5` / `صاروخ 100 [2]` (a multiplier),
- * `نرد 100 [فوق|تحت] [70]` (in any order) and `روليت 100 احمر` / `روليت 100 17` (or the colour first).
+ * The typed words after a new game's name, the bet first: `صاروخ 100 [2]` / `كراش 100 2.5` (the rocket, with an
+ * optional automatic cash-out multiplier), `نرد 100 [فوق|تحت] [70]` (in any order) and `روليت 100 احمر` /
+ * `روليت 100 17` (or the colour first); the English words read the same way (`rocket 100 2`, `dice 100 over 70`).
  * Returns `{ values }` (the numbers are checked by the game) or `{ error: 'usage' }` when it isn't a game command.
  */
 export function readGameArgs(game, words) {
@@ -218,8 +222,14 @@ export function readGameArgs(game, words) {
     return usage;
 }
 
-/** The answer to a casino command or button outside the casino rooms. */
-export function casinoChannelNotice() {
-    if (!casinoChannelIds.size) return BOURSE_GUILD_NOTICE;
-    return `🎰 الكازينو متاح بس في: ${[...casinoChannelIds].map((id) => `<#${id}>`).join(' ')}`;
+/** The answer to a casino command in a server the bot doesn't serve, in `lang` ('ar' or 'en'). */
+export function casinoGuildNotice(lang = 'ar') {
+    return lang === 'en' ? '❌ This command is not available here.' : BOURSE_GUILD_NOTICE;
+}
+
+/** The answer to a casino command or button outside the casino rooms, in `lang` ('ar' or 'en'). */
+export function casinoChannelNotice(lang = 'ar') {
+    if (!casinoChannelIds.size) return casinoGuildNotice(lang);
+    const rooms = [...casinoChannelIds].map((id) => `<#${id}>`).join(' ');
+    return lang === 'en' ? `🎰 The casino is only open in: ${rooms}` : `🎰 الكازينو متاح بس في: ${rooms}`;
 }

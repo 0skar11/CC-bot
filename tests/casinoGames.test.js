@@ -9,9 +9,10 @@ import {
     crashPointFromDraw, drawCrashPoint, crashPayout, multiplyHundredths, crashFrames, crashChanceBasisPoints, playCrash,
     diceChance, diceWins, dicePayout, diceMultiplierHundredths, playDice, startMines, casinoEdges,
 } from '../src/services/cc/casinoService.js';
-import { animateCrash, resetCasinoSessions } from '../src/services/cc/casinoSessions.js';
+import { resetCasinoSessions } from '../src/services/cc/casinoSessions.js';
 import { resetGroupSessions } from '../src/services/cc/casinoGroupSessions.js';
-import { crashResultPayload, crashFramePayload, dicePayload, diceBar, casinoUsageText } from '../src/services/cc/casinoUi.js';
+import { roundKey } from '../src/services/cc/casinoGroupService.js';
+import { dicePayload, diceBar, casinoUsageText } from '../src/services/cc/casinoUi.js';
 import { gamesMenuEmbeds, gamesMenuPayload } from '../src/services/cc/gamesMenuUi.js';
 import { guideEmbeds } from '../src/services/cc/guideUi.js';
 import casinoCommand from '../src/commands/Games/casino.js';
@@ -27,7 +28,6 @@ const ROOM = '400000000000000001';
 const T0 = Date.UTC(2026, 10, 7, 18);
 const key = (userId) => getEconomyKey(economyScopeId, userId);
 const N = CASINO.crash.draws;
-const timings = { frameMs: CASINO.crash.frameMs };
 
 function fakeClient(records = {}) {
     const store = new Map(Object.entries(records));
@@ -51,7 +51,6 @@ const drawFor = (hundredths) => () => N - Math.floor((97 * N) / hundredths);
 afterEach(() => {
     resetCasinoSessions();
     resetGroupSessions();
-    CASINO.crash.frameMs = timings.frameMs;
 });
 
 describe('crash: payouts and house edge', () => {
@@ -203,29 +202,7 @@ describe('crash and dice games', () => {
         assert.match(dicePayload({ ...result, roll: 120, payout: 323 }, user).embeds[0].description, /كسبت[\s\S]*323/u);
     });
 
-    test('the crash animation edits once per step, up to the result, and survives a lost message', async () => {
-        CASINO.crash.frameMs = 0;
-        const user = { id: A, toString: () => `<@${A}>` };
-        const result = { bet: 100, target: 250, crash: 341, payout: 250, balance: 1150 };
-        const shown = [];
-        const message = { id: '1', edit: async (payload) => { shown.push(payload); } };
-        await animateCrash(result, user, { send: async (payload) => { shown.push(payload); return message; }, editFor: (sent) => (payload) => sent.edit(payload) });
-        const headings = shown.map((payload) => /# (.+)/u.exec(payload.embeds[0].description)[1]);
-        assert.deepEqual(headings, ['🚀 ×1.00', '🚀 ×1.35', '🚀 ×1.84', '✅ ×2.50']);
-        assert.deepEqual(shown.at(-1), crashResultPayload(result, user));
-        assert.match(shown.at(-1).embeds[0].description, /انفجر بعدها عند \*\*×3\.41\*\*/u);
-        assert.match(crashFramePayload(result, user, 135).embeds[0].footer.text, /38\.80%/u);
-
-        // The message is gone: the animation stops and the result is sent once more.
-        const sent = [];
-        const lost = { ...result, crash: 120, payout: 0, balance: 900 };
-        await animateCrash(lost, user, { send: async (payload) => { sent.push(payload); return { id: '2' }; }, editFor: () => async () => { throw new Error('Unknown Message'); } });
-        assert.equal(sent.length, 2);
-        assert.match(sent[1].embeds[0].description, /انفجر عند \*\*×1\.20\*\* قبل ما يوصل ×2\.50/u);
-    });
-
-    test('/casino crash and /casino dice play from the slash options, in the casino room', async () => {
-        CASINO.crash.frameMs = 0;
+    test('/casino dice plays from the slash options, in the casino room; there is no /casino crash (crash is the rocket)', async () => {
         const client = fakeClient();
         await fund(client, A, 1000);
         await loadCommands(client);
@@ -238,33 +215,31 @@ describe('crash and dice games', () => {
             async editReply(payload) { replies.push(payload); return { id: '600000000000000001' }; },
             reply: async () => assert.fail('must edit the deferred reply'),
         });
+        // A `crash` subcommand (an old registration) plays nothing: it only explains the games.
         await interactionCreate.execute(slash({ sub: 'crash', bet: 100, target: 2.5 }), client);
-        const stats = saved(client, A).ccCasinoStats;
-        assert.deepEqual([stats.played, stats.wagered], [1, 100]);
-        assert.equal(await balance(client, A), 900 + stats.paidOut);
-        assert.ok([0, 250].includes(stats.paidOut));
-        assert.match(replies.at(-1).embeds[0].description, /هدفه \*\*×2\.50\*\*/u);
-        assert.match(replies.at(-1).embeds[0].description, stats.paidOut ? /وصل \*\*×2\.50\*\*/u : /انفجر عند/u);
+        assert.match(replies.at(-1).content, /الكازينو[\s\S]*صاروخ[\s\S]*كراش/u);
+        assert.equal(saved(client, A).ccCasinoStats, undefined);
+        assert.equal(await balance(client, A), 1000);
 
-        resetCasinoSessions();
         await interactionCreate.execute(slash({ sub: 'dice', bet: 100, number: 70, direction: 'over' }), client);
-        assert.equal(saved(client, A).ccCasinoStats.played, 2);
+        assert.equal(saved(client, A).ccCasinoStats.played, 1);
         assert.match(replies.at(-1).embeds[0].description, /فوق 70/u);
         resetCasinoSessions();
-        await interactionCreate.execute(slash({ sub: 'crash', bet: 100, target: 150.5 }), client);
+        await interactionCreate.execute(slash({ sub: 'rocket', bet: 100, target: 150.5 }), client);
         assert.match(replies.at(-1).content, /المضاعف لازم يكون/u);
         await interactionCreate.execute(slash({ sub: 'dice', bet: 100, number: 99, direction: 'under' }), client);
         assert.match(replies.at(-1).content, /اختار `تحت`/u);
-        assert.equal(saved(client, A).ccCasinoStats.played, 2);
+        assert.equal(saved(client, A).ccCasinoStats.played, 1);
     });
 });
 
 describe('typed words of the new games', () => {
     test('a bet and the game words play, without the prefix; chat is left alone', () => {
+        // `كراش` / `crash` are the group rocket itself.
         const routed = {
-            'كراش 100 2.5': ['crash', '100', '2.5'],
-            'كراش 100': ['crash', '100'],
-            'crash 50 x3': ['crash', '50', 'x3'],
+            'كراش 100 2.5': ['rocket', '100', '2.5'],
+            'كراش 100': ['rocket', '100'],
+            'crash 50 x3': ['rocket', '50', 'x3'],
             'نرد 100 فوق 70': ['dice', '100', 'فوق', '70'],
             'زهر 100 30 تحت': ['dice', '100', '30', 'تحت'],
             'دايس 100': ['dice', '100'],
@@ -284,7 +259,8 @@ describe('typed words of the new games', () => {
             assert.equal(applyWordAliases(word, rest, false), null, text);
         }
         // With the prefix every form reaches the command (which explains the right way).
-        assert.deepEqual(applyWordAliases('كراش', [], true), { commandName: 'casino', args: ['crash'] });
+        assert.deepEqual(applyWordAliases('كراش', [], true), { commandName: 'casino', args: ['rocket'] });
+        for (const word of ['crash', 'كراش', 'rocket', 'صاروخ', 'الصاروخ']) assert.equal(commandArgAliases[word], 'casino rocket', word);
         assert.deepEqual(applyWordAliases('العاب', [], false), { commandName: 'games', args: [] });
         assert.equal(applyWordAliases('العاب', ['حلوة'], false), null);
         for (const word of ['games', 'العاب', 'ألعاب', 'الالعاب', 'الألعاب']) assert.equal(commandArgAliases[word], 'games');
@@ -315,17 +291,17 @@ describe('typed words of the new games', () => {
             const { options } = parsed;
             return [options.getSubcommand(), options.getInteger('bet'), options.getNumber('target'), options.getString('direction'), options.getInteger('number'), options.getString('choice')];
         };
-        assert.deepEqual(parse(['crash', '100', '2.5']), ['crash', 100, 2.5, null, null, null]);
+        // `!casino crash 100 2.5` is the rocket too.
+        assert.deepEqual(parse(['crash', '100', '2.5']), ['rocket', 100, 2.5, null, null, null]);
         assert.deepEqual(parse(['rocket', '100']), ['rocket', 100, null, null, null, null]);
         assert.deepEqual(parse(['dice', '100', 'تحت', '30']), ['dice', 100, null, 'under', 30, null]);
         assert.deepEqual(parse(['roulette', '100', 'اسود']), ['roulette', 100, null, null, null, 'اسود']);
-        assert.match(casinoCommand.parsePrefixArgs(['crash']).error, /كراش 100 2\.5/u);
+        assert.match(casinoCommand.parsePrefixArgs(['crash']).error, /صاروخ 100[\s\S]*كراش 100 2\.5/u);
         assert.match(casinoCommand.parsePrefixArgs(['roulette', 'x', 'y']).error, /روليت 100 احمر/u);
-        assert.match(casinoUsageText(), /كراش[\s\S]*نرد[\s\S]*روليت[\s\S]*صاروخ[\s\S]*العاب/u);
+        assert.match(casinoUsageText(), /نرد[\s\S]*روليت[\s\S]*صاروخ[\s\S]*كراش[\s\S]*العاب/u);
     });
 
-    test('typed crash and dice play in the casino room; a bad number is explained, chat stays quiet', async () => {
-        CASINO.crash.frameMs = 0;
+    test('typed crash boards the room rocket and dice plays in the casino room; a bad number is explained, chat stays quiet', async () => {
         const client = fakeClient();
         await fund(client, A, 1000);
         await loadCommands(client);
@@ -339,10 +315,12 @@ describe('typed words of the new games', () => {
             },
         };
         const typed = (content) => messageCreate.execute({ guildId: GUILD, content, author: { id: A, bot: false, toString: () => `<@${A}>` }, channel, channelId: ROOM }, client);
+        // `كراش 100 2.5` opens the room's rocket, with an automatic cash-out at ×2.50.
         await typed('كراش 100 2.5');
         assert.equal(sent.length, 1);
-        assert.match(sent[0].embeds[0].description, /🚀 ×1\.00/u);
-        assert.match(sent[0].edits.at(-1).embeds[0].description, /(✅ ×2\.50|💥)/u);
+        assert.equal(sent[0].embeds[0].title, '🚀 صاروخ');
+        const rocket = client.store.get(roundKey('rocket', ROOM));
+        assert.deepEqual([rocket.status, rocket.lang, rocket.bets], ['open', 'ar', [{ userId: A, bet: 100, target: 250 }]]);
         resetCasinoSessions();
         await typed('نرد 100 فوق 70');
         assert.match(sent[1].embeds[0].description, /فوق 70/u);
@@ -350,11 +328,13 @@ describe('typed words of the new games', () => {
         await typed('نرد 100 فوق 2');
         assert.match(sent[2].content, /اختار `تحت`/u);
         await typed('!كراش');
-        assert.match(sent[3].content, /كراش 100 2\.5/u);
+        assert.match(sent[3].content, /صاروخ 100[\s\S]*كراش 100 2\.5/u);
         for (const chat of ['كراش', 'عندي كراش', 'صاروخ', 'نرد كبير']) await typed(chat);
         assert.equal(sent.length, 4);
+        // The dice is played; the rocket bet is taken and waits for the take-off.
         const stats = saved(client, A).ccCasinoStats;
-        assert.equal(stats.played, 2);
+        assert.equal(stats.played, 1);
+        assert.equal(saved(client, A).ccCasinoBets.length, 1);
         assert.equal(await balance(client, A), 800 + stats.paidOut);
     });
 });
@@ -368,11 +348,13 @@ describe('the games menu', () => {
         assert.equal(solo.title, '🎯 الألعاب الفردية');
         assert.equal(group.title, '👥 الألعاب الجماعية');
         assert.match(intro.description, /فردية[\s\S]*جماعية/u);
-        assert.deepEqual(solo.fields.map((field) => field.name), ['💣 ماينز', '🪙 ملك ولا كتابة', '🎰 سلوت', '📈 كراش', '🎲 نرد']);
+        assert.deepEqual(solo.fields.map((field) => field.name), ['💣 ماينز', '🪙 ملك ولا كتابة', '🎰 سلوت', '🎲 نرد']);
         assert.deepEqual(group.fields.map((field) => field.name), ['🎡 روليت', '🚀 صاروخ (كراش جماعي)']);
+        // `كراش` is shown as the rocket itself.
+        assert.ok(group.fields[1].value.includes('`كراش 100 2.5`') && group.fields[1].value.includes('`كراش` هو نفس الصاروخ'));
         const edges = casinoEdges();
-        const games = ['mines', 'coinflip', 'slots', 'crash', 'dice', 'roulette', 'rocket'];
-        const examples = ['`مينز 100 3`', '`عملة 100 ملك`', '`سلوت 100`', '`كراش 100 2.5`', '`نرد 100 فوق 70`', '`روليت 100 احمر`', '`صاروخ 100`'];
+        const games = ['mines', 'coinflip', 'slots', 'dice', 'roulette', 'rocket'];
+        const examples = ['`مينز 100 3`', '`عملة 100 ملك`', '`سلوت 100`', '`نرد 100 فوق 70`', '`روليت 100 احمر`', '`صاروخ 100`'];
         [...solo.fields, ...group.fields].forEach((field, i) => {
             assert.ok(field.value.includes(examples[i]), field.name);
             assert.ok(field.value.includes(`\`/casino ${games[i]}\``), field.name);
@@ -412,14 +394,23 @@ describe('the games menu', () => {
         await loadCommands(client);
         const sent = [];
         const typed = (content) => messageCreate.execute({ guildId: GUILD, content, author: { id: A, bot: false }, channel: { id: ROOM, send: async (payload) => { sent.push(payload); } }, channelId: ROOM }, client);
-        for (const word of ['العاب', 'ألعاب', 'الالعاب', 'الألعاب', 'games', '!العاب']) {
+        for (const word of ['العاب', 'ألعاب', 'الالعاب', 'الألعاب', '!العاب']) {
             await typed(word);
             assert.deepEqual(sent.at(-1).embeds.map((embed) => embed.title), ['🎮 ألعاب CC bot', '🎯 الألعاب الفردية', '👥 الألعاب الجماعية'], word);
             assert.deepEqual(sent.at(-1).allowedMentions, { parse: [] });
         }
-        assert.equal(sent.length, 6);
-        for (const chat of ['العاب حلوة', 'العاب 100', '!العاب كتير', 'العاب الفيديو']) await typed(chat);
-        assert.equal(sent.length, 6);
+        // The English word shows the English menu.
+        for (const word of ['games', '!games', 'Games']) {
+            await typed(word);
+            assert.deepEqual(sent.at(-1).embeds.map((embed) => embed.title), ['🎮 CC bot games', '🎯 Solo games', '👥 Group games'], word);
+            assert.deepEqual(sent.at(-1).embeds[1].fields.map((field) => field.name), ['💣 Mines', '🪙 Coinflip', '🎰 Slots', '🎲 Dice']);
+            // `crash` is shown as the rocket itself.
+            assert.ok(sent.at(-1).embeds[2].fields[1].value.includes('`rocket 100`') && sent.at(-1).embeds[2].fields[1].value.includes('`crash 100 2.5`'));
+            assert.ok(sent.at(-1).embeds[2].fields[1].value.includes('House edge **3%**'));
+        }
+        assert.equal(sent.length, 8);
+        for (const chat of ['العاب حلوة', 'العاب 100', '!العاب كتير', 'العاب الفيديو', 'games are fun']) await typed(chat);
+        assert.equal(sent.length, 8);
         assert.deepEqual(client.writes, []);
 
         const replies = [];
@@ -435,10 +426,12 @@ describe('the games menu', () => {
     test('the guide points to the menu and explains the new games', () => {
         const casino = guideEmbeds(GUILD).find((embed) => embed.title === '🎰 شرح الكازينو');
         assert.match(casino.description, /`العاب`، `ألعاب` أو `\/games`/u);
-        for (const sub of ['crash', 'dice', 'roulette', 'rocket']) assert.match(casino.description, new RegExp(`/casino ${sub}`, 'u'));
+        for (const sub of ['dice', 'roulette', 'rocket']) assert.match(casino.description, new RegExp(`/casino ${sub}`, 'u'));
+        assert.doesNotMatch(casino.description, /\/casino crash/u);
+        // The rocket's typed words include `كراش` / `crash`.
         assert.match(casino.description, /`كراش`[\s\S]*`صاروخ`/u);
         assert.match(casino.description, /\*\*2\.7%\*\* في الروليت/u);
-        assert.match(guideEmbeds(GUILD)[0].description, /7 ألعاب/u);
+        assert.match(guideEmbeds(GUILD)[0].description, /6 ألعاب/u);
     });
 
     test('with casino rooms, the menu answers there and in the bot channels and names the rooms; the games stay in the rooms', () => {

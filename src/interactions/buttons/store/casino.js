@@ -1,11 +1,13 @@
 import { MessageFlags } from 'discord.js';
 import { isAllowedGuild, isCasinoChannel } from '../../../config/runtime.js';
-import { CASINO_BUTTON_PREFIX, casinoChannelNotice } from '../../../config/casino.js';
-import { pickMinesCell, cashOutMines } from '../../../services/cc/casinoService.js';
-import { minesBoardPayload } from '../../../services/cc/casinoUi.js';
-import { withCasinoLock, scheduleIdleCashOut, cancelIdleCashOut, showMinesResult } from '../../../services/cc/casinoSessions.js';
-import { rocketCashOut } from '../../../services/cc/casinoGroupSessions.js';
-import { rocketClickText } from '../../../services/cc/casinoGroupUi.js';
+import { CASINO_BUTTON_PREFIX, GROUP_GAMES, casinoChannelNotice, rouletteChoice } from '../../../config/casino.js';
+import { isValidBet, pickMinesCell, cashOutMines } from '../../../services/cc/casinoService.js';
+import { minesBoardPayload, casinoErrorText, casinoFailureText } from '../../../services/cc/casinoUi.js';
+import { onCasinoCooldown, withCasinoLock, scheduleIdleCashOut, cancelIdleCashOut, showMinesResult } from '../../../services/cc/casinoSessions.js';
+import { rocketCashOut, placeGroupBet, liveRound } from '../../../services/cc/casinoGroupSessions.js';
+import { playerLanguage, roundLanguage } from '../../../services/cc/casinoGroupService.js';
+import { rocketClickText, joinModal, parseFormAmount, choiceLabel } from '../../../services/cc/casinoGroupUi.js';
+import { buttonLanguage, inLang } from '../../../services/cc/lang.js';
 import { logger } from '../../../utils/logger.js';
 
 // The mines board buttons: `casino:pick:<gameId>:<cell>:<userId>` opens a cell (0–8, row by row) and
@@ -17,33 +19,130 @@ import { logger } from '../../../utils/logger.js';
 // The rocket's button: `casino:rocket:<roundId>` cashes the clicker out of the room's rocket at the
 // multiplier it had when the click reached the bot (casinoGroupSessions.js). Anyone may press it; only a
 // rider still on board is paid, once, and everybody else is told why privately.
+//
+// Languages (src/services/cc/lang.js, buttonLanguage): the board and the round's message keep their own
+// language; a private answer is in the clicker's: a rider's own command language (saved with their bet), else
+// Arabic for an Arabic Discord, else the language of the message they clicked (a board, a round), else their
+// Discord language.
+
+const TEXT = {
+    ar: {
+        dead: 'الزرار ده مبقاش شغال.',
+        deadForm: 'الفورم ده مبقاش شغال.',
+        notYours: '❌ الزرار ده مش ليك.',
+        gameOver: '⌛ اللعبة دي خلصت خلاص.',
+        roundClosed: '⌛ الجولة دي قفلت. ابدأ جولة جديدة.',
+        tryAgainQuickly: '❌ حصل خطأ. حاول تاني بسرعة.',
+        joined: (bet, what) => `✅ دخلت بـ **${bet}** CC${what}.`,
+        on: (choice) => ` على ${choice}`,
+    },
+    en: {
+        dead: 'This button no longer works.',
+        deadForm: 'This form no longer works.',
+        notYours: '❌ This button is not yours.',
+        gameOver: '⌛ This game is already over.',
+        roundClosed: '⌛ This round is closed. Start a new one.',
+        tryAgainQuickly: '❌ Something went wrong. Try again quickly.',
+        joined: (bet, what) => `✅ You're in with **${bet}** CC${what}.`,
+        on: (choice) => ` on ${choice}`,
+    },
+};
+const say = (lang) => inLang(lang, TEXT);
 
 const privately = (interaction, content) => interaction.reply({ content, allowedMentions: { parse: [] }, flags: MessageFlags.Ephemeral }).catch(() => {});
 const followUp = (interaction, content) => interaction.followUp({ content, allowedMentions: { parse: [] }, flags: MessageFlags.Ephemeral }).catch(() => {});
 
+/** The room's open round of `game` when it is round `roundId` and still takes bets, else null. */
+function openRound(game, channelId, roundId) {
+    if (!GROUP_GAMES.includes(game) || !/^[a-f0-9]{12}$/u.test(roundId || '')) return null;
+    const open = liveRound(game, channelId);
+    return open?.roundId === roundId && open.phase === 'open' ? open : null;
+}
+
+/** The clicker's language in a round: their own if they bet in it, else the round's (the message they clicked). */
+const roundAnswerLanguage = (interaction, round) => buttonLanguage(interaction, round
+    ? { member: playerLanguage(round, interaction.user.id), message: roundLanguage(round) }
+    : {});
+
 async function rocketButton(interaction, client, roundId) {
     // The click counts when it reached the bot, not when its turn in the queue comes.
     const receivedAt = Date.now();
-    if (!roundId || !/^[a-f0-9]{12}$/u.test(roundId)) return privately(interaction, 'الزرار ده مبقاش شغال.');
+    if (!roundId || !/^[a-f0-9]{12}$/u.test(roundId)) return privately(interaction, say(buttonLanguage(interaction)).dead);
     await interaction.deferUpdate().catch(() => {});
     const userId = interaction.user.id;
+    // The round as last saved: the rider's own language is kept in their bet.
+    const knownRound = (result = {}) => {
+        const live = liveRound('rocket', interaction.channelId);
+        return result.round || (live?.roundId === roundId ? live.round : null);
+    };
     try {
         const result = await withCasinoLock(userId, () => rocketCashOut(client, { channelId: interaction.channelId, userId, roundId, receivedAt }));
-        return followUp(interaction, rocketClickText(result));
+        return followUp(interaction, rocketClickText(result, roundAnswerLanguage(interaction, knownRound(result))));
     } catch (error) {
         logger.error('Rocket cash-out failed', error.code || error.message);
-        return followUp(interaction, '❌ حصل خطأ. حاول تاني بسرعة.');
+        return followUp(interaction, say(roundAnswerLanguage(interaction, knownRound())).tryAgainQuickly);
     }
+}
+
+// The join button of a group round (`casino:join:<game>:<roundId>`) opens a small form; its submit
+// (`casino:joinm:<game>:<roundId>`) puts the member's bet on that round, but only while it still takes bets.
+async function joinButton(interaction, game, roundId) {
+    const open = openRound(game, interaction.channelId, roundId);
+    const lang = roundAnswerLanguage(interaction, open?.round);
+    if (!open) return privately(interaction, say(lang).roundClosed);
+    return interaction.showModal(joinModal(game, roundId, lang)).catch(() => {});
+}
+
+async function joinSubmit(interaction, client, game, roundId) {
+    const channelId = interaction.channelId;
+    const userId = interaction.user.id;
+    const open = openRound(game, channelId, roundId);
+    // The form was in this language (joinButton), so is everything said about it.
+    const lang = roundAnswerLanguage(interaction, open?.round);
+    if (!open) return privately(interaction, say(lang).roundClosed);
+    const bet = parseFormAmount(interaction.fields.getTextInputValue('amount'));
+    if (!isValidBet(bet)) return privately(interaction, casinoFailureText({ reason: 'bad_bet' }, lang));
+    let pick = null;
+    if (game === 'roulette') {
+        pick = rouletteChoice(interaction.fields.getTextInputValue('choice'));
+        if (pick === null) return privately(interaction, casinoFailureText({ reason: 'bad_choice' }, lang));
+    }
+    if (onCasinoCooldown(userId)) return privately(interaction, casinoFailureText({ reason: 'cooldown' }, lang));
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
+    try {
+        const result = await withCasinoLock(userId, () => placeGroupBet(client, {
+            guildId: interaction.guildId, userId, channelId, game, bet, pick, lang,
+            // A round that closed a moment ago and opened again opens with this bet: its message goes to the room.
+            reply: (payload) => interaction.channel.send(payload),
+            editFor: (sent) => (payload) => sent.edit(payload),
+        }));
+        if (!result.ok) return followUp(interaction, casinoFailureText(result, lang));
+        const what = game === 'roulette' ? say(lang).on(choiceLabel(result.stake.choice, lang)) : '';
+        return followUp(interaction, say(lang).joined(result.stake.bet.toLocaleString('en-US'), what));
+    } catch (error) {
+        logger.error('Group join failed', error.code || error.message);
+        return followUp(interaction, say(lang).tryAgainQuickly);
+    }
+}
+
+async function executeModal(interaction, client, [action, game, roundId]) {
+    if (!interaction.inGuild?.()) return;
+    if (!isAllowedGuild(interaction.guildId) || !isCasinoChannel(interaction.channel, interaction.channelId)) return privately(interaction, casinoChannelNotice(buttonLanguage(interaction)));
+    if (action !== 'joinm') return privately(interaction, say(buttonLanguage(interaction)).deadForm);
+    return joinSubmit(interaction, client, game, roundId);
 }
 
 async function execute(interaction, client, [action, gameId, ...rest]) {
     if (!interaction.inGuild?.()) return;
-    if (!isAllowedGuild(interaction.guildId) || !isCasinoChannel(interaction.channel, interaction.channelId)) return privately(interaction, casinoChannelNotice());
-    if (action === 'rocket') return rest.length ? privately(interaction, 'الزرار ده مبقاش شغال.') : rocketButton(interaction, client, gameId);
+    // A mines board's answers: the language of the board clicked (its owner's command), else the Discord language.
+    const lang = buttonLanguage(interaction);
+    if (!isAllowedGuild(interaction.guildId) || !isCasinoChannel(interaction.channel, interaction.channelId)) return privately(interaction, casinoChannelNotice(lang));
+    if (action === 'join') return rest.length === 1 ? joinButton(interaction, gameId, rest[0]) : privately(interaction, say(lang).dead);
+    if (action === 'rocket') return rest.length ? privately(interaction, say(lang).dead) : rocketButton(interaction, client, gameId);
     const ownerId = rest[rest.length - 1];
-    if (ownerId !== interaction.user.id) return privately(interaction, '❌ الزرار ده مش ليك.');
+    if (ownerId !== interaction.user.id) return privately(interaction, say(lang).notYours);
     const cell = action === 'pick' && rest.length === 2 && /^\d$/u.test(rest[0]) ? Number(rest[0]) : null;
-    if (!gameId || (action === 'pick' ? cell === null : action !== 'cashout' || rest.length !== 1)) return privately(interaction, 'الزرار ده مبقاش شغال.');
+    if (!gameId || (action === 'pick' ? cell === null : action !== 'cashout' || rest.length !== 1)) return privately(interaction, say(lang).dead);
 
     await interaction.deferUpdate().catch(() => {});
     const userId = interaction.user.id;
@@ -53,7 +152,8 @@ async function execute(interaction, client, [action, gameId, ...rest]) {
             const result = action === 'pick'
                 ? await pickMinesCell(client, interaction.guildId, userId, gameId, cell)
                 : await cashOutMines(client, interaction.guildId, userId, gameId);
-            if (!result.ok) return followUp(interaction, '⌛ اللعبة دي خلصت خلاص.');
+            if (!result.ok) return followUp(interaction, say(lang).gameOver);
+            // The board itself keeps the language it was opened in (its saved `lang`).
             if (result.outcome === 'safe' || result.outcome === 'duplicate') {
                 scheduleIdleCashOut(client, result.game, userId, { edit });
                 return edit(minesBoardPayload(result.game, userId)).catch(() => {});
@@ -64,8 +164,8 @@ async function execute(interaction, client, [action, gameId, ...rest]) {
     } catch (error) {
         // The board stays as it was (its timer still cashes it out); only the clicker hears about it.
         logger.error('Casino button failed', error.code || error.message);
-        await followUp(interaction, '❌ حصل خطأ. حاول تاني بعد شوية.');
+        await followUp(interaction, casinoErrorText(lang));
     }
 }
 
-export default { name: CASINO_BUTTON_PREFIX, execute };
+export default { name: CASINO_BUTTON_PREFIX, execute, executeModal };

@@ -5,9 +5,15 @@
 //
 // Money moves only through updateCCState (ccService.js), like the solo games, and a bet is never lost on a
 // restart or a crash:
-// - The round is saved at `guild:<scope>:casino:<game>:<roomId>` (getCasinoRoundKey):
-//     { id, game, status, guildId, channelId, messageId, openedAt, closesAt, bets: [{ userId, bet, choice | target }],
+// - The round is saved at `guild:<scope>:casino:<game>:<roomId>` (getCasinoRoundKey): one round per game per
+//   room, whatever the language the members type in (`rocket`, `crash`, `صاروخ` and `كراش` all join it):
+//     { id, game, status, guildId, channelId, messageId, lang, openedAt, closesAt,
+//       bets: [{ userId, bet, choice | target, lang? }],
 //       pocket, spunAt (roulette) | crash, capped, flightAt, crashedAt (rocket) }
+//   `lang` ('ar' | 'en') is the language of the round's one shared message: the language of the member who
+//   opened it, kept for every later edit (rounds saved before it existed read as 'ar'). So a room that mixes
+//   languages sees the opener's language on the shared message; a bet's own `lang` is only saved when it differs
+//   from the round's, and makes that member's private answers (their cash-out clicks) follow their own command.
 //   status 'open' (taking bets) → roulette 'spun' (the pocket is drawn) / rocket 'flying' (the crash point is
 //   drawn, never shown before the crash) → rocket 'crashed' → `{ id, game, status: 'done', endedAt }`.
 // - Each member's stake stays in their own economy record until it is settled:
@@ -31,6 +37,7 @@ import { updateCCState } from './ccService.js';
 import {
     draw, drawCrashPoint, isValidBet, isValidCrashTarget, multiplyHundredths, payOut, returnBet, secureRandomInt, takeBet,
 } from './casinoService.js';
+import { DEFAULT_LANG, isLang, readLang } from './lang.js';
 
 const ACTIVE = new Set(['open', 'spun', 'flying', 'crashed']);
 
@@ -95,14 +102,33 @@ export function rocketExit(entry, multiplier, crash) {
 const isBetEntry = (entry) => entry && typeof entry === 'object' && typeof entry.userId === 'string'
     && Number.isSafeInteger(entry.bet) && entry.bet > 0 && entry.bet <= CASINO_BET_LIMITS.ceiling;
 
-/** A saved round that is still being played, or null (none, finished or damaged). */
+/**
+ * A saved round that is still being played, or null (none, finished or damaged). Its `lang` is checked too, but
+ * only text depends on it: a round saved before it existed, or with a value that isn't 'ar' or 'en', reads as
+ * 'ar' (it never makes the round unreadable, which would refund or skip its bets).
+ */
 export function readRound(raw) {
     if (!raw || typeof raw !== 'object' || !GROUP_GAMES.includes(raw.game) || !ACTIVE.has(raw.status)) return null;
     if (typeof raw.id !== 'string' || !raw.id || typeof raw.channelId !== 'string') return null;
     if (!Array.isArray(raw.bets) || !raw.bets.every(isBetEntry) || !Number.isFinite(raw.closesAt)) return null;
     if (raw.status === 'spun' && !(Number.isSafeInteger(raw.pocket) && raw.pocket >= 0 && raw.pocket < CASINO.roulette.pockets)) return null;
     if ((raw.status === 'flying' || raw.status === 'crashed') && !(Number.isSafeInteger(raw.crash) && raw.crash > 0 && Number.isFinite(raw.flightAt))) return null;
+    if (!isLang(raw.lang)) raw.lang = DEFAULT_LANG;
     return raw;
+}
+
+/** The language of the round's shared message (its opener's): 'ar' or 'en'. */
+export const roundLanguage = (round) => readLang(round?.lang);
+
+/**
+ * The language `userId` plays `round` in: their latest bet's own language, else the round's. null when they have
+ * no bet in it (a stranger: their answers follow the message they clicked).
+ */
+export function playerLanguage(round, userId) {
+    const mine = Array.isArray(round?.bets) ? round.bets.filter((entry) => entry.userId === userId) : [];
+    if (!mine.length) return null;
+    const own = mine.at(-1).lang;
+    return isLang(own) ? own : roundLanguage(round);
 }
 
 const isStake = (stake) => stake && typeof stake === 'object' && typeof stake.round === 'string'
@@ -121,11 +147,12 @@ function setStakes(record, stakes) {
     else delete record.ccCasinoBets;
 }
 
-function newRound(game, guildId, channelId, now) {
+/** A new round; `lang` is the language of the member who opens it, kept for the round's shared message. */
+function newRound(game, guildId, channelId, now, lang) {
     const { joinMs } = CASINO[game];
     return {
         id: randomBytes(6).toString('hex'), game, status: 'open',
-        guildId: guildId ? String(guildId) : null, channelId: String(channelId), messageId: null,
+        guildId: guildId ? String(guildId) : null, channelId: String(channelId), messageId: null, lang: readLang(lang),
         openedAt: now, closesAt: now + joinMs, bets: [],
     };
 }
@@ -139,11 +166,12 @@ function badPick(game, pick) {
 /**
  * Puts `bet` on the room's round of `game` (a new round when none is open): the bet is taken from the member and
  * written into the round in one transaction. `pick` is roulette's choice or the rocket's automatic cash-out
- * (hundredths, or null). Returns `{ ok: true, round, created, stake, before, balance }` or `{ ok: false, reason }`:
- * bad_bet, bad_choice, bad_target, busy (a round is being played, with `round`), full, too_many (the member's
- * roulette bets in the round), joined (already on this rocket), no_cc (with `balance`).
+ * (hundredths, or null); `lang` the language the member bets in (a new round takes it for its message). Returns
+ * `{ ok: true, round, created, stake, before, balance }` or `{ ok: false, reason }`: bad_bet, bad_choice,
+ * bad_target, busy (a round is being played, with `round`), full, too_many (the member's roulette bets in the
+ * round), joined (already on this rocket), no_cc (with `balance`).
  */
-export async function joinRound(client, guildId, userId, game, { channelId, bet, pick = null } = {}, { now = Date.now() } = {}) {
+export async function joinRound(client, guildId, userId, game, { channelId, bet, pick = null, lang = null } = {}, { now = Date.now() } = {}) {
     if (!GROUP_GAMES.includes(game) || !channelId) return { ok: false, reason: 'busy' };
     if (!isValidBet(bet)) return { ok: false, reason: 'bad_bet' };
     const bad = badPick(game, pick);
@@ -152,7 +180,7 @@ export async function joinRound(client, guildId, userId, game, { channelId, bet,
     return atomically(client, () => updateCCState(client, guildId, userId, async (state, record) => {
         const saved = readRound(await client.db.get(key, null));
         if (saved && (saved.status !== 'open' || now >= saved.closesAt)) return { ok: false, reason: 'busy', round: saved, skipSave: true };
-        const round = saved || newRound(game, guildId, channelId, now);
+        const round = saved || newRound(game, guildId, channelId, now, lang);
         const mine = round.bets.filter((entry) => entry.userId === userId).length;
         if (game === 'roulette') {
             if (round.bets.length >= CASINO.roulette.maxBets) return { ok: false, reason: 'full', skipSave: true };
@@ -167,7 +195,9 @@ export async function joinRound(client, guildId, userId, game, { channelId, bet,
         const detail = game === 'roulette' ? { choice: pick } : { target: pick };
         const stake = { round: round.id, game, channelId: String(channelId), bet, ...detail, at: now };
         setStakes(record, [...savedStakes(record), stake]);
-        round.bets.push({ userId, bet, ...detail });
+        // The member's own language only when it differs from the round's (see the header).
+        const own = isLang(lang) && lang !== round.lang ? { lang } : {};
+        round.bets.push({ userId, bet, ...detail, ...own });
         await saveRound(client, key, round);
         return { ok: true, round, created: !saved, stake, before };
     }));

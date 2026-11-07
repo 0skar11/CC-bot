@@ -1,15 +1,18 @@
-// casinoService.js — the CC casino's solo games, rules and money: mines, coinflip, slots, crash and dice.
-// The payouts and the house edge are explained in src/config/casino.js; the embeds are casinoUi.js and the
-// live mines boards (timeout, restart) casinoSessions.js. The group games are casinoGroupService.js.
+// casinoService.js — the CC casino's solo games, rules and money: mines, coinflip, slots and dice, and the crash
+// point the group rocket flies with (casinoGroupService.js). The payouts and the house edge are explained in
+// src/config/casino.js; the embeds are casinoUi.js and the live mines boards (timeout, restart)
+// casinoSessions.js. The group games are casinoGroupService.js. playCrash (a crash bet against the house) is
+// kept as the tested reference of the crash math only: no command plays it (`كراش` / `crash` are the rocket).
 //
 // Every balance change goes through updateCCState (ccService.js), one save per step under the member's
 // lock: the bet is taken in the same save that starts a game and the payout added in the same save that
 // ends it, so a bet can't be spent twice, a game can't be paid twice and nothing is left half done.
-// Coinflip, slots, crash and dice are over in that one save (crash only animates the result afterwards).
-// A mines game is kept in the member's economy record
+// Coinflip, slots and dice are over in that one save. A mines game is kept in the member's economy record
 // until it ends, so a restart or a crash never loses the bet:
-//   ccCasino: { id, game: 'mines', bet, mines: [cells], picks: [cells], guildId, channelId, messageId,
+//   ccCasino: { id, game: 'mines', bet, mines: [cells], picks: [cells], guildId, channelId, messageId, lang,
 //               startedAt, lastActionAt }
+// `lang` ('ar' | 'en', text only) is the language of the command that opened the board: every later edit of
+// it (clicks, the timeout, the restart check) stays in that language.
 // `mines` are the cells (0–8, row by row) hiding a mine, drawn with crypto.randomInt when the game starts
 // and never shown before it ends; `picks` are the safe cells opened, in order. A button carries its game
 // `id`, so a button of an ended or older game changes nothing. A member plays one game at a time.
@@ -20,6 +23,7 @@ import { randomBytes, randomInt as cryptoRandomInt } from 'node:crypto';
 import { CASINO, COIN_SIDES } from '../../config/casino.js';
 import { CASINO_BET_LIMITS } from '../../config/runtime.js';
 import { updateCCState } from './ccService.js';
+import { readLang } from './lang.js';
 
 /** A uniformly random whole number in [0, max), from crypto.randomInt. Tests pass their own `randomInt`. */
 export const secureRandomInt = (max) => cryptoRandomInt(max);
@@ -183,11 +187,11 @@ function refuseStart(state, record, bet) {
 }
 
 /**
- * Starts a mines board: takes the bet and hides `mines` mines in the same save. Returns
- * `{ ok: true, game, before, balance, previous }` (`previous` is an idle board settled first, or null) or
+ * Starts a mines board: takes the bet and hides `mines` mines in the same save (`lang` is the board's language).
+ * Returns `{ ok: true, game, before, balance, previous }` (`previous` is an idle board settled first, or null) or
  * `{ ok: false, reason }` with reason one of: bad_bet, bad_mines, active (with `game`), no_cc (with `balance`).
  */
-export async function startMines(client, guildId, userId, { bet, mines = CASINO.mines.default, channelId = null } = {}, { now = Date.now(), randomInt = secureRandomInt, idleMs = CASINO.idleMs } = {}) {
+export async function startMines(client, guildId, userId, { bet, mines = CASINO.mines.default, channelId = null, lang = null } = {}, { now = Date.now(), randomInt = secureRandomInt, idleMs = CASINO.idleMs } = {}) {
     if (!isValidBet(bet)) return { ok: false, reason: 'bad_bet' };
     if (!isValidMineCount(mines)) return { ok: false, reason: 'bad_mines' };
     return updateCCState(client, guildId, userId, (state, record) => {
@@ -199,7 +203,7 @@ export async function startMines(client, guildId, userId, { bet, mines = CASINO.
         const game = {
             id: randomBytes(6).toString('hex'), game: 'mines', bet, mines: placeMines(mines, randomInt), picks: [],
             guildId: guildId ? String(guildId) : null, channelId: channelId ? String(channelId) : null, messageId: null,
-            startedAt: now, lastActionAt: now,
+            lang: readLang(lang), startedAt: now, lastActionAt: now,
         };
         record.ccCasino = game;
         return { ok: true, game, before, previous };
@@ -333,7 +337,7 @@ export function casinoEdges() {
     };
 }
 
-// ---- Crash (also the rocket's crash point) and dice ----
+// ---- Crash (the rocket's crash point; playCrash and crashFrames are the tested crash engine) and dice ----
 
 /** `bet` × hundredths / 100 rounded down, exactly: no product above 2^53 even at the bet ceiling × 100. */
 export function multiplyHundredths(bet, hundredths) {
@@ -388,7 +392,8 @@ export function crashFrames(end, frames = CASINO.crash.frames) {
 /**
  * Crash, bet and payout in one save: the crash point is drawn, and the bet pays ×target when it reaches the
  * target. Returns `{ ok: true, bet, target, crash, payout, before, balance, previous }` or `{ ok: false, reason }`
- * (bad_bet, bad_target, active, no_cc) like startMines.
+ * (bad_bet, bad_target, active, no_cc) like startMines. Not reachable from any command (crash is the group
+ * rocket): it stays as the reference of the crash math the rocket's automatic cash-outs follow.
  */
 export async function playCrash(client, guildId, userId, { bet, target = CASINO.crash.defaultTarget } = {}, { now = Date.now(), randomInt = secureRandomInt, idleMs = CASINO.idleMs } = {}) {
     if (!isValidBet(bet)) return { ok: false, reason: 'bad_bet' };

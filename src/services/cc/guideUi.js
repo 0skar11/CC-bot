@@ -88,7 +88,7 @@ function bourseGuideEmbed(guildId) {
 }
 
 function casinoGuideEmbed() {
-    const { mines, coinflip, crash, roulette, rocket, minBet, maxBet, idleMs } = CASINO;
+    const { mines, coinflip, roulette, rocket, minBet, maxBet, idleMs } = CASINO;
     const edges = casinoEdges();
     const bet = minBet * 10;
     const rows = mines.cells / mines.columns;
@@ -106,8 +106,6 @@ function casinoGuideEmbed() {
         `> ملك ولا كتابة، المكسب **${times(coinflip.payoutPercent)}** ・ مكتوبة: ${code(aliasesFor('casino coinflip'))}`,
         `🎰 \`/casino slots\` ・ \`سلوت ${bet}\``,
         `> ${slotsTableText()} ・ مكتوبة: ${code(aliasesFor('casino slots'))}`,
-        `📈 \`/casino crash\` ・ \`كراش ${bet} 2.5\``,
-        `> اختار مضاعف من ${multiplierText(crash.minTarget)} لـ ${multiplierText(crash.maxTarget)}، ولو الصاروخ وصله قبل ما ينفجر تكسب الرهان × المضاعف ・ مكتوبة: ${code(aliasesFor('casino crash'))}`,
         `🎲 \`/casino dice\` ・ \`نرد ${bet} فوق 70\``,
         `> رقم من 0.00 لـ 99.99، \`فوق\` أو \`تحت\` رقمك: فرصة أقل = مكسب أكبر ・ مكتوبة: ${code(aliasesFor('casino dice'))}`,
         `🎡 \`/casino roulette\` ・ \`روليت ${bet} احمر\` (جماعية)`,
@@ -115,7 +113,7 @@ function casinoGuideEmbed() {
         `🚀 \`/casino rocket\` ・ \`صاروخ ${bet} 2\` (جماعية)`,
         `> كراش للروم كله بعد ${seconds(rocket.joinMs)} ثانية: دوس 💰 كاش أوت قبل ما ينفجر، أو حط مضاعف يخرّجك لوحده ・ مكتوبة: ${code(aliasesFor('casino rocket'))}`,
         '',
-        `⚖️ بصراحة: البيت ليه نسبة، **${edges.mines}%** في الماينز و**${edges.coinflip}%** في العملة و**${edges.slots}%** في السلوت و**${edges.crash}%** في الكراش و**${edges.dice}%** في النرد و**${edges.roulette}%** في الروليت و**${edges.rocket}%** في الصاروخ، يعني على المدى الطويل الكازينو بيكسب. العب بمزاج وماتراهنش بحاجة مش مستعد تخسرها.`,
+        `⚖️ بصراحة: البيت ليه نسبة، **${edges.mines}%** في الماينز و**${edges.coinflip}%** في العملة و**${edges.slots}%** في السلوت و**${edges.dice}%** في النرد و**${edges.roulette}%** في الروليت و**${edges.rocket}%** في الصاروخ، يعني على المدى الطويل الكازينو بيكسب. العب بمزاج وماتراهنش بحاجة مش مستعد تخسرها.`,
     ].join('\n'));
 }
 

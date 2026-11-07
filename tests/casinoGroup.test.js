@@ -353,10 +353,10 @@ describe('live group rounds', () => {
         await typed(B, 'روليت 50 17');
         await typed(C, 'روليت اسود 200');
         await typed(C, 'روليت 100 بنفسجي');
-        assert.equal(sent.length, 3);
+        // Only the round's own message is posted: a bet that joins it sends no "joined" message.
+        assert.equal(sent.length, 1);
         assert.equal(sent[0].payload.embeds[0].title, '🎡 روليت');
-        assert.match(sent[1].payload.content, new RegExp(`<@${B}> راهن .* على 🔢 17`, 'u'));
-        assert.match(sent[2].payload.content, /رصيدك/u);
+        assert.equal(sent[0].payload.components[0].components[0].data.custom_id.startsWith('casino:join:roulette:'), true, 'the join button');
         const key = roundKey('roulette', ROOM);
         assert.equal(client.store.get(key).messageId, sent[0].id);
         assert.equal(client.store.get(key).bets.length, 3);
@@ -387,8 +387,9 @@ describe('live group rounds', () => {
         assert.ok((await ride(A, 100)).created);
         assert.equal((await ride(B, 100, 150)).created, false);
         await ride(C, 100);
-        assert.match(replies[1].content, /هيخرج لوحده عند ×1\.50/u);
+        assert.equal(replies.length, 1, 'a rider who joins gets no extra message');
         assert.equal(replies[0].embeds[0].title, '🚀 صاروخ');
+        assert.equal(replies[0].components[0].components[0].data.custom_id.startsWith('casino:join:rocket:'), true, 'the join button');
         await until(() => liveRound('rocket', ROOM)?.phase === 'flying');
         const { roundId } = liveRound('rocket', ROOM);
         assert.equal((await ride(D, 100)).reason, 'busy');
@@ -421,6 +422,53 @@ describe('live group rounds', () => {
         const climbing = frames.map((payload) => Number(/# 🚀 ×([\d.]+)/u.exec(payload.embeds[0].description)[1]));
         assert.ok(climbing.every((value, i) => i === 0 || value >= climbing[i - 1]) && climbing.at(-1) < 4, climbing.join(' '));
         assert.equal((await rocketCashOut(client, { channelId: ROOM, userId: C, roundId })).reason, 'stale');
+    });
+
+    test('the join button opens a form for the amount, and its submit puts the bet on the open round only', async () => {
+        Object.assign(CASINO.roulette, { joinMs: 400, spinMs: 5 });
+        const client = fakeClient();
+        for (const id of [A, B, C]) await fund(client, id, 1000);
+        const sentRoom = [];
+        const table = { id: '700000000000000077', edit: async (payload) => { sentRoom.push(payload); } };
+        await placeGroupBet(client, {
+            guildId: GUILD, userId: A, channelId: ROOM, game: 'roulette', bet: 100, pick: 'red',
+            reply: async () => table, editFor: (sent) => (payload) => sent.edit(payload),
+        });
+        const { roundId } = liveRound('roulette', ROOM);
+        const said = [];
+        const base = (userId) => ({
+            inGuild: () => true, guildId: GUILD, channelId: ROOM, channel: { id: ROOM, send: async () => table }, user: { id: userId },
+            deferReply: async () => {}, followUp: async (payload) => { said.push([userId, payload.content]); }, reply: async (payload) => { said.push([userId, payload.content]); },
+        });
+        // The button opens the form of that round (amount + pick for roulette).
+        let modal = null;
+        await casinoButtons.execute({ ...base(B), showModal: async (form) => { modal = form.toJSON(); } }, client, ['join', 'roulette', roundId]);
+        assert.equal(modal.custom_id, `casino:joinm:roulette:${roundId}`);
+        assert.deepEqual(modal.components.map((row) => row.components[0].custom_id), ['amount', 'choice']);
+        // A button of an old round, or with a made-up game, only gets a private answer.
+        await casinoButtons.execute({ ...base(B), showModal: async () => assert.fail('no form') }, client, ['join', 'roulette', 'abcabcabcabc']);
+        assert.match(said.at(-1)[1], /قفلت/u);
+        const submit = (userId, amount, choice, id = roundId) => casinoButtons.executeModal({
+            ...base(userId), fields: { getTextInputValue: (name) => (name === 'amount' ? amount : choice) },
+        }, client, ['joinm', 'roulette', id]);
+        await submit(B, '٢٥٠', 'اسود');
+        assert.match(said.at(-1)[1], /دخلت بـ \*\*250\*\*/u);
+        assert.equal(await balance(client, B), 750);
+        await submit(C, 'abc', 'احمر');
+        assert.match(said.at(-1)[1], /الرهان لازم/u);
+        await submit(C, '100', 'بنفسجي');
+        assert.match(said.at(-1)[1], /اختار/u);
+        await submit(C, '5000', 'احمر');
+        assert.match(said.at(-1)[1], /مش كفاية|رصيدك/u);
+        await submit(C, '100', 'احمر', 'abcabcabcabc');
+        assert.match(said.at(-1)[1], /قفلت/u);
+        assert.equal(await balance(client, C), 1000);
+        assert.equal(client.store.get(roundKey('roulette', ROOM)).bets.length, 2);
+        await until(() => liveRound('roulette', ROOM) === null);
+        // After the spin the old form is refused.
+        await submit(C, '100', 'احمر');
+        assert.match(said.at(-1)[1], /قفلت/u);
+        assert.equal(saved(client, C).ccCasinoBets, undefined);
     });
 
     test('the flight frame carries the cash-out button of its round', () => {

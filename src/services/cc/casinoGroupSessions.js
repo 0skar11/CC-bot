@@ -4,7 +4,8 @@
 // the crash and, graceMs later, the riders still on board), the round message (edited at most every
 // CASINO.groupRenderMs while people join) and the startup check that settles the rounds a restart or a crash
 // left behind. The timers live in memory only; the round and every stake are saved, so a lost timer never loses
-// a bet (the restart check, or the next bet in that room, settles the round).
+// a bet (the restart check, or the next bet in that room, settles the round). Every payload is built from the
+// saved round, so every edit of its message (and the restart notice) stays in the round's saved `lang`.
 
 import { CASINO } from '../../config/casino.js';
 import { economyScopeId } from '../../config/runtime.js';
@@ -17,7 +18,7 @@ import {
     refundOrphanStakes, rocketMultiplierAt, rocketTimeTo, roundKey, settleRound, settleStaleRound, spinRoulette, withRoundLock,
 } from './casinoGroupService.js';
 import {
-    groupJoinText, groupRecoveryPayload, rocketEndPayload, rocketFlightPayload, rocketTablePayload, rouletteResultPayload, rouletteTablePayload,
+    groupRecoveryPayload, rocketEndPayload, rocketFlightPayload, rocketTablePayload, rouletteResultPayload, rouletteTablePayload,
 } from './casinoGroupUi.js';
 
 // key → the round this process plays in that room:
@@ -212,17 +213,20 @@ async function replySafely(reply, payload) {
 }
 
 /**
- * A member's bet on the room's round (`/casino roulette|rocket`, `روليت 100 احمر`, `صاروخ 100 2`): opens a round
- * when none is open, whose message is the reply (`reply` sends it, `editFor(sent)` edits it later), or joins the
- * open one with a short reply. A round left in the room by an earlier run is settled first. Returns joinRound's
- * result (casinoGroupService.js); `randomInt` (tests) draws the round's pocket or crash point.
+ * A member's bet on the room's round (`/casino roulette|rocket`, `روليت 100 احمر`, `صاروخ 100 2`, `rocket 100`,
+ * `crash 100 2.5`): opens a round when none is open, whose message is the reply (`reply` sends it, `editFor(sent)`
+ * edits it later), or joins the open one silently. The round is the room's whatever the language: `lang` (the
+ * member's, 'ar' or 'en') only picks the language of a round this bet opens, which its shared message keeps to
+ * the end (a member typing the other language joins it as it is). A round left in the room by an earlier run is
+ * settled first. Returns joinRound's result (casinoGroupService.js); `randomInt` (tests) draws the round's pocket
+ * or crash point.
  */
-export async function placeGroupBet(client, { guildId, userId, channelId, game, bet, pick = null, reply, editFor }, { randomInt = secureRandomInt } = {}) {
+export async function placeGroupBet(client, { guildId, userId, channelId, game, bet, pick = null, lang = null, reply, editFor }, { randomInt = secureRandomInt } = {}) {
     const key = roundKey(game, channelId);
     const result = await withRoundLock(key, async () => {
         const stale = await settleStaleRound(client, key, { isLive: (round) => isLive(key, round.id) });
         if (stale) void showRecovered(client, stale).catch(() => {});
-        const joined = await joinRound(client, guildId, userId, game, { channelId, bet, pick });
+        const joined = await joinRound(client, guildId, userId, game, { channelId, bet, pick, lang });
         const entry = live.get(key);
         if (joined.ok && !joined.created && entry?.roundId === joined.round.id) entry.round = joined.round;
         return joined;
@@ -231,7 +235,7 @@ export async function placeGroupBet(client, { guildId, userId, channelId, game, 
     if (!result.created) {
         const entry = live.get(key);
         if (entry?.roundId === result.round.id) requestRender(client, entry);
-        await replySafely(reply, { content: groupJoinText(result, userId) });
+        // No "joined" message: the round's own message already lists every bet and rider (it was re-rendered above).
         return result;
     }
     const entry = {

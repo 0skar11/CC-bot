@@ -6,6 +6,8 @@ import { handleStreakCommand, handleStreakMessage } from '../services/cc/streakS
 import { handleStreakBotMessage } from '../services/cc/streakBotService.js';
 import { handleGamesBotWin } from '../services/cc/gamesBotService.js';
 import { handleGuideCommand } from '../services/cc/guideUi.js';
+import { casinoErrorText } from '../services/cc/casinoUi.js';
+import { wordLanguage } from '../services/cc/lang.js';
 import { logger } from '../utils/logger.js';
 
 const userArgument = /^(?:<@!?(\d{17,20})>|(\d{17,20}))$/u;
@@ -38,6 +40,9 @@ export default {
         if (!casino && !games && !isAllowedChannel(message.channel, message.channelId)) return;
         const command = client.commands.get(parsed.commandName);
         if (!command) return;
+        // The casino and the games menu answer in the language of the typed word (`rocket` English, `صاروخ`
+        // Arabic: src/services/cc/lang.js); the commands read it again from `_sourceMessage`.
+        const lang = wordLanguage(typed);
         const send = (payload) => {
             const { flags, ...publicPayload } = payload;
             return message.channel.send({ allowedMentions: { parse: [] }, ...publicPayload });
@@ -49,10 +54,10 @@ export default {
                 options, reply: send,
             };
             try { await command.execute(interaction, {}, client); }
-            catch (error) { logger.error('CC prefix command failed', error.code || error.message); await send({ content: '❌ حصل خطأ. حاول تاني بعد شوية.' }); }
+            catch (error) { logger.error('CC prefix command failed', error.code || error.message); await send({ content: casino || games ? casinoErrorText(lang) : '❌ حصل خطأ. حاول تاني بعد شوية.' }); }
         };
         if (casino) {
-            const game = command.parsePrefixArgs(parsed.args);
+            const game = command.parsePrefixArgs(parsed.args, { lang });
             if (game.error) return send({ content: game.error });
             return execute(game.options);
         }

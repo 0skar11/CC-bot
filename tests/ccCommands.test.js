@@ -168,13 +168,13 @@ test('removecc is owner only and never takes a balance below zero', async () => 
     assert.match(replies[1].embeds[0].description, /كل رصيده/u);
 });
 
-test('give needs the sender to be in the server for 30 days (anti-alt); the receiver can be new', async () => {
+test('give needs the sender to be in the server for 5 days (anti-alt); the receiver can be new', async () => {
     const client = await setup();
     const mk = (content, joined, replies) => ({ content, guildId: GUILD, author: SELF, guild: { members: { fetch: async (id) => ({ joinedTimestamp: id === OTHER.id ? joined.other : joined.self }) } }, channel: { send: async (p) => replies.push(p) } });
     const day = 86_400_000;
     let replies = [];
-    await messageCreate.execute(mk(`تحويل <@${OTHER.id}> 100`, { self: Date.now() - 2 * day, other: Date.now() - 40 * day }, replies), client);
-    assert.match(replies[0].content, /ليك في السيرفر 30 يوم/u);
+    await messageCreate.execute(mk(`تحويل <@${OTHER.id}> 100`, { self: Date.now() - 4 * day, other: Date.now() - 40 * day }, replies), client);
+    assert.match(replies[0].content, /ليك في السيرفر 5 يوم/u);
     assert.equal((await client.db.get(getEconomyKey(economyScopeId, SELF.id))).cc, 100);
     replies = [];
     await messageCreate.execute(mk(`تحويل <@${OTHER.id}> 100`, { self: Date.now() - 40 * day, other: Date.now() - 1 * day }, replies), client);

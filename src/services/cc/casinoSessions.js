@@ -3,8 +3,8 @@
 // timer that cashes a board out by itself CASINO.idleMs after its last move; the start cooldown; and the
 // startup check that settles the boards a restart or a crash left behind. The timers live in memory only:
 // the game itself is saved in the member's record, so a lost timer never loses a bet (the next start or
-// restart settles the board). Also the crash animation (the bet is settled before it starts). The group
-// rounds are casinoGroupSessions.js.
+// restart settles the board). The board's messages and notices are in the board's saved language (its `lang`).
+// The group rounds are casinoGroupSessions.js.
 
 import { CASINO } from '../../config/casino.js';
 import { economyScopeId } from '../../config/runtime.js';
@@ -12,8 +12,8 @@ import { economyScope } from '../../config/sharedEconomy.js';
 import { getEconomyPrefix } from '../../utils/database/keys.js';
 import { Mutex } from '../../utils/mutex.js';
 import { logger } from '../../utils/logger.js';
-import { crashFrames, readMinesGame, settleIdleMines } from './casinoService.js';
-import { crashFramePayload, crashResultPayload, minesResultPayload, minesNoticeText } from './casinoUi.js';
+import { readMinesGame, settleIdleMines } from './casinoService.js';
+import { minesResultPayload, minesNoticeText } from './casinoUi.js';
 
 // userId → { gameId, edit, timer }: the running board's inactivity timer.
 const timers = new Map();
@@ -51,7 +51,7 @@ async function fetchChannel(client, channelId) {
 
 /**
  * Shows an ended board: through `edit` (the live message) when given, else on the board's saved message,
- * else as a short notice in its room. Returns true when something was shown.
+ * else as a short notice in its room, in the board's language. Returns true when something was shown.
  */
 export async function showMinesResult(client, result, userId, edit = null) {
     const payload = minesResultPayload(result, userId);
@@ -140,26 +140,6 @@ export async function recoverCasinoGames(client, { now = Date.now(), idleMs = CA
         }
     }
     return summary;
-}
-
-const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, Math.max(0, ms)); });
-
-/**
- * The crash animation of a settled crash bet: `send` posts ×1.00, then `editFor(sent)` edits it once per step
- * (CASINO.crash.frameMs apart, inside Discord's edit rate limit, never on every tick) up to where it ends, then
- * shows the result. A failed edit only cuts the animation short; the result is then sent again once.
- */
-export async function animateCrash(result, user, { send, editFor }) {
-    const sent = await send(crashFramePayload(result, user, 100));
-    const edit = editFor(sent);
-    const end = result.payout > 0 ? result.target : Math.max(100, result.crash);
-    for (const step of crashFrames(end)) {
-        await sleep(CASINO.crash.frameMs);
-        if (!(await tryEdit(edit, crashFramePayload(result, user, step)))) break;
-    }
-    await sleep(CASINO.crash.frameMs);
-    if (!(await tryEdit(edit, crashResultPayload(result, user)))) await tryEdit(send, crashResultPayload(result, user));
-    return sent;
 }
 
 /** A new game settled an idle board first (casinoService.js): stop its timer and update its old message. */
