@@ -4,6 +4,7 @@ import { CASINO_COMMAND } from '../config/casino.js';
 import { applyWordAliases } from '../config/commands/commandAliases.js';
 import { handleStreakCommand, handleStreakMessage } from '../services/cc/streakService.js';
 import { handleStreakBotMessage } from '../services/cc/streakBotService.js';
+import { handleGamesBotWin } from '../services/cc/gamesBotService.js';
 import { handleGuideCommand } from '../services/cc/guideUi.js';
 import { logger } from '../utils/logger.js';
 
@@ -14,7 +15,7 @@ export default {
     async execute(message, client) {
         const guildId = message.guildId || message.guild?.id;
         // StreakBot's "تم تحديث الستريك" post pays the member CC by streak day (other bots are ignored).
-        if (message.author?.bot) { await handleStreakBotMessage(message); return; }
+        if (message.author?.bot) { if (!(await handleGamesBotWin(message))) await handleStreakBotMessage(message); return; }
         if (!isAllowedGuild(guildId)) return;
         const text = String(message.content || '').trim();
         const prefixed = text.startsWith(prefix);

@@ -3,6 +3,9 @@ export const CC = {
     // `give`: the first `cheapPerWeek` transfers of the last 7 days pay `taxPercent`; each one after that pays
     // `extraPercentPerTransfer` more, up to `maxTaxPercent` (5%, 5%, 5%, 10%, 15%, ... 50%).
     daily: { amount: 500 },
+    // Wins announced by the games bot (Clover): `win` = group game, `answer` = first to type the answer.
+    // `dailyCap` = most CC one member can get from them per UTC day.
+    gamesBot: { win: 500, answer: 50, dailyCap: 2000 },
     transfer: { minServerDays: 30, minAmount: 10, taxPercent: 5, cheapPerWeek: 3, extraPercentPerTransfer: 5, maxTaxPercent: 50 },
 };
 export function ccEmbed(title, description = '', { fields = [], thumbnail = null } = {}) {

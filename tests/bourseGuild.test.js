@@ -55,10 +55,10 @@ describe('standalone bourse guild boundary', () => {
             assert.deepEqual(sent, []);
         }
     });
-    test('only ready, messageCreate and interactionCreate listeners exist', async () => {
+    test('only ready, messageCreate, messageUpdate and interactionCreate listeners exist', async () => {
         const events = [];
         await loadEvents({ on: (name) => events.push(name), once: (name) => events.push(name) });
-        assert.deepEqual(events.sort(), ['clientReady', 'interactionCreate', 'messageCreate']);
+        assert.deepEqual(events.sort(), ['clientReady', 'interactionCreate', 'messageCreate', 'messageUpdate']);
     });
     test('dry registry contains exactly addcc, bourse, casino, cc, cctop, daily, give, help, removecc, the two stock button namespaces and the casino buttons', async () => {
         const client = {};
