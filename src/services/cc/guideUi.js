@@ -50,7 +50,7 @@ function ccGuideEmbed({ streak }) {
         '💸 **تجيب CC منين؟**',
         ...earn,
         `🎁 \`daily\` ・ ${number(CC.daily.amount)} ${CC.short} كل يوم.`,
-        `🔁 \`تحويل @عضو 100\` ・ تحويل CC لعضو تاني (ضريبة ${CC.transfer.taxPercent}% وبتزيد لو حوّلت كتير في الأسبوع، أقل تحويل ${number(CC.transfer.minAmount)}). لازم الاتنين يكونوا في السيرفر بقالهم **${CC.transfer.minServerDays} يوم** على الأقل.`,
+        `🔁 \`تحويل @عضو 100\` ・ تحويل CC لعضو تاني (ضريبة ${CC.transfer.taxPercent}% وبتزيد لو حوّلت كتير في الأسبوع، أقل تحويل ${number(CC.transfer.minAmount)}). لازم تكون في السيرفر بقالك **${CC.transfer.minServerDays} يوم** على الأقل (المستلم عادي يكون جديد).`,
         '',
         '💰 **رصيدك والترتيب**',
         `👛 \`/cc\` رصيدك، و\`/cc user:\` رصيد أي عضو. مكتوبة: ${code(['cc', ...aliasesFor('cc')])} (وممكن بعدها منشن أو ID).`,
