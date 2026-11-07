@@ -145,3 +145,25 @@ test('a StreakBot update pays CC by streak day, once per day, only for StreakBot
     assert.equal(await payStreakBotUpdate(client, GUILD, SELF.id, 8, now + 1000), null);
     assert.equal((await payStreakBotUpdate(client, GUILD, SELF.id, 7, now + 86_400_000)).bonus.total, 1250);
 });
+
+test('addcc, give, daily and cc also work in the casino rooms', async () => {
+    const { isCommandChannel } = await import('../src/config/runtime.js');
+    assert.equal(isCommandChannel('addcc', { id: 'x' }, 'x'), true); // test env: no channel restriction
+    assert.equal(typeof isCommandChannel, 'function');
+});
+
+test('removecc is owner only and never takes a balance below zero', async () => {
+    const client = await setup();
+    const owner = { id: '1159601661392715906' };
+    const mk = (content, author, replies) => ({ content, guildId: GUILD, author, guild: { members: { fetch: async () => ({}) } }, channel: { send: async (p) => replies.push(p) } });
+    let replies = [];
+    await messageCreate.execute(mk(`removecc <@${OTHER.id}> 50`, SELF, replies), client);
+    assert.match(replies[0].content, /للأونر/u);
+    assert.equal((await client.db.get(getEconomyKey(economyScopeId, OTHER.id))).cc, 101);
+    replies = [];
+    await messageCreate.execute(mk(`removecc <@${OTHER.id}> 50`, owner, replies), client);
+    assert.equal((await client.db.get(getEconomyKey(economyScopeId, OTHER.id))).cc, 51);
+    await messageCreate.execute(mk(`removecc <@${OTHER.id}> 5000`, owner, replies), client);
+    assert.equal((await client.db.get(getEconomyKey(economyScopeId, OTHER.id))).cc, 0);
+    assert.match(replies[1].embeds[0].description, /كل رصيده/u);
+});

@@ -98,7 +98,7 @@ function casinoGuideEmbed() {
     const rows = mines.cells / mines.columns;
     const rooms = casinoChannelIds.size ? `🚪 بيشتغل بس في: ${[...casinoChannelIds].map((id) => `<#${id}>`).join(' ')}` : '';
     return ccEmbed('🎰 شرح الكازينو', [
-        `💵 الرهان من **${number(minBet)}** لـ **${number(maxBet)}** ${CC.short}، ومايزيدش عن رصيدك.`,
+        `💵 الرهان من **${number(minBet)}** ${CC.short}${CASINO.unlimited ? ' من غير حد أقصى' : ` لـ **${number(maxBet)}** ${CC.short}`}، ومايزيدش عن رصيدك.`,
         ...(rooms ? [rooms] : []),
         '',
         `💣 \`/casino mines\` ・ \`مينز ${bet} ${mines.default}\``,

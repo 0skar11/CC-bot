@@ -47,8 +47,9 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 export async function adjustCC(client, guildId, userId, delta, staffId) {
     if (!Number.isSafeInteger(delta) || delta === 0) throw new Error('Invalid CC amount');
     const result = await updateCCState(client, guildId, userId, (state) => {
+        const previous = state.cc;
         state.cc = Math.max(0, state.cc + delta);
-        return { ok: true };
+        return { ok: true, previous };
     });
     logger.info('[CC] Staff adjustment', { guildId, userId, delta, staffId });
     return result;

@@ -582,8 +582,8 @@ describe('casino configuration', () => {
             const bet = casino.data.toJSON().options[0].options[0];
             assert.deepEqual([bet.name, bet.min_value, bet.max_value, bet.required], ['bet', 10, 1000, true]);
         `);
-        run({}, `assert.equal(runtime.casinoMaxBet, 50000); assert.doesNotThrow(() => runtime.validateConfig({ discord: false }));`);
-        for (const value of ['5', '10.5', 'abc', '-100', '2000000000']) {
+        run({}, `assert.equal(runtime.casinoMaxBet, runtime.CASINO_BET_LIMITS.ceiling); assert.doesNotThrow(() => runtime.validateConfig({ discord: false }));`);
+        for (const value of ['5', '10.5', 'abc', '-100', '20000000000000']) {
             run({ CASINO_MAX_BET: value }, `assert.throws(() => runtime.validateConfig({ discord: false }), /CASINO_MAX_BET/);`);
         }
         run({ CASINO_CHANNEL_IDS: 'not-a-room' }, `assert.throws(() => runtime.validateConfig({ discord: false }), /CASINO_CHANNEL_IDS/);`);

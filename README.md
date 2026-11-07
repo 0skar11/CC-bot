@@ -36,7 +36,7 @@ For public installation, turn **Public Bot on**, enable Guild Install and config
 | `TRADER_ROLE_ENABLED` | `true` enables trader role setup and its purchase button; default `false`. |
 | `STREAK_ENABLED` | `true` enables daily streaks in the existing CHAOS streak room. Defaults to `false`. |
 | `CASINO_CHANNEL_IDS` | Optional comma-separated channel/category IDs where `/casino` and its typed words work (threads inside them too). Empty uses the same channels as everything else (`BOURSE_CHANNEL_IDS`, or every channel when that is empty too). Elsewhere the slash form answers privately with the casino rooms and typed words are ignored. |
-| `CASINO_MAX_BET` | Most CC one casino bet can take, a whole number from `10` to `1000000000`; default `50000`. A bet is also never more than the balance. The slash option limit is set at registration, so run `npm run register` after changing it. |
+| `CASINO_MAX_BET` | Optional cap on one casino bet (a whole number from `10` to `10000000000000`). Empty (default) = no cap: a bet is only limited by the balance. The slash option limit is set at registration, so run `npm run register` after changing it. |
 | `TRADER_ROLE_ANCHORS` | Optional `guildId:roleId,guildId:roleId` pairs. New trader roles are placed above these roles. Without an anchor, Discord's normal below-bot position is used. No leveling system is required. |
 | `OWNER_IDS` | Comma-separated Discord user IDs allowed to use `addcc` (default: the original owner). Owner list lives in `src/config/owners.js`. |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` or `silent`; default `info`. Logs go to the console. |

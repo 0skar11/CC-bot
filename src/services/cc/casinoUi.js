@@ -147,7 +147,7 @@ export function slotsPayload(result, user) {
 /** `مينز 100 3` … : how to play, for a typed casino command without a game or a bet. */
 export function casinoUsageText() {
     return [
-        `🎰 **الكازينو** ・ الرهان من ${number(CASINO.minBet)} لـ ${number(CASINO.maxBet)} ${CC.short}`,
+        `🎰 **الكازينو** ・ الرهان من ${number(CASINO.minBet)} ${CC.short} لحد رصيدك${CASINO.unlimited ? '' : ` (أقصى رهان ${number(CASINO.maxBet)})`}`,
         `💣 \`مينز 100 3\` ・ ماينز: افتح خانات من غير ما تلاقي لغم (من ${CASINO.mines.min} لـ ${CASINO.mines.max} ألغام) واعمل كاش أوت وقت ما تحب`,
         `🪙 \`عملة 100 ملك\` ・ ملك ولا كتابة، المكسب ${coinflipTimes()}`,
         `🎰 \`سلوت 100\` ・ سلوت، 3 زي بعض لحد ×${topSlots()}`,
@@ -162,7 +162,7 @@ const FAILURE_TEXT = {
 
 /** Why a game didn't start, as a message. */
 export function casinoFailureText(result) {
-    if (result.reason === 'bad_bet') return `❌ الرهان لازم يكون رقم صحيح من **${number(CASINO.minBet)}** لـ **${number(CASINO.maxBet)}** ${CC.short}.`;
+    if (result.reason === 'bad_bet') return `❌ الرهان لازم يكون رقم صحيح من **${number(CASINO.minBet)}** ${CC.short}${CASINO.unlimited ? ' وفوق' : ` لـ **${number(CASINO.maxBet)}** ${CC.short}`}.`;
     if (result.reason === 'no_cc') return `❌ رصيدك ${formatCC(result.balance ?? 0)} مش كفاية للرهان ده.`;
     if (result.reason === 'active') {
         const ends = Number.isFinite(result.game?.lastActionAt) ? ` (هتقفل لوحدها <t:${Math.ceil((result.game.lastActionAt + CASINO.idleMs) / 1000)}:R> لو مالعبتش)` : '';

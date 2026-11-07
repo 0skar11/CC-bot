@@ -1,5 +1,5 @@
 import { MessageFlags } from 'discord.js';
-import { isAllowedGuild, isAllowedChannel, isCasinoChannel } from '../config/runtime.js';
+import { isAllowedGuild, isCasinoChannel, isCommandChannel } from '../config/runtime.js';
 import { isBourseGuildCommand, BOURSE_GUILD_BUTTONS, BOURSE_GUILD_NOTICE } from '../config/bourseGuild.js';
 import { CASINO_COMMAND, CASINO_BUTTON_PREFIX, casinoChannelNotice } from '../config/casino.js';
 import { logger } from '../utils/logger.js';
@@ -18,7 +18,7 @@ export default {
         if (!isAllowedGuild(interaction.guildId)) return refused(interaction);
         if (isCasinoInteraction(interaction)) {
             if (!isCasinoChannel(interaction.channel, interaction.channelId)) return refused(interaction, casinoChannelNotice());
-        } else if (!isAllowedChannel(interaction.channel, interaction.channelId)) return refused(interaction);
+        } else if (!isCommandChannel(interaction.isChatInputCommand?.() ? interaction.commandName : '', interaction.channel, interaction.channelId)) return refused(interaction);
         try {
             if (interaction.isChatInputCommand()) {
                 if (!isBourseGuildCommand(interaction.commandName)) return refused(interaction);

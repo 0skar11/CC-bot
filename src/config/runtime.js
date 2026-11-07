@@ -15,7 +15,7 @@ export const streakEnabled = () => process.env.STREAK_ENABLED === 'true';
 export const traderRoleAnchors = new Map(ids(process.env.TRADER_ROLE_ANCHORS).map((pair) => pair.split(':')));
 // Casino (src/config/casino.js): its own channels/categories, and the most CC one bet can take.
 // `ceiling` keeps every payout (at most ×122.22 of the bet) far inside Number.MAX_SAFE_INTEGER.
-export const CASINO_BET_LIMITS = { min: 10, defaultMax: 50_000, ceiling: 1_000_000_000 };
+export const CASINO_BET_LIMITS = { min: 10, defaultMax: 10_000_000_000_000, ceiling: 10_000_000_000_000 };
 export const casinoChannelIds = new Set(ids(process.env.CASINO_CHANNEL_IDS));
 export const casinoMaxBet = Number(process.env.CASINO_MAX_BET?.trim() || CASINO_BET_LIMITS.defaultMax);
 
@@ -31,6 +31,12 @@ export function isAllowedChannel(channel, channelId) {
 export function isCasinoChannel(channel, channelId) {
     if (!casinoChannelIds.size) return isAllowedChannel(channel, channelId);
     return casinoChannelIds.has(channel?.id || channelId) || casinoChannelIds.has(channel?.parentId);
+}
+
+/** CC basics that also work in the casino rooms, where people need to top up, check and send CC. */
+export const CASINO_ROOM_COMMANDS = new Set(['addcc', 'removecc', 'give', 'daily', 'cc']);
+export function isCommandChannel(commandName, channel, channelId) {
+    return isAllowedChannel(channel, channelId) || (CASINO_ROOM_COMMANDS.has(commandName) && isCasinoChannel(channel, channelId));
 }
 
 export function validateConfig({ discord = true } = {}) {

@@ -23,8 +23,9 @@ export const CASINO_BUTTON_PREFIX = 'casino';
 
 export const CASINO = {
     minBet: CASINO_BET_LIMITS.min,
-    // CASINO_MAX_BET (default 50,000); a bet is also never more than the member's balance.
+    // Open by default: a bet is only limited by the member's balance (CASINO_MAX_BET sets a cap when you want one).
     maxBet: casinoMaxBet,
+    unlimited: casinoMaxBet >= CASINO_BET_LIMITS.ceiling,
     // A short pause between two games started by the same member (spam guard, not a money guard).
     cooldownMs: 3_000,
     // A mines board nobody touched for this long cashes out by itself at its current multiplier.
