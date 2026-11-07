@@ -342,33 +342,43 @@ describe('typed words of the new games', () => {
 describe('the games menu', () => {
     const fieldsOf = (embed) => (embed.fields || []).map((field) => `${field.name}\n${field.value}`).join('\n');
 
-    test('`العاب` shows the solo and the group games, each with what it is, an example, the smallest bet and the edge', async () => {
-        const [intro, solo, group] = gamesMenuEmbeds();
-        assert.equal(intro.title, '🎮 ألعاب CC bot');
-        assert.equal(solo.title, '🎯 الألعاب الفردية');
-        assert.equal(group.title, '👥 الألعاب الجماعية');
-        assert.match(intro.description, /فردية[\s\S]*جماعية/u);
-        assert.deepEqual(solo.fields.map((field) => field.name), ['💣 ماينز', '🪙 ملك ولا كتابة', '🎰 سلوت', '🎲 نرد']);
-        assert.deepEqual(group.fields.map((field) => field.name), ['🎡 روليت', '🚀 صاروخ (كراش جماعي)']);
-        // `كراش` is shown as the rocket itself.
-        assert.ok(group.fields[1].value.includes('`كراش 100 2.5`') && group.fields[1].value.includes('`كراش` هو نفس الصاروخ'));
+    test('the menu is ONE embed: solo and group blocks, a typed example for every game and every edge in the footer', () => {
         const edges = casinoEdges();
-        const games = ['mines', 'coinflip', 'slots', 'dice', 'roulette', 'rocket'];
-        const examples = ['`مينز 100 3`', '`عملة 100 ملك`', '`سلوت 100`', '`نرد 100 فوق 70`', '`روليت 100 احمر`', '`صاروخ 100`'];
-        [...solo.fields, ...group.fields].forEach((field, i) => {
-            assert.ok(field.value.includes(examples[i]), field.name);
-            assert.ok(field.value.includes(`\`/casino ${games[i]}\``), field.name);
-            assert.ok(field.value.includes(`نسبة البيت **${edges[games[i]]}%**`), field.name);
-            assert.ok(field.value.includes(`من **${CASINO.minBet}** CC`), field.name);
-            assert.ok(field.value.length <= 1024 && field.name.length <= 256);
-            // Every line starts with Arabic or an emoji, so Discord keeps it in order.
-            for (const line of field.value.split('\n')) assert.doesNotMatch(line, /^[A-Za-z0-9`]/u, line);
-        });
-        assert.match(fieldsOf(group), /2\.7%/u);
-        assert.match(group.footer.text, /العب بمزاج/u);
-        const size = [intro, solo, group].reduce((sum, embed) => sum + embed.title.length + (embed.description?.length || 0) + fieldsOf(embed).length + (embed.footer?.text.length || 0), 0);
-        assert.ok(size < 6000, `the menu is ${size} characters`);
-        assert.deepEqual(gamesMenuPayload().allowedMentions, { parse: [] });
+        for (const lang of ['ar', 'en']) {
+            const embeds = gamesMenuEmbeds(lang);
+            assert.equal(embeds.length, 1, 'one message, one embed');
+            const [menu] = embeds;
+            assert.equal(menu.fields.length, 2);
+            assert.match(menu.title, lang === 'ar' ? /ألعاب CC bot/u : /CC bot games/u);
+            const [solo, group] = menu.fields;
+            assert.equal(solo.value.split('\n\n').length, 4);
+            assert.equal(group.value.split('\n\n').length, 2);
+            assert.ok(solo.value.length <= 1024 && group.value.length <= 1024);
+            // Every game is two lines: what it does, then its typed example on a line of its own.
+            for (const game of [...solo.value.split('\n\n'), ...group.value.split('\n\n')]) {
+                const [about, example] = game.split('\n');
+                assert.ok(about.length > 0 && example.startsWith('╰ `'), game);
+            }
+            for (const name of ['mines', 'coinflip', 'slots', 'dice', 'roulette', 'rocket']) assert.ok(menu.footer.text.includes(`${edges[name]}%`), name);
+            assert.ok(menu.description.includes('/casino'));
+            assert.ok(menu.description.includes('10 CC'));
+            assert.deepEqual(gamesMenuPayload(lang).allowedMentions, { parse: [] });
+        }
+        const [ar] = gamesMenuEmbeds('ar');
+        assert.deepEqual(ar.fields.map((field) => field.name), ['🎯 فردية — انت والبيت بس', '👥 جماعية — جولة واحدة للروم كله']);
+        for (const example of ['مينز 100 3', 'عملة 100 ملك', 'سلوت 100', 'نرد 100 فوق 70', 'روليت 100 احمر', 'صاروخ 100']) assert.ok(ar.fields.some((field) => field.value.includes(`\`${example}\``)), example);
+        assert.ok(ar.fields[1].value.includes('هو نفسه `كراش`'), 'crash is shown as the rocket itself');
+        assert.match(ar.footer.text, /العب بمزاج/u);
+        // Every Arabic line starts with an emoji or the example marker, so Discord keeps it in order.
+        for (const line of ar.fields.flatMap((field) => field.value.split('\n')).filter(Boolean)) assert.doesNotMatch(line, /^[A-Za-z0-9` ]/u, line);
+        const [en] = gamesMenuEmbeds('en');
+        assert.deepEqual(en.fields.map((field) => field.name), ['🎯 Solo — you against the house', '👥 Group — one round for the whole room']);
+        for (const example of ['mines 100 3', 'coinflip 100 heads', 'slots 100', 'dice 100 over 70', 'roulette 100 red', 'rocket 100 2']) assert.ok(en.fields.some((field) => field.value.includes(`\`${example}\``)), example);
+        assert.ok(en.fields[1].value.includes('(same as `crash`)'), 'crash is shown as the rocket itself');
+        // The English menu is English apart from the one hint to the Arabic menu.
+        assert.doesNotMatch(JSON.stringify(en).replace('العربية: العاب', ''), /[؀-ۿ]/u);
+        const size = ar.title.length + ar.description.length + ar.fields.reduce((sum, field) => sum + field.name.length + field.value.length, 0) + ar.footer.text.length;
+        assert.ok(size < 4000, `the menu is ${size} characters`);
     });
 
     test('the menu follows the settings', () => {
@@ -377,11 +387,11 @@ describe('the games menu', () => {
             Object.assign(CASINO.roulette, { joinMs: 45_000 });
             Object.assign(CASINO.coinflip, { payoutPercent: 190 });
             CASINO.minBet = 25;
-            const text = gamesMenuEmbeds().map((embed) => `${embed.description || ''}\n${fieldsOf(embed)}`).join('\n');
-            assert.match(text, /\*\*45 ثانية\*\*/u);
+            const text = JSON.stringify(gamesMenuEmbeds());
+            assert.match(text, /بعد 45 ثانية/u);
             assert.match(text, /×1\.90/u);
-            assert.match(text, /نسبة البيت \*\*5%\*\*/u);
-            assert.match(text, /من \*\*25\*\* CC/u);
+            assert.match(text, /\*\*25 CC\*\*/u);
+            assert.match(JSON.stringify(gamesMenuEmbeds('en')), /spins 45s after/u);
         } finally {
             Object.assign(CASINO.roulette, { joinMs: before.join });
             Object.assign(CASINO.coinflip, { payoutPercent: before.payout });
@@ -396,17 +406,15 @@ describe('the games menu', () => {
         const typed = (content) => messageCreate.execute({ guildId: GUILD, content, author: { id: A, bot: false }, channel: { id: ROOM, send: async (payload) => { sent.push(payload); } }, channelId: ROOM }, client);
         for (const word of ['العاب', 'ألعاب', 'الالعاب', 'الألعاب', '!العاب']) {
             await typed(word);
-            assert.deepEqual(sent.at(-1).embeds.map((embed) => embed.title), ['🎮 ألعاب CC bot', '🎯 الألعاب الفردية', '👥 الألعاب الجماعية'], word);
+            assert.deepEqual(sent.at(-1).embeds.map((embed) => embed.title), ['🎮 ألعاب CC bot'], word);
             assert.deepEqual(sent.at(-1).allowedMentions, { parse: [] });
         }
         // The English word shows the English menu.
         for (const word of ['games', '!games', 'Games']) {
             await typed(word);
-            assert.deepEqual(sent.at(-1).embeds.map((embed) => embed.title), ['🎮 CC bot games', '🎯 Solo games', '👥 Group games'], word);
-            assert.deepEqual(sent.at(-1).embeds[1].fields.map((field) => field.name), ['💣 Mines', '🪙 Coinflip', '🎰 Slots', '🎲 Dice']);
-            // `crash` is shown as the rocket itself.
-            assert.ok(sent.at(-1).embeds[2].fields[1].value.includes('`rocket 100`') && sent.at(-1).embeds[2].fields[1].value.includes('`crash 100 2.5`'));
-            assert.ok(sent.at(-1).embeds[2].fields[1].value.includes('House edge **3%**'));
+            assert.deepEqual(sent.at(-1).embeds.map((embed) => embed.title), ['🎮 CC bot games'], word);
+            assert.deepEqual(sent.at(-1).embeds[0].fields.map((field) => field.name), ['🎯 Solo — you against the house', '👥 Group — one round for the whole room']);
+            assert.ok(sent.at(-1).embeds[0].fields[1].value.includes('`rocket 100`'));
         }
         assert.equal(sent.length, 8);
         for (const chat of ['العاب حلوة', 'العاب 100', '!العاب كتير', 'العاب الفيديو', 'games are fun']) await typed(chat);
@@ -461,7 +469,7 @@ describe('the games menu', () => {
             await interactionCreate.execute(slash('${CASINO_ROOM}'), client);
             await interactionCreate.execute(slash('400000000000000009'), client);
             assert.equal(replies[0][0], 'edit');
-            assert.equal(replies[0][1].embeds.length, 3);
+            assert.equal(replies[0][1].embeds.length, 1);
             assert.match(replies[1][1].content, /مش متاح/u);
         `;
         const result = spawnSync(process.execPath, ['--input-type=module', '-e', code], {
