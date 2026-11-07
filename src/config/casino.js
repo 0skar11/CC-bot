@@ -1,8 +1,12 @@
-// casino.js — the CC casino (الكازينو): mines, coinflip and slots, played with a CC bet.
-// Run by src/services/cc/casinoService.js (money and rules), casinoUi.js (embeds and buttons) and
-// casinoSessions.js (the live mines boards); the command is src/commands/Games/casino.js.
+// casino.js — the CC casino (الكازينو), played with a CC bet. Solo games: mines, coinflip, slots, crash and
+// dice. Group games, one shared round per room: roulette and rocket (a group crash).
+// Run by src/services/cc/casinoService.js (the solo games' money and rules), casinoUi.js (their embeds and
+// buttons), casinoSessions.js (the live mines boards and the crash animation), casinoGroupService.js,
+// casinoGroupSessions.js and casinoGroupUi.js (the group rounds) and gamesMenuUi.js (the `العاب` menu); the
+// commands are src/commands/Games/casino.js and games.js.
 //
-// Every game keeps a small house edge, written into its payouts (tests/casino.test.js checks the math):
+// Every game keeps a small house edge, written into its payouts (tests/casino.test.js and
+// tests/casinoGames.test.js check the math):
 //   mines     3%: cashing out after k safe tiles pays 97% of the fair odds of opening them,
 //                 bet × 0.97 × C(9, k) / C(9 − mines, k). Opening k safe tiles happens with probability
 //                 C(9 − mines, k) / C(9, k), so every way of playing returns 97% of the bet on average.
@@ -11,6 +15,21 @@
 //   slots     4%: three reels of 5 equally likely symbols, 125 spins in all. Three of a kind (5 spins) pays
 //                 the table below, 60 in total; two of a kind (60 spins) gives the bet back, 60; the other
 //                 60 spins lose. (60 + 60) / 125 = 0.96 of the bet comes back on average.
+//   crash     3%: the crash point is ×0.97 × N / (N − u) for u drawn uniformly from 0 … N − 1 (N = 2^32,
+//                 crypto.randomInt), kept in hundredths rounded down. It reaches ×m (any m from ×0.97) with
+//                 probability ⌊0.97 × N / m⌋ / N, just under 0.97 / m. A target ×m pays bet × m when the crash
+//                 point reaches it, so every target returns 97% of the bet (less under 1 / N). About 4% of
+//                 rockets crash at ×1.00 straight away.
+//   dice      3%: the dice lands on 0.00–99.99 (10,000 equally likely rolls). `تحت 30` wins below 30.00 (a 30%
+//                 chance), `فوق 70` wins from 70.00 up (also 30%). A win with a c% chance pays bet × 97 / c, so
+//                 it returns c% × 97 / c = 97% whatever the number.
+//   roulette  2.70%: a single zero, 37 equally likely pockets. Red or black (18 pockets each) pays ×2 and one
+//                 number (0 is the green one) pays ×36: 18 × 2 / 37 = 36 / 37 = 97.30% back for every bet.
+//   rocket    3%: the group crash, with crash's crash point drawn once for the whole round. An automatic
+//                 cash-out at ×m (`صاروخ 100 2`) is crash's bet exactly (97%). A cash-out by button pays the
+//                 multiplier at the click, rounded down to ×0.01, and only counts while the crash point is still
+//                 above it, which only adds to the edge. The rocket stops at ×100 at the latest and pays ×100 to
+//                 everybody still on board (the same as a ×100 target, 97%).
 // Payouts are rounded down to whole CC, so rounding only ever adds to the edge, by under 1 CC per paid game:
 // under 1 point from 100 CC bets, more on the smallest ones (a 10 CC coinflip win pays 19, a 5% edge; 10 CC
 // with 1 mine cashed out after one cell pays back just the 10, an 11% edge).
@@ -20,6 +39,11 @@ import { BOURSE_GUILD_NOTICE } from './bourseGuild.js';
 
 export const CASINO_COMMAND = 'casino';
 export const CASINO_BUTTON_PREFIX = 'casino';
+// `/games` and the typed `العاب`: the menu of every game (src/commands/Games/games.js).
+export const GAMES_COMMAND = 'games';
+// The `/casino` games played by one member against the house, and the ones played by the whole room.
+export const SOLO_GAMES = ['mines', 'coinflip', 'slots', 'crash', 'dice'];
+export const GROUP_GAMES = ['roulette', 'rocket'];
 
 export const CASINO = {
     minBet: CASINO_BET_LIMITS.min,
@@ -30,7 +54,7 @@ export const CASINO = {
     cooldownMs: 3_000,
     // A mines board nobody touched for this long cashes out by itself at its current multiplier.
     idleMs: 60_000,
-    // When saving that cash-out fails (database down), it is tried again after this long.
+    // When saving that cash-out (or a group round) fails (database down), it is tried again after this long.
     idleRetryMs: 15_000,
     mines: { cells: 9, columns: 3, min: 1, max: 8, default: 3, edgePercent: 3 },
     coinflip: { payoutPercent: 194 },
@@ -40,6 +64,56 @@ export const CASINO = {
         triple: { '🍒': 4, '🍋': 6, '🍇': 10, '💎': 15, '🌀': 25 },
         pair: 1,
     },
+    crash: {
+        edgePercent: 3,
+        // The crash point comes from this many equally likely draws (crypto.randomInt allows up to 2^48).
+        draws: 2 ** 32,
+        // Targets in hundredths (×1.01 to ×100; `كراش 100` alone aims for ×2). maxTarget is also the
+        // rocket's top: it keeps every payout far inside Number.MAX_SAFE_INTEGER at the bet ceiling.
+        minTarget: 101,
+        maxTarget: 10_000,
+        defaultTarget: 200,
+        // The animation: at most this many steps of the climbing multiplier, one message edit each, this long apart.
+        frames: 5,
+        frameMs: 1_000,
+    },
+    dice: {
+        edgePercent: 3,
+        // Rolls 0–9,999, shown as 0.00–99.99.
+        faces: 10_000,
+        // The win chance of `تحت N` is N%, of `فوق N` (100 − N)%; it must be in this range (×97 to ×1.02).
+        minChance: 1,
+        maxChance: 95,
+        // `نرد 100` alone is `تحت 50`.
+        defaultNumber: 50,
+    },
+    roulette: {
+        pockets: 37,
+        red: [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36],
+        // A winning colour pays the bet times colorPays, a winning number (0 included) numberPays.
+        colorPays: 2,
+        numberPays: 36,
+        // The first bet opens a round that takes bets for joinMs; then the wheel spins (spinMs) once for everybody.
+        joinMs: 20_000,
+        spinMs: 3_000,
+        // Most bets in one round, and per member in one round.
+        maxBets: 40,
+        maxBetsPerMember: 5,
+    },
+    rocket: {
+        // The first rider opens a round that boards for joinMs; then the rocket takes off for everybody.
+        joinMs: 15_000,
+        // The multiplier doubles every doubleMs while it climbs: ×2 at 7 s, ×10 at 23 s, ×100 at 46.5 s.
+        doubleMs: 7_000,
+        // The live message is edited once per tick (Discord's edit rate limit), not on every change.
+        tickMs: 1_250,
+        // A cash-out click that reached the bot before the crash still counts when it is handled later; the
+        // riders who are still on board lose only this long after the crash.
+        graceMs: 2_000,
+        maxPlayers: 25,
+    },
+    // How often a round's message is edited at most while people join it.
+    groupRenderMs: 1_500,
 };
 
 // `عملة 100 ملك`: the words for each side of the coin.
@@ -48,10 +122,100 @@ export const COIN_SIDES = {
     tails: { name: 'كتابة', emoji: '✍️', words: ['tails', 'tail', 't', 'كتابة', 'كتابه'] },
 };
 
+// `نرد 100 تحت 30`, `نرد 100 فوق 70`.
+export const DICE_DIRECTIONS = {
+    under: { name: 'تحت', emoji: '⬇️', words: ['under', 'u', 'تحت', 'اقل', 'أقل'] },
+    over: { name: 'فوق', emoji: '⬆️', words: ['over', 'o', 'فوق', 'اكتر', 'أكتر', 'اكثر', 'أكثر'] },
+};
+
+// `روليت 100 احمر`: the colours (green is the 0), or a number 0–36.
+export const ROULETTE_COLORS = {
+    red: { name: 'أحمر', emoji: '🔴', words: ['red', 'r', 'احمر', 'أحمر', 'الاحمر', 'الأحمر', 'حمرا', 'حمراء'] },
+    black: { name: 'أسود', emoji: '⚫', words: ['black', 'b', 'اسود', 'أسود', 'الاسود', 'الأسود', 'سودا', 'سوداء'] },
+    green: { name: 'أخضر', emoji: '🟢', words: ['green', 'g', 'zero', 'اخضر', 'أخضر', 'الاخضر', 'الأخضر', 'صفر'] },
+};
+
+const wordOf = (word) => String(word ?? '').trim().toLowerCase();
+const isWhole = (word) => /^\d+$/u.test(String(word));
+
 /** `heads` or `tails` for a typed side (`ملك`, `كتابة`, `h`, `tails`...), else null. */
 export function coinSide(word) {
-    const text = String(word || '').trim().toLowerCase();
+    const text = wordOf(word);
     return Object.keys(COIN_SIDES).find((side) => COIN_SIDES[side].words.includes(text)) || null;
+}
+
+/** `under` or `over` for a typed direction (`تحت`, `فوق`, `under`...), else null. */
+export function diceDirection(word) {
+    const text = wordOf(word);
+    return Object.keys(DICE_DIRECTIONS).find((side) => DICE_DIRECTIONS[side].words.includes(text)) || null;
+}
+
+/** A roulette bet: 'red', 'black' or a pocket number 0–36 (green is 0), else null. */
+export function rouletteChoice(word) {
+    const text = wordOf(word);
+    if (isWhole(text)) {
+        const pocket = Number(text);
+        return pocket < CASINO.roulette.pockets ? pocket : null;
+    }
+    const color = Object.keys(ROULETTE_COLORS).find((name) => ROULETTE_COLORS[name].words.includes(text));
+    if (!color) return null;
+    return color === 'green' ? 0 : color;
+}
+
+// `2.5`, `2,5`, `x2.5`, `×2.5`, `2.5x`: a multiplier, kept in hundredths (rounded down past two decimals).
+const MULTIPLIER = /^[x×]?(\d{1,6})(?:[.,](\d+))?[x×]?$/u;
+
+/** The hundredths of a typed multiplier (`2.5` → 250), or null when the word isn't one. */
+export function multiplierHundredths(word) {
+    const match = MULTIPLIER.exec(wordOf(word));
+    if (!match) return null;
+    const [, whole, fraction = ''] = match;
+    return Number(whole) * 100 + Number(fraction.slice(0, 2).padEnd(2, '0'));
+}
+
+/** A slash `target` (2.5) in hundredths (250), rounded down; `fallback` when it wasn't given. */
+export function targetHundredths(value, fallback = null) {
+    if (value === null || value === undefined) return fallback;
+    return Number.isFinite(value) ? Math.floor(value * 100 + 1e-9) : NaN;
+}
+
+/**
+ * The typed words after a new game's name, the bet first: `كراش 100 2.5` / `صاروخ 100 [2]` (a multiplier),
+ * `نرد 100 [فوق|تحت] [70]` (in any order) and `روليت 100 احمر` / `روليت 100 17` (or the colour first).
+ * Returns `{ values }` (the numbers are checked by the game) or `{ error: 'usage' }` when it isn't a game command.
+ */
+export function readGameArgs(game, words) {
+    const rest = words.map(String);
+    const usage = { error: 'usage' };
+    if (!rest.length) return usage;
+    if (game === 'crash' || game === 'rocket') {
+        if (rest.length > 2 || !isWhole(rest[0])) return usage;
+        const target = rest.length === 2 ? multiplierHundredths(rest[1]) : null;
+        if (rest.length === 2 && target === null) return usage;
+        return { values: { bet: Number(rest[0]), target } };
+    }
+    if (game === 'dice') {
+        if (rest.length > 3 || !isWhole(rest[0])) return usage;
+        let direction = null;
+        let number = null;
+        for (const word of rest.slice(1)) {
+            if (isWhole(word) && number === null) number = Number(word);
+            else if (diceDirection(word) && direction === null) direction = diceDirection(word);
+            else return usage;
+        }
+        return { values: { bet: Number(rest[0]), direction, number } };
+    }
+    if (game === 'roulette') {
+        if (rest.length > 2) return usage;
+        const at = isWhole(rest[0]) ? 0 : (rest.length === 2 && isWhole(rest[1]) ? 1 : -1);
+        if (at < 0) return usage;
+        if (rest.length === 1) return { values: { bet: Number(rest[0]), choice: null } };
+        const word = rest[1 - at];
+        // A word that is neither a colour nor a number is chat, not a bet (a number above 36 is a bad bet).
+        if (!isWhole(word) && rouletteChoice(word) === null) return usage;
+        return { values: { bet: Number(rest[at]), choice: word } };
+    }
+    return usage;
 }
 
 /** The answer to a casino command or button outside the casino rooms. */

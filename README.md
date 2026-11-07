@@ -1,6 +1,6 @@
 # CC bot
 
-Standalone stock market, balance and leaderboard from [0skar11/DISbot](https://github.com/0skar11/DISbot) (MIT), plus a small CC casino. **CC bot** uses a separate Discord application. Its slash commands are `/bourse`, `/casino`, `/cc`, `/cctop`, `/give`, `/addcc` and `/help`.
+Standalone stock market, balance and leaderboard from [0skar11/DISbot](https://github.com/0skar11/DISbot) (MIT), plus a CC casino with solo and group games. **CC bot** uses a separate Discord application. Its slash commands are `/bourse`, `/casino`, `/games`, `/cc`, `/cctop`, `/give`, `/addcc` and `/help`.
 
 ## Setup on Windows
 
@@ -20,7 +20,7 @@ Enable **Message Content Intent** in the Discord developer portal for typed comm
 
 For public installation, turn **Public Bot on**, enable Guild Install and configure the Discord-provided install link with `bot` and `applications.commands`. Set `BOURSE_GUILD_IDS=*` with an explicit stable `ECONOMY_SCOPE_ID`; use the application ID as the namespace before any players start. The runtime then accepts every guild where the bot is installed. For an owner-only deployment, turn Public Bot off and configure a finite guild allowlist instead. Keep the token in local `.env` or host secrets only.
 
-`npm run register` registers `/bourse`, `/casino`, `/cc`, `/cctop` and `/help` in the configured application. It replaces the global command list in public mode or each configured guild's list in finite-allowlist mode. [PUBLIC-MODE.md](PUBLIC-MODE.md) describes the two modes.
+`npm run register` registers `/bourse`, `/casino`, `/games`, `/cc`, `/cctop`, `/daily`, `/give`, `/addcc`, `/removecc` and `/help` in the configured application. It replaces the global command list in public mode or each configured guild's list in finite-allowlist mode. [PUBLIC-MODE.md](PUBLIC-MODE.md) describes the two modes.
 
 ## Environment
 
@@ -35,7 +35,7 @@ For public installation, turn **Public Bot on**, enable Guild Install and config
 | `INITIAL_CC` | Starting CC for new member records; default `0`. Set a desired nonnegative whole amount **before members start** (for example `10000`) to fund a fresh stock-only economy. Existing records receive no grant/reset. Besides the streak, CC comes from the [casino](#casino), `give` transfers and the owner-only `addcc`. |
 | `TRADER_ROLE_ENABLED` | `true` enables trader role setup and its purchase button; default `false`. |
 | `STREAK_ENABLED` | `true` enables daily streaks in the existing CHAOS streak room. Defaults to `false`. |
-| `CASINO_CHANNEL_IDS` | Optional comma-separated channel/category IDs where `/casino` and its typed words work (threads inside them too). Empty uses the same channels as everything else (`BOURSE_CHANNEL_IDS`, or every channel when that is empty too). Elsewhere the slash form answers privately with the casino rooms and typed words are ignored. |
+| `CASINO_CHANNEL_IDS` | Optional comma-separated channel/category IDs where `/casino` and its typed words work (threads inside them too), including the group rounds. Empty uses the same channels as everything else (`BOURSE_CHANNEL_IDS`, or every channel when that is empty too). Elsewhere the slash form answers privately with the casino rooms and typed words are ignored. The games menu (`/games`, `العاب`) answers in these rooms and in the bot's channels. |
 | `CASINO_MAX_BET` | Optional cap on one casino bet (a whole number from `10` to `10000000000000`). Empty (default) = no cap: a bet is only limited by the balance. The slash option limit is set at registration, so run `npm run register` after changing it. |
 | `TRADER_ROLE_ANCHORS` | Optional `guildId:roleId,guildId:roleId` pairs. New trader roles are placed above these roles. Without an anchor, Discord's normal below-bot position is used. No leveling system is required. |
 | `OWNER_IDS` | Comma-separated Discord user IDs allowed to use `addcc` (default: the original owner). Owner list lives in `src/config/owners.js`. |
@@ -56,6 +56,11 @@ The migration creates only `bourse_records` and its prefix index; rerunning it i
 | `/casino mines bet:<integer> mines:<optional 1–8, default 3>` | Start a 3×3 mines board: open safe cells, cash out whenever you like, lose the bet on a mine. |
 | `/casino coinflip bet:<integer> side:<optional heads or tails, default heads>` | Heads (`ملك`) or tails (`كتابة`); a win pays ×1.94. |
 | `/casino slots bet:<integer>` | Three reels; three of a kind pays up to ×25, two of a kind gives the bet back. |
+| `/casino crash bet:<integer> target:<optional 1.01–100, default 2>` | Crash: wins bet × target when the rocket reaches the target before it crashes; the climb is animated. |
+| `/casino dice bet:<integer> number:<optional 1–99, default 50> direction:<optional under or over, default under>` | Dice 0.00–99.99: under N wins below N.00 (N% chance), over N from N.00 up; a c% chance pays ×(97 / c). |
+| `/casino roulette bet:<integer> choice:<red, black, green or 0–36>` | Group roulette: the first bet opens a 20-second round for the room, then one spin for everybody. Colours pay ×2, a number (0 = green) ×36. |
+| `/casino rocket bet:<integer> target:<optional automatic cash-out 1.01–100>` | Group crash: the room boards for 15 seconds, the rocket takes off for everybody, and each rider cashes out with the button (or automatically at the target) before it crashes. |
+| `/games` | The games menu: every solo and group game, with what it is, a typed example, the smallest bet and the house edge. |
 | `/cc user:<optional member>` | Show your CC balance or the selected member's. |
 | `/cctop` | Show the top 15 and your rank in the shared economy, ordered by CC balance plus holdings' sale value after fees. |
 | `/help topic:<optional cc, bourse, casino or streak>` | The guide to the whole bot in Egyptian Arabic (CC, balance and leaderboard, the bourse, the casino and the streak); a topic shows only that part. |
@@ -68,6 +73,10 @@ For balances, use `cc`, `bal`, `balance`, `money`, `cash`, `credits`, `رصيد`
 
 Casino words (with or without `PREFIX`, in the casino rooms): `مينز 100 3` (also `ماينز`, `الغام`, `ألغام`, `mines`; the mine count is optional), `عملة 100 ملك` (also `عمله`, `coinflip`, `cf`; the side is `ملك`/`heads`/`h` or `كتابة`/`كتابه`/`tails`/`t`, in either order, default heads) and `سلوت 100` (also `سلوتس`, `slots`, `slot`). `كازينو` or `casino` alone shows how to play. Without the prefix a word only counts when followed by just the bet (and the mine count or side), so chat like `عملة رقمية` is ignored.
 
+Newer casino words (the bet first): `كراش 100 2.5` (also `crash`; the target can be written `2.5`, `2,5`, `x2.5` or `2.5x`, default ×2), `نرد 100 فوق 70` or `نرد 100 تحت 30` (also `زهر`, `دايس`, `dice`; `فوق`/`اكتر`/`over` or `تحت`/`اقل`/`under`, default `تحت 50`), `روليت 100 احمر` or `روليت 100 17` (also `الروليت`, `roulette`; `احمر`/`red`, `اسود`/`black`, `اخضر`/`صفر`/`green` or a number 0–36; the colour may come first) and `صاروخ 100` or `صاروخ 100 2` (also `الصاروخ`, `rocket`; the optional number is the automatic cash-out). These words are everyday chat too, so without the prefix they need a bet and only words of the game after it (`كراش` alone or `عندي كراش` stay chat); with the prefix a wrong form is answered with the right one.
+
+Games menu words (with or without `PREFIX`, in the casino rooms and the bot's channels): `العاب`, `ألعاب`, `الالعاب`, `الألعاب` or `games`, alone, show the same menu as `/games` (`src/services/cc/gamesMenuUi.js`): one embed on betting, one with the solo games (فردية) and one with the group games (جماعية). Its numbers come from `CASINO` and the computed house edges, so it never drifts from the games.
+
 Guide words (with or without `PREFIX`, in allowed channels, no `STREAK_ENABLED` needed): `شرح`, `شرح cc`, `شرح البوت`, `مساعدة`, `help` or `الشرح` send the same guide as `/help`. Its amounts come from `CC`, `bourseSettings`, `CASINO`, `STREAK` and `perkPrices`, and its typed words from `commandArgAliases` (`src/services/cc/guideUi.js`). The streak part appears only where the streak works (`STREAK_ENABLED=true`, in the streak server). Only the whole message counts, and the streak guide's own words below keep answering with the streak guide.
 
 Streak words (with `STREAK_ENABLED=true`, in the streak server, with or without `PREFIX`): `ستريك` or `streak` shows your streak (optionally followed by a mention or a user ID), `توب ستريك` or `top streak` shows the leaderboard, and `شرح ستريك`, `ستريك شرح`, `شرح الستريك`, `الستريك` or `streak help` explains how the streak works, with the amounts taken from `STREAK` in `src/services/cc/streakService.js`. Only the whole message counts, so a longer sentence containing these words is ignored.
@@ -76,15 +85,23 @@ In the streak room, a picture, a GIF (Tenor, Giphy or `.gif` link, or its embed)
 
 ## Casino
 
-Every game takes the bet in the same save that starts it and pays in the same save that ends it, through the shared `updateCCState` (per-member lock plus the database transaction). Randomness comes from `crypto.randomInt`. Bets are whole CC from 10 to `CASINO_MAX_BET` and never above the balance. A member plays one game at a time (coinflip and slots wait for a running mines board), with a 3-second pause between starts. Statistics: `ccStats.spent`/`earned` and `ccCasinoStats` (`played`, `won`, `lost`, `wagered`, `paidOut`) in the member's record.
+Every game takes the bet in the same save that starts it and pays in the same save that ends it, through the shared `updateCCState` (per-member lock plus the database transaction). Randomness comes from `crypto.randomInt`. Bets are whole CC from 10 to `CASINO_MAX_BET` and never above the balance. A member plays one solo game at a time (coinflip, slots, crash and dice wait for a running mines board), with a 3-second pause between starts (group bets included), and every new command runs under the member's casino lock. Statistics: `ccStats.spent`/`earned` and `ccCasinoStats` (`played`, `won`, `lost`, `wagered`, `paidOut`) in the member's record. The rules and settings are `CASINO` in `src/config/casino.js`, whose header explains every edge.
 
-House edge, built into the payouts (proved by enumeration in `tests/casino.test.js`):
+Solo games (فردية) are over in one save: mines, coinflip, slots, **crash** (the crash point is drawn and the bet settled first, then the message animates the climb, one edit per second at most, until it crashes or reaches the target) and **dice**.
+
+Group games (جماعية) are one shared round per game per room. **Roulette**: the first bet opens a 20-second round; anyone in the room adds bets (up to 5 each, 40 per round), then the wheel spins once and the message lists every win and loss. **Rocket** (group crash): the first rider opens 15 seconds of boarding (25 riders); the rocket then takes off for everybody with one crash point, the message is edited once per tick (1.25 s) with a 💰 cash-out button, and the multiplier doubles every 7 seconds up to ×100. A click pays the multiplier at the moment it reached the bot; a rider can also set an automatic cash-out. Clicks from people who aren't riding, or who already cashed out, are answered privately and change nothing; riders still on board lose 2 seconds after the crash (so clicks sent just before it still count).
+
+House edge, built into the payouts (proved by enumeration in `tests/casino.test.js`, `tests/casinoGames.test.js` and `tests/casinoGroup.test.js`):
 
 | Game | Rule | Edge |
 | --- | --- | --- |
 | Mines | Cashing out after *k* safe cells with *m* mines pays bet × 0.97 × C(9, *k*) / C(9 − *m*, *k*). Reaching *k* safe cells has probability C(9 − *m*, *k*) / C(9, *k*), so every way of playing returns 97%. Cashing out before the first cell gives the bet back. | 3% |
 | Coinflip | A win (1 in 2) pays ×1.94. | 3% |
 | Slots | 5 equally likely symbols per reel (125 spins). Three of a kind: 🌀 ×25, 💎 ×15, 🍇 ×10, 🍋 ×6, 🍒 ×4 (5 spins, 60 in total). Two of a kind: the bet back (60 spins). Otherwise lost (60 spins). (60 + 60) / 125 = 96%. | 4% |
+| Crash | Crash point (hundredths) = ⌊97 × N / (N − *u*)⌋ for *u* uniform in 0…N − 1 (N = 2³²), so it reaches a target *t* for ⌊97N / *t*⌋ of the N draws (just under 0.97 / ×*t*). A target pays bet × *t*: every target from ×1.01 to ×100 returns 97% (less under 1/N). About 4% of rockets crash at ×1.00. | 3% |
+| Dice | 10,000 equally likely rolls 0.00–99.99. Under N wins N% of rolls, over N wins (100 − N)%; a c% chance (1–95) pays bet × 97 / c, so every bet returns 97%. | 3% |
+| Roulette | Single zero, 37 pockets. Red or black (18 pockets) pays ×2, one number (0 = green) pays ×36: 36/37 back for every bet. | 2.70% |
+| Rocket | Crash's crash point, drawn once per round (capped at ×100, where everyone still riding is paid ×100). An automatic cash-out is exactly crash's bet (97%). A button cash-out at ×*m* only counts while the crash point is above ×*m*, which returns at most 97%. | 3% |
 
 Payouts round down to whole CC, which only adds to the edge (under 1 CC per paid game): under one point from 100 CC bets, more on the smallest ones (10 CC with 1 mine cashed out after one cell pays back exactly 10). Mines multipliers shown on the board (also rounded down):
 
@@ -101,6 +118,8 @@ Payouts round down to whole CC, which only adds to the edge (under 1 CC per paid
 
 The mines board shows the cash-out amount now and what the next safe cell would pay. Its buttons work only for the player and only for that game: a double click, a second cash-out or a click on an older board changes nothing and is answered privately. Opening every safe cell cashes out by itself. **60 seconds without a move cash the board out by itself at its current multiplier** (the whole bet back when nothing was opened); the board says so. The running game is saved in the member's record (`ccCasino`), so a restart or crash never eats a bet: on startup boards whose 60 seconds already passed are settled the same way and their message is updated (or a short notice is posted), and newer boards get their timer back and stay playable.
 
+Group rounds never lose a bet either. The round is saved at `guild:<scope>:casino:<roulette|rocket>:<roomId>` and each member's stake in their own record (`ccCasinoBets`); joining takes the bet, adds the stake and writes the round in one database transaction. Paying a stake removes it in the same save, so it is paid exactly once whoever gets there (the round's timer, a double click, the restart check). On startup (and before a new round opens in that room) a round the bot couldn't finish is settled from what was saved: a round still taking bets gives every bet back, a spun wheel pays with its saved pocket, a rocket cut mid-flight pays the automatic cash-outs by its saved crash point and gives back the bets of riders who cash out by hand (they couldn't click), and a rocket whose crash was already announced settles the riders still on board. Any stake whose round is gone is given back. The round's message is updated (or a notice is posted in the room).
+
 Prices change lazily on the first read after each UTC hour boundary, replaying up to 168 missed hours. There is no background price timer or automatic board/channel creation. The nine assets, demand effects, limits and sell fee are preserved; the palace limit is five, other assets twenty-five.
 
 The prices panel sells the extracted **forecast (7,800 CC)** and optional **trader role (3,000 CC)** via an owner-only confirmation. Forecast prices are locked for the next hour; delivery uses DM with a private interaction fallback. Trader setup runs once on ready for allowed guilds, remembers its role, and does not recreate a deleted role. These stock perks replace the original general-store entry point; no `/store` command exists.
@@ -113,7 +132,7 @@ Run `npm run migrate` against the dedicated database, then `npm run register`. O
 
 ## Player data and moving hosts
 
-Wallets, holdings, running casino boards, prices, forecast locks and trader-role records live in PostgreSQL, not the bot container. A container restart does not reset them. Keep `ECONOMY_SCOPE_ID`, the bot token and the database connection stable when moving only the worker.
+Wallets, holdings, running casino boards and group rounds, prices, forecast locks and trader-role records live in PostgreSQL, not the bot container (backups include the casino round records). A container restart does not reset them. Keep `ECONOMY_SCOPE_ID`, the bot token and the database connection stable when moving only the worker.
 
 If the database will move too, stop the old worker, export a current private snapshot with `npm run backup -- ./backups/move.json`, and restore to an empty migrated database with `npm run restore -- ./backups/move.json --confirm-empty-database`. The restore refuses existing data. Keep backups outside Railway and take a fresh one before removing the database or letting its hosting expire. Never run two workers during the move. Full steps and verification limits are in [DATA-MIGRATION.md](DATA-MIGRATION.md).
 

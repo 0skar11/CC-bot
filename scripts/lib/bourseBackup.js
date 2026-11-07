@@ -3,7 +3,8 @@ import { createHash } from 'node:crypto';
 export const MAX_BACKUP_BYTES = 100 * 1024 * 1024;
 const FORMAT = 'cc-bot-bourse-backup';
 const VERSION = 1;
-const RECORD_KEY = /^guild:\d{17,20}:(?:bourse|config|economy:\d{17,20})$/u;
+// The market, a guild's configuration, a member's record, and a casino group round of a room.
+const RECORD_KEY = /^guild:\d{17,20}:(?:bourse|config|economy:\d{17,20}|casino:(?:roulette|rocket):\d{17,20})$/u;
 
 export class BackupError extends Error {
     constructor(message) { super(message); this.name = 'BackupError'; }

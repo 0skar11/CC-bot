@@ -1,12 +1,13 @@
-// casinoUi.js — the casino's embeds and buttons, shared by the `casino` command
+// casinoUi.js — the casino's solo-game embeds and buttons, shared by the `casino` command
 // (src/commands/Games/casino.js), the mines buttons (src/interactions/buttons/store/casino.js) and the
-// mines timeout and restart check (casinoSessions.js). Plain embed objects so the emojis stay; each line
-// starts with Arabic or an emoji so Discord doesn't reorder it.
+// mines timeout and restart check (casinoSessions.js). The group rounds are casinoGroupUi.js. Plain embed
+// objects so the emojis stay; each line starts with Arabic or an emoji so Discord doesn't reorder it.
 
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { CC, ccEmbed, formatCC } from '../../config/cc.js';
-import { CASINO, CASINO_BUTTON_PREFIX, COIN_SIDES } from '../../config/casino.js';
-import { minesPayout, minesMultiplierHundredths } from './casinoService.js';
+import { CASINO, CASINO_BUTTON_PREFIX, COIN_SIDES, DICE_DIRECTIONS } from '../../config/casino.js';
+import { crashChanceBasisPoints, diceMultiplierHundredths, diceWins, minesPayout, minesMultiplierHundredths } from './casinoService.js';
+import { multiplierText } from './casinoGroupUi.js';
 
 const number = (value) => Number(value || 0).toLocaleString('en-US');
 const idleSeconds = Math.round(CASINO.idleMs / 1000);
@@ -144,20 +145,103 @@ export function slotsPayload(result, user) {
     return { content: '', embeds: [embed], components: [], allowedMentions: { parse: [] } };
 }
 
+// ---- Crash ----
+
+function crashHead(result, user) {
+    return `${user} راهن بـ ${formatCC(result.bet)} ・ 🎯 هدفه **${multiplierText(result.target)}**`;
+}
+
+function crashFooter(result) {
+    const chance = crashChanceBasisPoints(result.target);
+    return { text: `فرصة إن الصاروخ يوصل ${multiplierText(result.target)}: ${(chance / 100).toFixed(2)}% ・ المكسب الرهان × الهدف` };
+}
+
+/** A step of the crash animation: the rocket climbing at `multiplier` (hundredths). */
+export function crashFramePayload(result, user, multiplier) {
+    const embed = ccEmbed('📈 كراش', [crashHead(result, user), '', `# 🚀 ${multiplierText(multiplier)}`, '', '📈 الصاروخ طالع...'].join('\n'));
+    embed.footer = crashFooter(result);
+    return { content: '', embeds: [embed], components: [], allowedMentions: { parse: [] } };
+}
+
+/** The end of a crash bet: cashed out at the target, or crashed before it. */
+export function crashResultPayload(result, user) {
+    const won = result.payout > 0;
+    const shown = multiplierText(Math.max(100, result.crash));
+    const lines = won
+        ? [`# ✅ ${multiplierText(result.target)}`, '', `🎉 الصاروخ وصل **${multiplierText(result.target)}** وعملت كاش أوت! خدت ${formatCC(result.payout)}`, `💥 وانفجر بعدها عند **${shown}**`]
+        : [`# 💥 ${shown}`, '', `❌ الصاروخ انفجر عند **${shown}** قبل ما يوصل ${multiplierText(result.target)}، خسرت ${formatCC(result.bet)}`];
+    const embed = ccEmbed('📈 كراش', [crashHead(result, user), '', ...lines, `📊 ${profitLine(result.bet, result.payout)}`, ...balanceLine(result.balance)].join('\n'));
+    embed.footer = crashFooter(result);
+    return { content: '', embeds: [embed], components: [], allowedMentions: { parse: [] } };
+}
+
+// ---- Dice ----
+
+const rollText = (roll) => (roll / 100).toFixed(2);
+
+/** `0 🟩🟩🟩🎲🟥🟥🟥🟥🟥🟥 100`: the win zone (🟩), the lose zone (🟥) and where the dice landed (🎲). */
+export function diceBar(result) {
+    const cells = 10;
+    const width = CASINO.dice.faces / cells;
+    const bar = Array.from({ length: cells }, (_, cell) => {
+        if (Math.floor(result.roll / width) === cell) return '🎲';
+        return diceWins(cell * width + width / 2, result.direction, result.number) ? '🟩' : '🟥';
+    });
+    return `0 ${bar.join('')} 100`;
+}
+
+export function dicePayload(result, user) {
+    const side = DICE_DIRECTIONS[result.direction];
+    const multiplier = diceMultiplierHundredths(result.chance);
+    const rule = result.direction === 'under' ? `أقل من ${result.number}.00` : `${result.number}.00 أو أكتر`;
+    const embed = ccEmbed('🎲 نرد', [
+        `${user} راهن بـ ${formatCC(result.bet)} على **${side.name} ${result.number}** ${side.emoji} (لازم يطلع ${rule})`,
+        '',
+        `# 🎲 ${rollText(result.roll)}`,
+        diceBar(result),
+        '',
+        result.payout > 0 ? `🎉 كسبت! خدت ${formatCC(result.payout)} (${times(multiplier)})` : `❌ خسرت ${formatCC(result.bet)}`,
+        ...balanceLine(result.balance),
+    ].join('\n'));
+    embed.footer = { text: `فرصة المكسب ${result.chance}% ・ المكسب ${times(multiplier)} من الرهان` };
+    return { content: '', embeds: [embed], components: [], allowedMentions: { parse: [] } };
+}
+
+// ---- Usage and failures ----
+
+/** One typed example per game, for the usage answers. */
+export const GAME_USAGE = {
+    mines: () => `💣 \`مينز 100 3\` ・ ماينز: افتح خانات من غير ما تلاقي لغم (من ${CASINO.mines.min} لـ ${CASINO.mines.max} ألغام) واعمل كاش أوت وقت ما تحب`,
+    coinflip: () => `🪙 \`عملة 100 ملك\` ・ ملك ولا كتابة، المكسب ${coinflipTimes()}`,
+    slots: () => `🎰 \`سلوت 100\` ・ سلوت، 3 زي بعض لحد ×${topSlots()}`,
+    crash: () => `📈 \`كراش 100 2.5\` ・ كراش: لو الصاروخ وصل للمضاعف (${multiplierText(CASINO.crash.minTarget)} لـ ${multiplierText(CASINO.crash.maxTarget)}) قبل ما ينفجر تكسب الرهان × المضاعف`,
+    dice: () => `🎲 \`نرد 100 فوق 70\` أو \`نرد 100 تحت 30\` ・ نرد من 0.00 لـ 99.99، وكل ما الفرصة أقل المكسب أكبر`,
+    roulette: () => `🎡 \`روليت 100 احمر\` أو \`روليت 100 17\` ・ روليت جماعي: 🔴 / ⚫ ×${CASINO.roulette.colorPays}، رقم من 0 لـ 36 ×${CASINO.roulette.numberPays}`,
+    rocket: () => `🚀 \`صاروخ 100\` أو \`صاروخ 100 2\` ・ صاروخ (كراش جماعي): اركب مع الروم واعمل كاش أوت قبل ما ينفجر`,
+};
+
 /** `مينز 100 3` … : how to play, for a typed casino command without a game or a bet. */
 export function casinoUsageText() {
     return [
         `🎰 **الكازينو** ・ الرهان من ${number(CASINO.minBet)} ${CC.short} لحد رصيدك${CASINO.unlimited ? '' : ` (أقصى رهان ${number(CASINO.maxBet)})`}`,
-        `💣 \`مينز 100 3\` ・ ماينز: افتح خانات من غير ما تلاقي لغم (من ${CASINO.mines.min} لـ ${CASINO.mines.max} ألغام) واعمل كاش أوت وقت ما تحب`,
-        `🪙 \`عملة 100 ملك\` ・ ملك ولا كتابة، المكسب ${coinflipTimes()}`,
-        `🎰 \`سلوت 100\` ・ سلوت، 3 زي بعض لحد ×${topSlots()}`,
+        ...Object.values(GAME_USAGE).map((line) => line()),
+        '🎮 اكتب `العاب` تشوف كل الألعاب وشرحها.',
     ].join('\n');
+}
+
+/** How to play one game, for its typed command with words that don't fit. */
+export function gameUsageText(game) {
+    return [`❌ اكتبها كده: ${GAME_USAGE[game]()}`, '🎮 اكتب `العاب` تشوف كل الألعاب.'].join('\n');
 }
 
 const FAILURE_TEXT = {
     bad_mines: `❌ عدد الألغام لازم يكون من ${CASINO.mines.min} لـ ${CASINO.mines.max}.`,
     bad_side: '❌ اختار `ملك` أو `كتابة`.',
     cooldown: '⏳ استنى ثانية قبل اللعبة الجاية.',
+    bad_choice: '❌ اختار 🔴 `احمر` أو ⚫ `اسود` أو 🟢 `اخضر` أو رقم من 0 لـ 36.',
+    busy: '⏳ فيه جولة شغالة في الروم دلوقتي، استنى لما تخلص وابدأ اللي بعدها.',
+    full: '❌ الجولة دي اتملت، استنى اللي بعدها.',
+    joined: '🧑‍🚀 انت راكب الصاروخ ده خلاص، استنى الإقلاع.',
 };
 
 /** Why a game didn't start, as a message. */
@@ -168,5 +252,11 @@ export function casinoFailureText(result) {
         const ends = Number.isFinite(result.game?.lastActionAt) ? ` (هتقفل لوحدها <t:${Math.ceil((result.game.lastActionAt + CASINO.idleMs) / 1000)}:R> لو مالعبتش)` : '';
         return `⚠️ عندك لعبة ماينز شغالة، كملها أو اعمل كاش أوت الأول${ends}.`;
     }
+    if (result.reason === 'bad_target') return `❌ المضاعف لازم يكون من **${multiplierText(CASINO.crash.minTarget)}** لـ **${multiplierText(CASINO.crash.maxTarget)}** (مثلًا \`2.5\`).`;
+    if (result.reason === 'bad_dice') {
+        const { minChance, maxChance } = CASINO.dice;
+        return `❌ اختار \`تحت\` رقم من ${minChance} لـ ${maxChance} أو \`فوق\` رقم من ${100 - maxChance} لـ ${100 - minChance} (مثلًا \`نرد 100 فوق 70\`).`;
+    }
+    if (result.reason === 'too_many') return `❌ أقصى حاجة ${CASINO.roulette.maxBetsPerMember} رهانات ليك في الجولة الواحدة.`;
     return FAILURE_TEXT[result.reason] || '❌ حصلت مشكلة، جرب تاني.';
 }

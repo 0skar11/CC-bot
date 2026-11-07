@@ -1,11 +1,12 @@
-// casinoService.js — the CC casino's rules and money: mines, coinflip and slots. The payouts and the
-// house edge are explained in src/config/casino.js; the embeds are casinoUi.js and the live mines boards
-// (timeout, restart) casinoSessions.js.
+// casinoService.js — the CC casino's solo games, rules and money: mines, coinflip, slots, crash and dice.
+// The payouts and the house edge are explained in src/config/casino.js; the embeds are casinoUi.js and the
+// live mines boards (timeout, restart) casinoSessions.js. The group games are casinoGroupService.js.
 //
 // Every balance change goes through updateCCState (ccService.js), one save per step under the member's
 // lock: the bet is taken in the same save that starts a game and the payout added in the same save that
 // ends it, so a bet can't be spent twice, a game can't be paid twice and nothing is left half done.
-// Coinflip and slots are over in that one save. A mines game is kept in the member's economy record
+// Coinflip, slots, crash and dice are over in that one save (crash only animates the result afterwards).
+// A mines game is kept in the member's economy record
 // until it ends, so a restart or a crash never loses the bet:
 //   ccCasino: { id, game: 'mines', bet, mines: [cells], picks: [cells], guildId, channelId, messageId,
 //               startedAt, lastActionAt }
@@ -23,7 +24,8 @@ import { updateCCState } from './ccService.js';
 /** A uniformly random whole number in [0, max), from crypto.randomInt. Tests pass their own `randomInt`. */
 export const secureRandomInt = (max) => cryptoRandomInt(max);
 
-function draw(randomInt, max) {
+/** One draw from 0 … max − 1, checked: a bad random source stops the game instead of paying from it. */
+export function draw(randomInt, max) {
     const value = randomInt(max);
     if (!Number.isSafeInteger(value) || value < 0 || value >= max) throw new Error('Invalid casino random draw');
     return value;
@@ -47,7 +49,7 @@ export function choose(n, k) {
 }
 
 // Whole numbers divided and rounded down, exactly (every number here stays far below 2^53).
-const divideDown = (top, bottom) => (top - (top % bottom)) / bottom;
+export const divideDown = (top, bottom) => (top - (top % bottom)) / bottom;
 const safeCells = (mines) => CASINO.mines.cells - mines;
 
 /**
@@ -114,13 +116,22 @@ export function readMinesGame(raw) {
 
 const add = (stats, key, amount) => { stats[key] = (Number.isSafeInteger(stats[key]) ? stats[key] : 0) + amount; };
 
-function takeBet(state, bet) {
+/** Takes `bet` from the balance (ccStats.spent), in the save that starts the game. */
+export function takeBet(state, bet) {
     state.cc -= bet;
     add(state.stats, 'spent', bet);
 }
 
+/** Gives back a bet whose game never happened (a group round cut by a restart): as if it was never taken. */
+export function returnBet(state, bet) {
+    const next = state.cc + bet;
+    if (!Number.isSafeInteger(next)) throw new Error('CC balance overflow');
+    state.cc = next;
+    add(state.stats, 'spent', -bet);
+}
+
 /** Pays `payout` for a finished `bet`: the balance, ccStats and ccCasinoStats, all in the same save. */
-function payOut(state, record, bet, payout) {
+export function payOut(state, record, bet, payout) {
     if (!Number.isSafeInteger(payout) || payout < 0) throw new Error('Invalid casino payout');
     const next = state.cc + payout;
     if (!Number.isSafeInteger(next)) throw new Error('CC balance overflow');
@@ -296,5 +307,147 @@ export async function playSlots(client, guildId, userId, { bet } = {}, { now = D
         const spin = slotsResult(reels, bet);
         payOut(state, record, bet, spin.payout);
         return { ok: true, bet, reels, ...spin, before, previous };
+    });
+}
+
+/**
+ * The house edge of each game in percent, worked out from the payouts (the same math as the tests), for the
+ * guide and the games menu: they never show a number the games don't really have.
+ */
+export function casinoEdges() {
+    const { symbols, triple, pair } = CASINO.slots;
+    const reels = symbols.length;
+    const pairs = 3 * reels * (reels - 1);
+    const slotsReturn = (Object.values(triple).reduce((sum, multiplier) => sum + multiplier, 0) + pairs * pair) / reels ** 3;
+    const { pockets, red, colorPays, numberPays } = CASINO.roulette;
+    const rouletteReturn = Math.max((red.length * colorPays) / pockets, numberPays / pockets);
+    const percent = (lost) => Math.round(lost * 10_000) / 100;
+    return {
+        mines: CASINO.mines.edgePercent,
+        coinflip: Math.round((100 - CASINO.coinflip.payoutPercent / 2) * 100) / 100,
+        slots: percent(1 - slotsReturn),
+        crash: CASINO.crash.edgePercent,
+        dice: CASINO.dice.edgePercent,
+        roulette: percent(1 - rouletteReturn),
+        rocket: CASINO.crash.edgePercent,
+    };
+}
+
+// ---- Crash (also the rocket's crash point) and dice ----
+
+/** `bet` × hundredths / 100 rounded down, exactly: no product above 2^53 even at the bet ceiling × 100. */
+export function multiplyHundredths(bet, hundredths) {
+    return divideDown(bet, 100) * hundredths + divideDown((bet % 100) * hundredths, 100);
+}
+
+/**
+ * The crash point (hundredths) of draw `u` out of `draws`: ⌊(100 − edge) × draws / (draws − u)⌋. As draws − u
+ * is uniform over 1 … draws, the point reaches t (t ≥ 100 − edge) for ⌊(100 − edge) × draws / t⌋ of the draws.
+ */
+export function crashPointFromDraw(u, draws = CASINO.crash.draws) {
+    if (!Number.isSafeInteger(u) || u < 0 || u >= draws) throw new Error('Invalid casino random draw');
+    return divideDown((100 - CASINO.crash.edgePercent) * draws, draws - u);
+}
+
+/** A new crash point (hundredths), from crypto.randomInt unless a test passes `randomInt`. */
+export function drawCrashPoint(randomInt = secureRandomInt) {
+    const { draws } = CASINO.crash;
+    return crashPointFromDraw(draw(randomInt, draws), draws);
+}
+
+/** Whether `target` (hundredths) is a crash target: a whole number from ×1.01 to ×100. */
+export function isValidCrashTarget(target) {
+    return Number.isSafeInteger(target) && target >= CASINO.crash.minTarget && target <= CASINO.crash.maxTarget;
+}
+
+/** A crash bet aiming for `target`: bet × target when the crash point reaches it (a tie wins), else nothing. */
+export function crashPayout(bet, target, crashPoint) {
+    return crashPoint >= target ? multiplyHundredths(bet, target) : 0;
+}
+
+/** The chance (in hundredths of a percent, rounded down) that the crash point reaches `target`: 3880 = 38.80%. */
+export function crashChanceBasisPoints(target) {
+    return divideDown((100 - CASINO.crash.edgePercent) * 10_000, target);
+}
+
+/**
+ * The steps the crash animation shows before its end value `end` (hundredths): at most CASINO.crash.frames − 1
+ * values climbing from ×1.00 like the rocket does (evenly on a log scale), all below `end`. None when it ends at ×1.00.
+ */
+export function crashFrames(end, frames = CASINO.crash.frames) {
+    if (!(end > 100)) return [];
+    const steps = Math.min(frames, Math.max(1, Math.ceil(Math.log(end / 100) / Math.log(1.5))));
+    const values = [];
+    for (let step = 1; step < steps; step += 1) {
+        const value = Math.floor(100 * (end / 100) ** (step / steps));
+        if (value > (values.at(-1) ?? 100) && value < end) values.push(value);
+    }
+    return values;
+}
+
+/**
+ * Crash, bet and payout in one save: the crash point is drawn, and the bet pays ×target when it reaches the
+ * target. Returns `{ ok: true, bet, target, crash, payout, before, balance, previous }` or `{ ok: false, reason }`
+ * (bad_bet, bad_target, active, no_cc) like startMines.
+ */
+export async function playCrash(client, guildId, userId, { bet, target = CASINO.crash.defaultTarget } = {}, { now = Date.now(), randomInt = secureRandomInt, idleMs = CASINO.idleMs } = {}) {
+    if (!isValidBet(bet)) return { ok: false, reason: 'bad_bet' };
+    if (!isValidCrashTarget(target)) return { ok: false, reason: 'bad_target' };
+    return updateCCState(client, guildId, userId, (state, record) => {
+        const previous = endIdleMines(state, record, now, idleMs);
+        const refused = refuseStart(state, record, bet);
+        if (refused) return { ...refused, previous, skipSave: !previous };
+        const before = state.cc;
+        takeBet(state, bet);
+        const crash = drawCrashPoint(randomInt);
+        const payout = crashPayout(bet, target, crash);
+        payOut(state, record, bet, payout);
+        return { ok: true, bet, target, crash, payout, before, previous };
+    });
+}
+
+/** The win chance in % of a dice bet (`under` N: N%, `over` N: 100 − N%), or null when it is out of range. */
+export function diceChance(direction, number) {
+    if (!Number.isSafeInteger(number)) return null;
+    const chance = { under: number, over: 100 - number }[direction];
+    const { minChance, maxChance } = CASINO.dice;
+    return Number.isSafeInteger(chance) && chance >= minChance && chance <= maxChance ? chance : null;
+}
+
+/** Whether `roll` (0–9,999, i.e. 0.00–99.99) wins: `under` N below N.00, `over` N from N.00 up. */
+export function diceWins(roll, direction, number) {
+    const line = number * (CASINO.dice.faces / 100);
+    return direction === 'under' ? roll < line : roll >= line;
+}
+
+/** A dice win with a `chance`% chance: bet × (100 − edge) / chance, rounded down. */
+export function dicePayout(bet, chance) {
+    return divideDown(bet * (100 - CASINO.dice.edgePercent), chance);
+}
+
+/** The same multiplier in hundredths, rounded down (`×1.94` is 194 at 50%). */
+export function diceMultiplierHundredths(chance) {
+    return divideDown((100 - CASINO.dice.edgePercent) * 100, chance);
+}
+
+/**
+ * One roll of the dice, bet and payout in one save. Returns
+ * `{ ok: true, bet, direction, number, chance, roll, payout, before, balance, previous }` or
+ * `{ ok: false, reason }` (bad_bet, bad_dice, active, no_cc) like startMines.
+ */
+export async function playDice(client, guildId, userId, { bet, direction = 'under', number = CASINO.dice.defaultNumber } = {}, { now = Date.now(), randomInt = secureRandomInt, idleMs = CASINO.idleMs } = {}) {
+    if (!isValidBet(bet)) return { ok: false, reason: 'bad_bet' };
+    const chance = diceChance(direction, number);
+    if (chance === null) return { ok: false, reason: 'bad_dice' };
+    return updateCCState(client, guildId, userId, (state, record) => {
+        const previous = endIdleMines(state, record, now, idleMs);
+        const refused = refuseStart(state, record, bet);
+        if (refused) return { ...refused, previous, skipSave: !previous };
+        const before = state.cc;
+        takeBet(state, bet);
+        const roll = draw(randomInt, CASINO.dice.faces);
+        const payout = diceWins(roll, direction, number) ? dicePayout(bet, chance) : 0;
+        payOut(state, record, bet, payout);
+        return { ok: true, bet, direction, number, chance, roll, payout, before, previous };
     });
 }

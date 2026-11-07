@@ -5,14 +5,19 @@
 // Discord doesn't reorder it.
 
 import { CC, ccEmbed } from '../../config/cc.js';
-import { CASINO } from '../../config/casino.js';
+import { CASINO, GAMES_COMMAND, GROUP_GAMES, SOLO_GAMES } from '../../config/casino.js';
 import { commandArgAliases } from '../../config/commands/commandAliases.js';
 import { casinoChannelIds, initialCC, isAllowedChannel, traderRoleEnabled } from '../../config/runtime.js';
 import { bourseAssets, bourseSettings, SELL_ALL_WORDS } from '../../config/store/bourse.js';
 import { assetsFor, maxOwnedOf } from './bourseService.js';
 import { perkPrices } from './boursePerks.js';
+import { casinoEdges } from './casinoService.js';
+import { multiplierText } from './casinoGroupUi.js';
 import { slotsTableText } from './casinoUi.js';
 import { isStreakGuild, streakGuideEmbed } from './streakService.js';
+
+// The house edge of each game, worked out from the payouts (src/services/cc/casinoService.js).
+export { casinoEdges };
 
 export const GUIDE_SENT = '📬 بعتلك الشرح في الخاص.';
 export const GUIDE_DM_CLOSED = '❌ مقدرتش أبعتلك في الخاص، افتح الرسايل الخاصة من السيرفر وجرّب تاني.';
@@ -23,24 +28,12 @@ const code = (words) => words.map((word) => `\`${word}\``).join('، ');
 /** Every typed word that runs `target` (`'casino mines'`, `'cc'`...), from commandArgAliases. */
 const aliasesFor = (target) => Object.keys(commandArgAliases).filter((word) => commandArgAliases[word] === target);
 const times = (hundredths) => `×${(hundredths / 100).toFixed(2)}`;
-
-/** The house edge of each game in percent, worked out from the payouts (same math as tests/casino.test.js). */
-export function casinoEdges() {
-    const { symbols, triple, pair } = CASINO.slots;
-    const reels = symbols.length;
-    const pairs = 3 * reels * (reels - 1);
-    const slotsReturn = (Object.values(triple).reduce((sum, multiplier) => sum + multiplier, 0) + pairs * pair) / reels ** 3;
-    return {
-        mines: CASINO.mines.edgePercent,
-        coinflip: Math.round((100 - CASINO.coinflip.payoutPercent / 2) * 100) / 100,
-        slots: Math.round((1 - slotsReturn) * 10_000) / 100,
-    };
-}
+const seconds = (ms) => Math.round(ms / 1000);
 
 function ccGuideEmbed({ streak }) {
     const earn = [
         ...(streak ? ['🔥 **الستريك**: صورة أو GIF كل يوم في روم الستريك تجيبلك CC (التفاصيل تحت).'] : []),
-        '🎰 **الكازينو**: تكسب (أو تخسر) CC في ماينز وملك ولا كتابة وسلوت.',
+        `🎰 **الكازينو**: تكسب (أو تخسر) CC في ${SOLO_GAMES.length + GROUP_GAMES.length} ألعاب، فردية وجماعية (اكتب \`العاب\` تشوفهم).`,
         '📈 **البورصة**: اشتري رخيص وبيع غالي، والفرق مكسبك.',
     ];
     return ccEmbed(`${CC.emoji} شرح CC bot`, [
@@ -95,7 +88,7 @@ function bourseGuideEmbed(guildId) {
 }
 
 function casinoGuideEmbed() {
-    const { mines, coinflip, minBet, maxBet, idleMs } = CASINO;
+    const { mines, coinflip, crash, roulette, rocket, minBet, maxBet, idleMs } = CASINO;
     const edges = casinoEdges();
     const bet = minBet * 10;
     const rows = mines.cells / mines.columns;
@@ -103,6 +96,7 @@ function casinoGuideEmbed() {
     return ccEmbed('🎰 شرح الكازينو', [
         `💵 الرهان من **${number(minBet)}** ${CC.short}${CASINO.unlimited ? ' من غير حد أقصى' : ` لـ **${number(maxBet)}** ${CC.short}`}، ومايزيدش عن رصيدك.`,
         ...(rooms ? [rooms] : []),
+        `🎮 اكتب ${code(aliasesFor(GAMES_COMMAND).filter((word) => word !== GAMES_COMMAND).slice(0, 2))} أو \`/${GAMES_COMMAND}\` تشوف كل الألعاب (الفردية والجماعية) في قايمة واحدة.`,
         '',
         `💣 \`/casino mines\` ・ \`مينز ${bet} ${mines.default}\``,
         `> لوحة ${mines.columns}×${rows} فيها من ${mines.min} لـ ${mines.max} ألغام (الافتراضي ${mines.default}). كل خانة أمان بتكبّر المضاعف، واعمل كاش أوت وقت ما تحب، ولو لقيت لغم تخسر الرهان.`,
@@ -112,8 +106,16 @@ function casinoGuideEmbed() {
         `> ملك ولا كتابة، المكسب **${times(coinflip.payoutPercent)}** ・ مكتوبة: ${code(aliasesFor('casino coinflip'))}`,
         `🎰 \`/casino slots\` ・ \`سلوت ${bet}\``,
         `> ${slotsTableText()} ・ مكتوبة: ${code(aliasesFor('casino slots'))}`,
+        `📈 \`/casino crash\` ・ \`كراش ${bet} 2.5\``,
+        `> اختار مضاعف من ${multiplierText(crash.minTarget)} لـ ${multiplierText(crash.maxTarget)}، ولو الصاروخ وصله قبل ما ينفجر تكسب الرهان × المضاعف ・ مكتوبة: ${code(aliasesFor('casino crash'))}`,
+        `🎲 \`/casino dice\` ・ \`نرد ${bet} فوق 70\``,
+        `> رقم من 0.00 لـ 99.99، \`فوق\` أو \`تحت\` رقمك: فرصة أقل = مكسب أكبر ・ مكتوبة: ${code(aliasesFor('casino dice'))}`,
+        `🎡 \`/casino roulette\` ・ \`روليت ${bet} احمر\` (جماعية)`,
+        `> جولة ${seconds(roulette.joinMs)} ثانية للروم كله: 🔴 / ⚫ ×${roulette.colorPays} أو رقم من 0 لـ 36 ×${roulette.numberPays}، ولفة واحدة للكل ・ مكتوبة: ${code(aliasesFor('casino roulette'))}`,
+        `🚀 \`/casino rocket\` ・ \`صاروخ ${bet} 2\` (جماعية)`,
+        `> كراش للروم كله بعد ${seconds(rocket.joinMs)} ثانية: دوس 💰 كاش أوت قبل ما ينفجر، أو حط مضاعف يخرّجك لوحده ・ مكتوبة: ${code(aliasesFor('casino rocket'))}`,
         '',
-        `⚖️ بصراحة: البيت ليه نسبة، **${edges.mines}%** في الماينز و**${edges.coinflip}%** في العملة و**${edges.slots}%** في السلوت، يعني على المدى الطويل الكازينو بيكسب. العب بمزاج وماتراهنش بحاجة مش مستعد تخسرها.`,
+        `⚖️ بصراحة: البيت ليه نسبة، **${edges.mines}%** في الماينز و**${edges.coinflip}%** في العملة و**${edges.slots}%** في السلوت و**${edges.crash}%** في الكراش و**${edges.dice}%** في النرد و**${edges.roulette}%** في الروليت و**${edges.rocket}%** في الصاروخ، يعني على المدى الطويل الكازينو بيكسب. العب بمزاج وماتراهنش بحاجة مش مستعد تخسرها.`,
     ].join('\n'));
 }
 

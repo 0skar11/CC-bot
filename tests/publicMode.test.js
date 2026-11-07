@@ -66,7 +66,7 @@ test('public mode retains channel restrictions and validates per-guild trader an
     runConfig({ anchors: 'not-a-guild:400000000000000001' }, `assert.throws(() => runtime.validateConfig(), /Invalid TRADER_ROLE_ANCHORS/);`);
 });
 
-test('public registration writes exactly addcc, bourse, casino, cc, cctop, daily, give, help and removecc to the global application route', () => {
+test('public registration writes exactly addcc, bourse, casino, cc, cctop, daily, games, give, help and removecc to the global application route', () => {
     runConfig({}, `
         const { registerCommands } = await import(${JSON.stringify(registerUrl)});
         const calls = [];
@@ -74,9 +74,9 @@ test('public registration writes exactly addcc, bourse, casino, cc, cctop, daily
         assert.equal(calls.length, 1);
         assert.equal(calls[0].route, '/applications/${APP}/commands');
         assert.deepEqual(calls[0].payload.body, commands);
-        assert.deepEqual(commands.map(c => c.name), ['addcc','bourse','casino','cc','cctop','daily','give','help','removecc']);
+        assert.deepEqual(commands.map(c => c.name), ['addcc','bourse','casino','cc','cctop','daily','games','give','help','removecc']);
         assert.deepEqual(commands[1].options.map(c => c.name), ['prices','invest','sell','buymax','sellall','holdings']);
-        assert.deepEqual(commands[2].options.map(c => c.name), ['mines','coinflip','slots']);
+        assert.deepEqual(commands[2].options.map(c => c.name), ['mines','coinflip','slots','crash','dice','roulette','rocket']);
     `);
 });
 
@@ -86,7 +86,7 @@ test('finite registration continues using only configured guild routes', () => {
         const calls = [];
         await registerCommands({rest:{put:async (route,payload) => calls.push({route,payload})}});
         assert.deepEqual(calls.map(c => c.route), ['/applications/${APP}/guilds/${FIRST}/commands','/applications/${APP}/guilds/${SECOND}/commands']);
-        for (const call of calls) assert.deepEqual(call.payload.body.map(c => c.name), ['addcc','bourse','casino','cc','cctop','daily','give','help','removecc']);
+        for (const call of calls) assert.deepEqual(call.payload.body.map(c => c.name), ['addcc','bourse','casino','cc','cctop','daily','games','give','help','removecc']);
     `);
 });
 

@@ -1,6 +1,6 @@
-import { isAllowedGuild, isAllowedChannel, isCasinoChannel, prefix, streakEnabled } from '../config/runtime.js';
+import { isAllowedGuild, isAllowedChannel, isCasinoChannel, isCommandChannel, prefix, streakEnabled } from '../config/runtime.js';
 import { isBourseGuildCommand } from '../config/bourseGuild.js';
-import { CASINO_COMMAND } from '../config/casino.js';
+import { CASINO_COMMAND, GAMES_COMMAND } from '../config/casino.js';
 import { applyWordAliases } from '../config/commands/commandAliases.js';
 import { handleStreakCommand, handleStreakMessage } from '../services/cc/streakService.js';
 import { handleStreakBotMessage } from '../services/cc/streakBotService.js';
@@ -29,9 +29,13 @@ export default {
         const parsed = applyWordAliases(typed.toLowerCase(), words, prefixed);
         // `help` is typed only as the exact guide words above, so `help me` and the like stay chat.
         if (!parsed || parsed.commandName === 'help' || !isBourseGuildCommand(parsed.commandName)) return;
-        // The casino is typed in its own rooms (CASINO_CHANNEL_IDS), everything else in the bot's channels.
+        // The casino is typed in its own rooms (CASINO_CHANNEL_IDS), the games menu there or in the bot's
+        // channels, everything else in the bot's channels.
         const casino = parsed.commandName === CASINO_COMMAND;
-        if (!(casino ? isCasinoChannel(message.channel, message.channelId) : isAllowedChannel(message.channel, message.channelId))) return;
+        const games = parsed.commandName === GAMES_COMMAND;
+        if (casino && !isCasinoChannel(message.channel, message.channelId)) return;
+        if (games && !isCommandChannel(GAMES_COMMAND, message.channel, message.channelId)) return;
+        if (!casino && !games && !isAllowedChannel(message.channel, message.channelId)) return;
         const command = client.commands.get(parsed.commandName);
         if (!command) return;
         const send = (payload) => {
@@ -75,7 +79,7 @@ export default {
             if (!target) return send({ content: '❌ العضو مش موجود.' });
         }
         if (!stock) {
-            if ((parsed.commandName === 'cctop' || parsed.commandName === 'daily') && values.length) return;
+            if ((parsed.commandName === 'cctop' || parsed.commandName === 'daily' || games) && values.length) return;
             return execute({ getUser: () => target });
         }
         const schema = command.data.toJSON().options.find((sub) => sub.name === subcommand);

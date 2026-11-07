@@ -1,12 +1,18 @@
 import { findAsset, isSellAllWord } from '../store/bourse.js';
-import { coinSide } from '../casino.js';
+import { coinSide, readGameArgs } from '../casino.js';
 
-// Stock market and read-only CC aliases from DISbot, and the casino's games (`مينز 100 3`, `عملة 100 ملك`, `سلوت 100`).
+// Stock market and read-only CC aliases from DISbot, the casino's games (`مينز 100 3`, `عملة 100 ملك`,
+// `سلوت 100`, `كراش 100 2.5`, `نرد 100 فوق 70`, `روليت 100 احمر`, `صاروخ 100`) and the games menu (`العاب`).
 export const commandArgAliases = {
     casino: 'casino', كازينو: 'casino', الكازينو: 'casino',
     mines: 'casino mines', ماينز: 'casino mines', مينز: 'casino mines', الغام: 'casino mines', ألغام: 'casino mines',
     coinflip: 'casino coinflip', cf: 'casino coinflip', عملة: 'casino coinflip', عمله: 'casino coinflip',
     slots: 'casino slots', slot: 'casino slots', سلوت: 'casino slots', سلوتس: 'casino slots',
+    crash: 'casino crash', كراش: 'casino crash',
+    dice: 'casino dice', نرد: 'casino dice', زهر: 'casino dice', دايس: 'casino dice',
+    roulette: 'casino roulette', روليت: 'casino roulette', الروليت: 'casino roulette',
+    rocket: 'casino rocket', صاروخ: 'casino rocket', الصاروخ: 'casino rocket',
+    games: 'games', العاب: 'games', ألعاب: 'games', الالعاب: 'games', الألعاب: 'games',
     شراء: 'bourse invest', اشتري: 'bourse invest',
     اسعار: 'bourse prices', أسعار: 'bourse prices', الاسعار: 'bourse prices', الأسعار: 'bourse prices', prices: 'bourse prices',
     بورصة: 'bourse prices', بورصه: 'bourse prices', البورصة: 'bourse prices', البورصه: 'bourse prices',
@@ -19,6 +25,8 @@ export const commandArgAliases = {
     رصيد: 'cc', رصيدي: 'cc', رصيدى: 'cc', فلوس: 'cc', كريدت: 'cc',
     'top cc': 'cctop', 'توب cc': 'cctop', 'توب كريدت': 'cctop',
 };
+// The newer games whose words are also everyday chat (`كراش`, `صاروخ`...): typed without the prefix they need a bet.
+const NEW_CASINO_GAMES = new Set(['casino crash', 'casino dice', 'casino roulette', 'casino rocket']);
 export function isBourseNameInvocation(typedCommand, args) {
     const target = commandArgAliases[typedCommand];
     if (target !== 'bourse invest' && target !== 'bourse sell') return false;
@@ -35,13 +43,20 @@ export function isCoinflipInvocation(typedCommand, args) {
     if (commandArgAliases[typedCommand] !== 'casino coinflip' || args.length !== 2) return false;
     return args.some((arg) => /^\d+$/u.test(arg)) && args.some((arg) => coinSide(arg) !== null);
 }
+// `كراش 100 2.5`, `نرد 100 فوق 70`, `روليت 100 احمر`, `صاروخ 100 2` without the prefix: a bet and the game's words.
+export function isGameInvocation(typedCommand, args) {
+    const target = commandArgAliases[typedCommand];
+    if (!NEW_CASINO_GAMES.has(target)) return false;
+    return !readGameArgs(target.split(' ')[1], args).error;
+}
 export function applyWordAliases(typedCommand, args, prefixed) {
     const twoWord = `${typedCommand} ${(args[0] || '').toLowerCase()}`;
     if (Object.hasOwn(commandArgAliases, twoWord)) {
         return { commandName: commandArgAliases[twoWord], args: args.slice(1) };
     }
     if (!Object.hasOwn(commandArgAliases, typedCommand)) return { commandName: typedCommand, args };
-    if (!prefixed && !args.every((arg) => /^(?:\d+|<@!?\d{17,20}>)$/u.test(arg)) && !isBourseNameInvocation(typedCommand, args) && !isCoinflipInvocation(typedCommand, args)) return null;
+    if (!prefixed && !args.length && NEW_CASINO_GAMES.has(commandArgAliases[typedCommand])) return null;
+    if (!prefixed && !args.every((arg) => /^(?:\d+|<@!?\d{17,20}>)$/u.test(arg)) && !isBourseNameInvocation(typedCommand, args) && !isCoinflipInvocation(typedCommand, args) && !isGameInvocation(typedCommand, args)) return null;
     const alias = commandArgAliases[typedCommand];
     const [commandName, ...leading] = alias.split(' ');
     return { commandName, args: [...leading, ...args] };
