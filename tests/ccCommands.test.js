@@ -131,8 +131,12 @@ test('a StreakBot update pays CC by streak day, once per day, only for StreakBot
     const client = await setup();
     const embed = { title: 'تم تحديث الستريك', description: `<@${SELF.id}>\n🔥 · 8\n🛡️ · (🛡️)` };
     const message = { author: { bot: true, id: '9', username: 'StreakBot' }, content: '', embeds: [embed] };
+    assert.equal(isStreakBotMessage(message), false, 'fails closed without STREAKBOT_ID');
+    process.env.STREAKBOT_ID = '9';
     assert.equal(isStreakBotMessage(message), true);
-    assert.equal(isStreakBotMessage({ ...message, author: { bot: true, username: 'Other' } }), false);
+    assert.equal(isStreakBotMessage({ ...message, author: { bot: true, id: '10', username: 'StreakBot' } }), false);
+    assert.equal(isStreakBotMessage({ ...message, webhookId: '5' }), false);
+    assert.equal(await parseStreakUpdate({ ...message, embeds: [{ title: 'تم تحديث الستريك', description: `<@${SELF.id}> 🔥 · 99999` }] }), null);
     assert.deepEqual(await parseStreakUpdate(message), { userId: SELF.id, count: 8 });
     assert.equal(await parseStreakUpdate({ ...message, embeds: [{ title: 'hello', description: '🔥 · 8' }] }), null);
     const now = Date.parse('2026-11-07T10:00:00Z');

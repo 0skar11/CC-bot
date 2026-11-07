@@ -7,11 +7,12 @@ import { logger } from '../../utils/logger.js';
 // Pays CC when the StreakBot app posts "تم تحديث الستريك" for a member in this server: the reward follows the
 // streak day StreakBot shows (same table as the CHAOS streak: STREAK in streakService.js).
 export const STREAKBOT_GUILD_ID = '1472405236000751778';
-// Optional: the StreakBot application's user ID (STREAKBOT_ID in .env). When empty, the bot's name must be "StreakBot".
+// Required: the StreakBot application's user ID (STREAKBOT_ID in .env). Empty = nobody is paid.
 const streakBotId = () => (process.env.STREAKBOT_ID || '').trim();
 const UPDATE_TITLE = /تم تحديث الستريك/u;
 const MENTION = /<@!?(\d{17,20})>/u;
 const FIRE_COUNT = /🔥[^\d\n]{0,12}(\d{1,5})/u;
+const MAX_STREAK_DAYS = 3650;
 const utcDay = (now) => new Date(now).toISOString().slice(0, 10);
 
 function collectText(value, out) {
@@ -29,10 +30,10 @@ export function messageText(message) {
 }
 
 export function isStreakBotMessage(message) {
-    const author = message.author;
-    if (!author?.bot) return false;
+    // Fails closed: a name can be copied by any bot or webhook, so only the configured application ID counts.
     const id = streakBotId();
-    return id ? author.id === id : /^streakbot$/iu.test(author.username || '');
+    if (!id || message.webhookId) return false;
+    return Boolean(message.author?.bot) && message.author.id === id;
 }
 
 /** `{ userId, count }` from a StreakBot update message, or null when it isn't one (or can't be read). */
@@ -40,7 +41,7 @@ export async function parseStreakUpdate(message) {
     const text = messageText(message);
     if (!UPDATE_TITLE.test(text)) return null;
     const count = Number(FIRE_COUNT.exec(text)?.[1]);
-    if (!Number.isSafeInteger(count) || count < 1) return null;
+    if (!Number.isSafeInteger(count) || count < 1 || count > MAX_STREAK_DAYS) return null;
     let userId = MENTION.exec(text)?.[1];
     if (!userId) userId = [...(message.mentions?.users?.values?.() || [])].find((user) => !user.bot)?.id;
     if (!userId && message.reference?.messageId) {
