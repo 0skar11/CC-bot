@@ -1,9 +1,9 @@
 import { MessageFlags } from 'discord.js';
 import { isAllowedGuild, isCasinoChannel } from '../../../config/runtime.js';
 import { CASINO_BUTTON_PREFIX, GROUP_GAMES, casinoChannelNotice, rouletteChoice } from '../../../config/casino.js';
-import { isValidBet, pickMinesCell, cashOutMines } from '../../../services/cc/casinoService.js';
-import { minesBoardPayload, casinoErrorText, casinoFailureText } from '../../../services/cc/casinoUi.js';
-import { onCasinoCooldown, withCasinoLock, scheduleIdleCashOut, cancelIdleCashOut, showMinesResult } from '../../../services/cc/casinoSessions.js';
+import { isValidBet, pickMinesCell, cashOutMines, stepChicken, cashOutChicken } from '../../../services/cc/casinoService.js';
+import { minesBoardPayload, chickenBoardPayload, casinoErrorText, casinoFailureText } from '../../../services/cc/casinoUi.js';
+import { onCasinoCooldown, withCasinoLock, scheduleIdleCashOut, cancelIdleCashOut, showGameResult } from '../../../services/cc/casinoSessions.js';
 import { rocketCashOut, placeGroupBet, liveRound } from '../../../services/cc/casinoGroupSessions.js';
 import { playerLanguage, roundLanguage } from '../../../services/cc/casinoGroupService.js';
 import { rocketClickText, joinModal, parseFormAmount, choiceLabel } from '../../../services/cc/casinoGroupUi.js';
@@ -11,10 +11,14 @@ import { buttonLanguage, inLang } from '../../../services/cc/lang.js';
 import { logger } from '../../../utils/logger.js';
 
 // The mines board buttons: `casino:pick:<gameId>:<cell>:<userId>` opens a cell (0–8, row by row) and
-// `casino:cashout:<gameId>:<userId>` takes the multiplier. They only work for the member who plays and
-// only on that member's running game: a button of an ended or older game (a double click, a click after
-// the timeout or a lost board) changes nothing and says so privately. The clicks of one member run one at
-// a time together with their board edit (casinoSessions.js), and each click restarts the inactivity timer.
+// `casino:cashout:<gameId>:<userId>` takes the multiplier. The chicken's: `casino:chick:<gameId>:<steps>:<userId>`
+// moves it one lane on from the `steps` lanes its board showed, and `casino:chickout:<gameId>:<userId>` takes the
+// multiplier. They only work for the member who plays and only on that member's running game of that kind: a
+// button of an ended or older game (a double click, a click after the timeout or a lost game) changes nothing and
+// says so privately. A step pressed on a board whose lane count is no longer the game's (a double press, an old
+// message of the same game) is only acknowledged: the chicken doesn't move and the board stays as it is. The
+// clicks of one member run one at a time together with their board edit (casinoSessions.js), and each click that
+// moves the game restarts the inactivity timer.
 //
 // The rocket's button: `casino:rocket:<roundId>` cashes the clicker out of the room's rocket at the
 // multiplier it had when the click reached the bot (casinoGroupSessions.js). Anyone may press it; only a
@@ -51,6 +55,15 @@ const say = (lang) => inLang(lang, TEXT);
 
 const privately = (interaction, content) => interaction.reply({ content, allowedMentions: { parse: [] }, flags: MessageFlags.Ephemeral }).catch(() => {});
 const followUp = (interaction, content) => interaction.followUp({ content, allowedMentions: { parse: [] }, flags: MessageFlags.Ephemeral }).catch(() => {});
+
+// The saved games' buttons: what each one does (casinoService.js), the board it redraws while the game goes on,
+// and the number a button carries before its owner, when it has one (`arg`: a mines cell, the chicken's lanes).
+const GAME_BUTTONS = {
+    pick: { arg: /^\d$/u, play: (client, guildId, userId, gameId, cell) => pickMinesCell(client, guildId, userId, gameId, cell), board: minesBoardPayload },
+    cashout: { play: (client, guildId, userId, gameId) => cashOutMines(client, guildId, userId, gameId), board: minesBoardPayload },
+    chick: { arg: /^\d{1,2}$/u, play: (client, guildId, userId, gameId, steps) => stepChicken(client, guildId, userId, gameId, steps), board: chickenBoardPayload },
+    chickout: { play: (client, guildId, userId, gameId) => cashOutChicken(client, guildId, userId, gameId), board: chickenBoardPayload },
+};
 
 /** The room's open round of `game` when it is round `roundId` and still takes bets, else null. */
 function openRound(game, channelId, roundId) {
@@ -134,32 +147,34 @@ async function executeModal(interaction, client, [action, game, roundId]) {
 
 async function execute(interaction, client, [action, gameId, ...rest]) {
     if (!interaction.inGuild?.()) return;
-    // A mines board's answers: the language of the board clicked (its owner's command), else the Discord language.
+    // A mines board's or a chicken's answers: the language of the game clicked (its owner's command), else the Discord language.
     const lang = buttonLanguage(interaction);
     if (!isAllowedGuild(interaction.guildId) || !isCasinoChannel(interaction.channel, interaction.channelId)) return privately(interaction, casinoChannelNotice(lang));
     if (action === 'join') return rest.length === 1 ? joinButton(interaction, gameId, rest[0]) : privately(interaction, say(lang).dead);
     if (action === 'rocket') return rest.length ? privately(interaction, say(lang).dead) : rocketButton(interaction, client, gameId);
     const ownerId = rest[rest.length - 1];
     if (ownerId !== interaction.user.id) return privately(interaction, say(lang).notYours);
-    const cell = action === 'pick' && rest.length === 2 && /^\d$/u.test(rest[0]) ? Number(rest[0]) : null;
-    if (!gameId || (action === 'pick' ? cell === null : action !== 'cashout' || rest.length !== 1)) return privately(interaction, say(lang).dead);
+    const known = typeof action === 'string' && Object.hasOwn(GAME_BUTTONS, action);
+    const { arg = null, play, board } = known ? GAME_BUTTONS[action] : {};
+    const value = arg && rest.length === 2 && arg.test(rest[0]) ? Number(rest[0]) : null;
+    if (!gameId || !known || (arg ? value === null : rest.length !== 1)) return privately(interaction, say(lang).dead);
 
     await interaction.deferUpdate().catch(() => {});
     const userId = interaction.user.id;
     const edit = (payload) => interaction.editReply(payload);
     try {
         await withCasinoLock(userId, async () => {
-            const result = action === 'pick'
-                ? await pickMinesCell(client, interaction.guildId, userId, gameId, cell)
-                : await cashOutMines(client, interaction.guildId, userId, gameId);
+            const result = await play(client, interaction.guildId, userId, gameId, value);
             if (!result.ok) return followUp(interaction, say(lang).gameOver);
+            // A step pressed on an outdated board: acknowledged above, nothing moves, the board stays as it is.
+            if (result.outcome === 'outdated') return null;
             // The board itself keeps the language it was opened in (its saved `lang`).
             if (result.outcome === 'safe' || result.outcome === 'duplicate') {
                 scheduleIdleCashOut(client, result.game, userId, { edit });
-                return edit(minesBoardPayload(result.game, userId)).catch(() => {});
+                return edit(board(result.game, userId)).catch(() => {});
             }
             cancelIdleCashOut(userId, gameId);
-            return showMinesResult(client, result, userId, edit);
+            return showGameResult(client, result, userId, edit);
         });
     } catch (error) {
         // The board stays as it was (its timer still cashes it out); only the clicker hears about it.

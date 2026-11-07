@@ -2,7 +2,7 @@ import { findAsset, isSellAllWord } from '../store/bourse.js';
 import { coinSide, readGameArgs } from '../casino.js';
 
 // Stock market and read-only CC aliases from DISbot, the casino's games (`مينز 100 3`, `عملة 100 ملك`,
-// `سلوت 100`, `نرد 100 فوق 70`, `روليت 100 احمر`, `صاروخ 100`) and the games menu (`العاب`). `كراش` / `crash`
+// `سلوت 100`, `نرد 100 فوق 70`, `فرخة 100`, `روليت 100 احمر`, `صاروخ 100`) and the games menu (`العاب`). `كراش` / `crash`
 // are the group rocket itself (the same round as `صاروخ` / `rocket`). An English word answers in English, an
 // Arabic one in Arabic (src/services/cc/lang.js); both reach the same command and the same group round.
 export const commandArgAliases = {
@@ -12,6 +12,7 @@ export const commandArgAliases = {
     slots: 'casino slots', slot: 'casino slots', سلوت: 'casino slots', سلوتس: 'casino slots',
     crash: 'casino rocket', كراش: 'casino rocket',
     dice: 'casino dice', نرد: 'casino dice', زهر: 'casino dice', دايس: 'casino dice',
+    chicken: 'casino chicken', فرخة: 'casino chicken', فرخه: 'casino chicken', دجاجة: 'casino chicken', دجاجه: 'casino chicken',
     roulette: 'casino roulette', روليت: 'casino roulette', الروليت: 'casino roulette',
     rocket: 'casino rocket', صاروخ: 'casino rocket', الصاروخ: 'casino rocket',
     games: 'games', العاب: 'games', ألعاب: 'games', الالعاب: 'games', الألعاب: 'games',
@@ -27,8 +28,8 @@ export const commandArgAliases = {
     رصيد: 'cc', رصيدي: 'cc', رصيدى: 'cc', فلوس: 'cc', كريدت: 'cc',
     'top cc': 'cctop', 'توب cc': 'cctop', 'توب كريدت': 'cctop',
 };
-// The newer games whose words are also everyday chat (`كراش`, `صاروخ`...): typed without the prefix they need a bet.
-const NEW_CASINO_GAMES = new Set(['casino dice', 'casino roulette', 'casino rocket']);
+// The newer games whose words are also everyday chat (`كراش`, `صاروخ`, `فرخة`...): typed without the prefix they need a bet.
+const NEW_CASINO_GAMES = new Set(['casino dice', 'casino chicken', 'casino roulette', 'casino rocket']);
 export function isBourseNameInvocation(typedCommand, args) {
     const target = commandArgAliases[typedCommand];
     if (target !== 'bourse invest' && target !== 'bourse sell') return false;
@@ -45,7 +46,7 @@ export function isCoinflipInvocation(typedCommand, args) {
     if (commandArgAliases[typedCommand] !== 'casino coinflip' || args.length !== 2) return false;
     return args.some((arg) => /^\d+$/u.test(arg)) && args.some((arg) => coinSide(arg) !== null);
 }
-// `صاروخ 100 2` / `كراش 100 2.5`, `نرد 100 فوق 70`, `روليت 100 احمر` without the prefix: a bet and the game's words.
+// `صاروخ 100 2` / `كراش 100 2.5`, `نرد 100 فوق 70`, `روليت 100 احمر`, `فرخة 100` without the prefix: a bet and the game's words.
 export function isGameInvocation(typedCommand, args) {
     const target = commandArgAliases[typedCommand];
     if (!NEW_CASINO_GAMES.has(target)) return false;

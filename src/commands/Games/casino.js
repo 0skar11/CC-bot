@@ -5,28 +5,32 @@ import {
     CASINO, CASINO_COMMAND, GROUP_GAMES, SOLO_GAMES, casinoChannelNotice, casinoGuildNotice, coinSide, diceDirection, readGameArgs, rouletteChoice, targetHundredths,
 } from '../../config/casino.js';
 import {
-    isValidBet, isValidMineCount, isValidCrashTarget, diceChance, startMines, cashOutMines, attachMinesMessage, playCoinflip, playSlots, playDice,
+    isValidBet, isValidMineCount, isValidCrashTarget, diceChance, startMines, cashOutMines, startChicken, cashOutChicken, attachGameMessage, playCoinflip, playSlots, playDice,
+    chickenMultiplierHundredths,
 } from '../../services/cc/casinoService.js';
-import { minesBoardPayload, coinflipPayload, slotsPayload, dicePayload, casinoFailureText, casinoUsageText, gameUsageText, previousGameNote } from '../../services/cc/casinoUi.js';
+import {
+    minesBoardPayload, chickenBoardPayload, coinflipPayload, slotsPayload, dicePayload, casinoFailureText, casinoUsageText, gameUsageText, previousGameNote,
+} from '../../services/cc/casinoUi.js';
 import { onCasinoCooldown, withCasinoLock, scheduleIdleCashOut, closePreviousBoard } from '../../services/cc/casinoSessions.js';
 import { placeGroupBet } from '../../services/cc/casinoGroupSessions.js';
 import { commandLanguage } from '../../services/cc/lang.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 
-// The CC casino: `/casino mines|coinflip|slots|dice|roulette|rocket` and the typed `مينز 100 3`,
-// `عملة 100 ملك`, `سلوت 100`, `نرد 100 فوق 70`, `روليت 100 احمر`, `صاروخ 100 2` / `كراش 100 2.5` and their
-// English words `mines 100 3`, `coinflip 100 heads`, `slots 100`, `dice 100 over 70`, `roulette 100 red`,
-// `rocket 100 2` / `crash 100 2.5` (src/config/commands/commandAliases.js), only in the casino rooms
-// (CASINO_CHANNEL_IDS). The rules and the house edge are src/config/casino.js. Coinflip, slots and dice are
-// played in one save; a mines board is played with its buttons (src/interactions/buttons/store/casino.js) and
-// cashes out by itself when left alone (src/services/cc/casinoSessions.js). Roulette and rocket (crash is the
-// rocket) are group rounds shared by the room (src/services/cc/casinoGroupSessions.js). Every game starts under
-// the member's casino lock, after the start cooldown.
+// The CC casino: `/casino mines|coinflip|slots|dice|chicken|roulette|rocket` and the typed `مينز 100 3`,
+// `عملة 100 ملك`, `سلوت 100`, `نرد 100 فوق 70`, `فرخة 100`, `روليت 100 احمر`, `صاروخ 100 2` / `كراش 100 2.5` and
+// their English words `mines 100 3`, `coinflip 100 heads`, `slots 100`, `dice 100 over 70`, `chicken 100`,
+// `roulette 100 red`, `rocket 100 2` / `crash 100 2.5` (src/config/commands/commandAliases.js), only in the casino
+// rooms (CASINO_CHANNEL_IDS). The rules and the house edge are src/config/casino.js. Coinflip, slots and dice are
+// played in one save; a mines board and a chicken are played with their buttons
+// (src/interactions/buttons/store/casino.js) and cash out by themselves when left alone
+// (src/services/cc/casinoSessions.js). Roulette and rocket (crash is the rocket) are group rounds shared by the
+// room (src/services/cc/casinoGroupSessions.js). Every game starts under the member's casino lock, after the
+// start cooldown.
 // Every answer is in the command's language (src/services/cc/lang.js): an English typed word in English, an
 // Arabic one in Arabic, a slash command in the member's Discord language. A group round stays the room's one
 // round whatever the language; its message is in the language of the member who opened it.
 const SUBCOMMANDS = [...SOLO_GAMES, ...GROUP_GAMES];
-const NEWER_GAMES = ['dice', 'roulette', 'rocket'];
+const NEWER_GAMES = ['dice', 'chicken', 'roulette', 'rocket'];
 // `!casino crash 100 2` is the rocket, like the typed `crash` / `كراش`.
 const SUB_ALIASES = { crash: 'rocket' };
 const isNumber = (word) => /^\d+$/u.test(String(word));
@@ -57,23 +61,34 @@ function failure(result, lang) {
 /** A typed command edits the message it sent; a slash command edits its reply. */
 const editorFor = (interaction) => (sent) => (interaction._sourceMessage ? (payload) => sent.edit(payload) : (payload) => interaction.editReply(payload));
 
-/** `/casino mines`: takes the bet, shows the board, remembers its message and starts its inactivity timer. */
-async function openMinesBoard(interaction, client, reply, { bet, mines, roomId, lang }) {
+// The games played on a saved board: how one starts, how it is drawn and how it is cashed out.
+const BOARDS = {
+    mines: { start: startMines, board: minesBoardPayload, cashOut: cashOutMines },
+    chicken: { start: startChicken, board: chickenBoardPayload, cashOut: cashOutChicken },
+};
+
+/**
+ * `/casino mines` and `/casino chicken`: takes the bet, shows the board, remembers its message and starts its
+ * inactivity timer.
+ */
+async function openBoard(interaction, client, reply, sub, settings) {
     const { guildId, user } = interaction;
+    const { start, board, cashOut } = BOARDS[sub];
+    const { lang } = settings;
     // The board keeps this language for every later edit (clicks, timeout, restart).
-    const result = await startMines(client, guildId, user.id, { bet, mines, channelId: roomId, lang });
+    const result = await start(client, guildId, user.id, settings);
     closePreviousBoard(client, result.previous, user.id);
     if (!result.ok) return reply(failure(result, lang));
     let sent;
     try {
-        sent = await reply(minesBoardPayload(result.game, user.id, { note: result.previous ? previousGameNote(result.previous, lang) : '' }));
+        sent = await reply(board(result.game, user.id, { note: result.previous ? previousGameNote(result.previous, lang) : '' }));
     } catch (error) {
-        // The board never showed up: nothing was opened, so cashing out gives the whole bet back.
-        await cashOutMines(client, guildId, user.id, result.game.id).catch(() => {});
+        // The board never showed up: nothing was opened or crossed, so cashing out gives the whole bet back.
+        await cashOut(client, guildId, user.id, result.game.id).catch(() => {});
         throw error;
     }
     const edit = editorFor(interaction)(sent);
-    if (sent?.id) await attachMinesMessage(client, guildId, user.id, result.game.id, sent.id).catch(() => {});
+    if (sent?.id) await attachGameMessage(client, guildId, user.id, result.game.id, sent.id).catch(() => {});
     scheduleIdleCashOut(client, result.game, user.id, { edit });
     return sent;
 }
@@ -120,7 +135,7 @@ async function joinGroupGame(interaction, client, reply, sub, { bet, roomId, lan
 export default {
     data: new SlashCommandBuilder()
         .setName(CASINO_COMMAND)
-        .setDescription(`Bet ${CC.name} (${CC.short}): mines, coinflip, slots, dice, roulette or rocket (crash)`)
+        .setDescription(`Bet ${CC.name} (${CC.short}): mines, coinflip, slots, dice, chicken, roulette or rocket (crash)`)
         .setDMPermission(false)
         .addSubcommand((sub) => sub.setName('mines').setDescription('Open safe tiles on a 3x3 board and cash out before you hit a mine')
             .addIntegerOption(betOption)
@@ -148,6 +163,8 @@ export default {
                 .setName('direction')
                 .setDescription('Under or over your number (default under)')
                 .addChoices({ name: 'under (تحت)', value: 'under' }, { name: 'over (فوق)', value: 'over' })))
+        .addSubcommand((sub) => sub.setName('chicken').setDescription(`Cross the road lane by lane and cash out before a car hits the chicken (up to x${(chickenMultiplierHundredths(CASINO.chicken.maxSteps) / 100).toFixed(2)})`)
+            .addIntegerOption(betOption))
         .addSubcommand((sub) => sub.setName('roulette').setDescription('Group roulette: the room bets together, one spin for everybody')
             .addIntegerOption(betOption)
             .addStringOption((option) => option
@@ -160,7 +177,7 @@ export default {
 
     // Typed form after the aliases: `mines <bet> [mines]`, `coinflip <bet> [side]` (side and bet in any
     // order), `slots <bet>`, and for the newer games readGameArgs (src/config/casino.js):
-    // `dice <bet> [over|under] [number]`, `roulette <bet> <choice>`, `rocket <bet> [target]` (`crash` too).
+    // `dice <bet> [over|under] [number]`, `chicken <bet>`, `roulette <bet> <choice>`, `rocket <bet> [target]` (`crash` too).
     // `lang` is the language of the typed command word, for the usage answers. Returns `{ options }` for execute,
     // or `{ error }` to send instead.
     parsePrefixArgs(args, { lang = null } = {}) {
@@ -225,7 +242,11 @@ export default {
             const mines = interaction.options.getInteger('mines') ?? CASINO.mines.default;
             if (!isValidMineCount(mines)) return reply(failure({ reason: 'bad_mines' }, lang));
             if (onCasinoCooldown(user.id)) return reply(failure({ reason: 'cooldown' }, lang));
-            return withCasinoLock(user.id, () => openMinesBoard(interaction, client, reply, { bet, mines, roomId, lang }));
+            return withCasinoLock(user.id, () => openBoard(interaction, client, reply, 'mines', { bet, mines, channelId: roomId, lang }));
+        }
+        if (sub === 'chicken') {
+            if (onCasinoCooldown(user.id)) return reply(failure({ reason: 'cooldown' }, lang));
+            return withCasinoLock(user.id, () => openBoard(interaction, client, reply, 'chicken', { bet, channelId: roomId, lang }));
         }
         if (sub === 'dice') return playDiceGame(interaction, client, reply, bet, lang);
         if (GROUP_GAMES.includes(sub)) return joinGroupGame(interaction, client, reply, sub, { bet, roomId, lang });

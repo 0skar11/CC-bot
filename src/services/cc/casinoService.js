@@ -1,21 +1,27 @@
-// casinoService.js — the CC casino's solo games, rules and money: mines, coinflip, slots and dice, and the crash
-// point the group rocket flies with (casinoGroupService.js). The payouts and the house edge are explained in
-// src/config/casino.js; the embeds are casinoUi.js and the live mines boards (timeout, restart)
+// casinoService.js — the CC casino's solo games, rules and money: mines, coinflip, slots, dice and chicken, and the
+// crash point the group rocket flies with (casinoGroupService.js). The payouts and the house edge are explained in
+// src/config/casino.js; the embeds are casinoUi.js and the live mines and chicken games (timeout, restart)
 // casinoSessions.js. The group games are casinoGroupService.js. playCrash (a crash bet against the house) is
 // kept as the tested reference of the crash math only: no command plays it (`كراش` / `crash` are the rocket).
 //
 // Every balance change goes through updateCCState (ccService.js), one save per step under the member's
 // lock: the bet is taken in the same save that starts a game and the payout added in the same save that
 // ends it, so a bet can't be spent twice, a game can't be paid twice and nothing is left half done.
-// Coinflip, slots and dice are over in that one save. A mines game is kept in the member's economy record
-// until it ends, so a restart or a crash never loses the bet:
+// Coinflip, slots and dice are over in that one save. A mines or chicken game is kept in the member's economy
+// record until it ends, so a restart or a crash never loses the bet. The two share one slot (a member plays one
+// game at a time), told apart by `game`:
 //   ccCasino: { id, game: 'mines', bet, mines: [cells], picks: [cells], guildId, channelId, messageId, lang,
 //               startedAt, lastActionAt }
-// `lang` ('ar' | 'en', text only) is the language of the command that opened the board: every later edit of
+//   ccCasino: { id, game: 'chicken', bet, steps, deathStep, guildId, channelId, messageId, lang, startedAt,
+//               lastActionAt }
+// `lang` ('ar' | 'en', text only) is the language of the command that opened the game: every later edit of
 // it (clicks, the timeout, the restart check) stays in that language.
 // `mines` are the cells (0–8, row by row) hiding a mine, drawn with crypto.randomInt when the game starts
-// and never shown before it ends; `picks` are the safe cells opened, in order. A button carries its game
-// `id`, so a button of an ended or older game changes nothing. A member plays one game at a time.
+// and never shown before it ends; `picks` are the safe cells opened, in order. `steps` are the lanes the chicken
+// crossed; `deathStep` is the lane a car gets it on (1–20), or null when it would cross the whole road, drawn
+// with crypto.randomInt when the game starts and never shown before it ends. A button carries its game `id`,
+// so a button of an ended or older game changes nothing. Every helper that reads or ends the saved game goes
+// through SAVED_GAMES (readSavedGame, endGame), so a chicken is never mistaken for a damaged mines board.
 // Totals: ccStats.spent += bet and ccStats.earned += payout, plus per member
 //   ccCasinoStats: { played, won, lost, wagered, paidOut } (a payout equal to the bet is neither won nor lost).
 
@@ -118,6 +124,39 @@ export function readMinesGame(raw) {
     return raw;
 }
 
+/**
+ * The saved chicken game (`ccCasino`), or null when there is none or it is damaged: `steps` lanes crossed (0 up to
+ * the last lane) and a `deathStep` still ahead of the chicken (or null: it crosses the whole road).
+ */
+export function readChickenGame(raw) {
+    if (!raw || typeof raw !== 'object' || raw.game !== 'chicken' || typeof raw.id !== 'string' || !raw.id) return null;
+    if (!Number.isSafeInteger(raw.bet) || raw.bet < 1 || raw.bet > CASINO_BET_LIMITS.ceiling) return null;
+    const { maxSteps } = CASINO.chicken;
+    if (!Number.isSafeInteger(raw.steps) || raw.steps < 0 || raw.steps > maxSteps) return null;
+    if (raw.deathStep !== null && !(Number.isSafeInteger(raw.deathStep) && raw.deathStep > raw.steps && raw.deathStep <= maxSteps)) return null;
+    if (!Number.isFinite(raw.lastActionAt)) return null;
+    return raw;
+}
+
+// The games saved in `ccCasino` while they run, by their `game`: how to read one and what ending it (cashing out,
+// the timeout, the restart check) pays. A loss pays nothing whatever the game.
+const SAVED_GAMES = {
+    mines: { read: readMinesGame, payout: (game) => minesPayout(game.bet, game.mines.length, game.picks.length) },
+    chicken: { read: readChickenGame, payout: (game) => chickenPayout(game.bet, game.steps) },
+};
+
+/** The kind of a saved game ('mines' or 'chicken'), from its `game`; 'mines' when it can't be told (old or damaged). */
+export function savedGameKind(raw) {
+    const kind = raw && typeof raw === 'object' ? raw.game : null;
+    return typeof kind === 'string' && Object.hasOwn(SAVED_GAMES, kind) ? kind : 'mines';
+}
+
+/** The saved game (`ccCasino`) whatever it is (mines or chicken), or null when there is none or it is damaged. */
+export function readSavedGame(raw) {
+    if (!raw || typeof raw !== 'object' || typeof raw.game !== 'string' || !Object.hasOwn(SAVED_GAMES, raw.game)) return null;
+    return SAVED_GAMES[raw.game].read(raw);
+}
+
 const add = (stats, key, amount) => { stats[key] = (Number.isSafeInteger(stats[key]) ? stats[key] : 0) + amount; };
 
 /** Takes `bet` from the balance (ccStats.spent), in the save that starts the game. */
@@ -152,36 +191,37 @@ export function payOut(state, record, bet, payout) {
 }
 
 /**
- * Ends the record's mines game as `outcome` ('lost', 'cashout', 'cleared' or 'timeout') and pays it:
- * nothing after a mine (`hit` is its cell), else the multiplier of the cells opened (the bet back with
- * none). A damaged game ('broken') gives back its bet when that can still be read.
+ * Ends the record's saved game (mines or chicken) as `outcome` and pays it: nothing for 'lost' (a mine, `hit` is
+ * its cell; or a car), else what cashing it out pays now ('cashout', 'cleared', 'crossed' or 'timeout': the
+ * multiplier of the cells opened or the lanes crossed, the bet back with none). A damaged game ('broken') gives
+ * back its bet when that can still be read; `kind` says which game it was, as far as it can be told.
  * Returns `{ outcome, game, bet, payout }`.
  */
-function endMines(state, record, outcome, hit = null) {
+function endGame(state, record, outcome, hit = null) {
     const raw = record.ccCasino;
-    const game = readMinesGame(raw);
+    const game = readSavedGame(raw);
     delete record.ccCasino;
     if (!game) {
         const bet = Number.isSafeInteger(raw?.bet) && raw.bet > 0 && raw.bet <= CASINO_BET_LIMITS.ceiling ? raw.bet : 0;
         if (bet) payOut(state, record, bet, bet);
-        return { outcome: 'broken', game: null, bet, payout: bet, channelId: typeof raw?.channelId === 'string' ? raw.channelId : null };
+        return { outcome: 'broken', game: null, bet, payout: bet, channelId: typeof raw?.channelId === 'string' ? raw.channelId : null, kind: savedGameKind(raw) };
     }
-    const payout = outcome === 'lost' ? 0 : minesPayout(game.bet, game.mines.length, game.picks.length);
+    const payout = outcome === 'lost' ? 0 : SAVED_GAMES[game.game].payout(game);
     payOut(state, record, game.bet, payout);
     return { outcome, game: hit === null ? game : { ...game, hit }, bet: game.bet, payout };
 }
 
-/** Before a new game: a board left alone past the timeout (a missed timer) or a damaged one is settled first. */
-function endIdleMines(state, record, now, idleMs) {
+/** Before a new game: a saved game left alone past the timeout (a missed timer) or a damaged one is settled first. */
+function endIdleGame(state, record, now, idleMs) {
     if (!record.ccCasino) return null;
-    const game = readMinesGame(record.ccCasino);
+    const game = readSavedGame(record.ccCasino);
     if (game && now - game.lastActionAt < idleMs) return null;
-    return endMines(state, record, 'timeout');
+    return endGame(state, record, 'timeout');
 }
 
-/** Why a new game can't start (another game running, or the balance under the bet), else null. */
+/** Why a new game can't start (another game running, mines or chicken, or the balance under the bet), else null. */
 function refuseStart(state, record, bet) {
-    if (record.ccCasino) return { ok: false, reason: 'active', game: readMinesGame(record.ccCasino) };
+    if (record.ccCasino) return { ok: false, reason: 'active', game: readSavedGame(record.ccCasino) };
     if (state.cc < bet) return { ok: false, reason: 'no_cc', balance: state.cc };
     return null;
 }
@@ -195,7 +235,7 @@ export async function startMines(client, guildId, userId, { bet, mines = CASINO.
     if (!isValidBet(bet)) return { ok: false, reason: 'bad_bet' };
     if (!isValidMineCount(mines)) return { ok: false, reason: 'bad_mines' };
     return updateCCState(client, guildId, userId, (state, record) => {
-        const previous = endIdleMines(state, record, now, idleMs);
+        const previous = endIdleGame(state, record, now, idleMs);
         const refused = refuseStart(state, record, bet);
         if (refused) return { ...refused, previous, skipSave: !previous };
         const before = state.cc;
@@ -222,12 +262,12 @@ export async function pickMinesCell(client, guildId, userId, gameId, cell, { now
     return updateCCState(client, guildId, userId, (state, record) => {
         const game = readMinesGame(record.ccCasino);
         if (!game || game.id !== gameId) return { ok: false, reason: 'stale', skipSave: true };
-        if (now - game.lastActionAt >= idleMs) return { ok: true, ...endMines(state, record, 'timeout') };
+        if (now - game.lastActionAt >= idleMs) return { ok: true, ...endGame(state, record, 'timeout') };
         if (game.picks.includes(cell)) return { ok: true, outcome: 'duplicate', game, skipSave: true };
-        if (game.mines.includes(cell)) return { ok: true, ...endMines(state, record, 'lost', cell) };
+        if (game.mines.includes(cell)) return { ok: true, ...endGame(state, record, 'lost', cell) };
         game.picks.push(cell);
         game.lastActionAt = now;
-        if (game.picks.length === safeCells(game.mines.length)) return { ok: true, ...endMines(state, record, 'cleared') };
+        if (game.picks.length === safeCells(game.mines.length)) return { ok: true, ...endGame(state, record, 'cleared') };
         return { ok: true, outcome: 'safe', game };
     });
 }
@@ -240,36 +280,156 @@ export async function cashOutMines(client, guildId, userId, gameId, { now = Date
     return updateCCState(client, guildId, userId, (state, record) => {
         const game = readMinesGame(record.ccCasino);
         if (!game || game.id !== gameId) return { ok: false, reason: 'stale', skipSave: true };
-        return { ok: true, ...endMines(state, record, now - game.lastActionAt >= idleMs ? 'timeout' : 'cashout') };
+        return { ok: true, ...endGame(state, record, now - game.lastActionAt >= idleMs ? 'timeout' : 'cashout') };
     });
 }
 
 /**
- * The inactivity timeout and the startup check: ends the member's board when nobody touched it for
- * `idleMs`, cashing out at its multiplier (the bet back with nothing opened); a damaged one gives its
- * bet back. With `gameId` only that game. Returns an ended game like cashOutMines (outcome 'timeout' or
- * 'broken'), `{ ok: false, reason: 'active', remainingMs, game }` while it still runs, or
- * `{ ok: false, reason: 'stale' }` when there is none.
+ * The inactivity timeout and the startup check, for any saved game (mines or chicken): ends the member's game
+ * when nobody touched it for `idleMs`, cashing out at its multiplier (the bet back with no cell opened or no lane
+ * crossed); a damaged one gives its bet back. With `gameId` only that game. Returns an ended game like
+ * cashOutMines (outcome 'timeout' or 'broken'), `{ ok: false, reason: 'active', remainingMs, game }` while it
+ * still runs, or `{ ok: false, reason: 'stale' }` when there is none.
  */
-export async function settleIdleMines(client, guildId, userId, gameId = null, { now = Date.now(), idleMs = CASINO.idleMs } = {}) {
+export async function settleIdleGame(client, guildId, userId, gameId = null, { now = Date.now(), idleMs = CASINO.idleMs } = {}) {
     return updateCCState(client, guildId, userId, (state, record) => {
         if (!record.ccCasino) return { ok: false, reason: 'stale', skipSave: true };
-        const game = readMinesGame(record.ccCasino);
+        const game = readSavedGame(record.ccCasino);
         if (gameId !== null && game?.id !== gameId) return { ok: false, reason: 'stale', skipSave: true };
         const remainingMs = game ? game.lastActionAt + idleMs - now : 0;
         if (remainingMs > 0) return { ok: false, reason: 'active', remainingMs, game, skipSave: true };
-        return { ok: true, ...endMines(state, record, 'timeout') };
+        return { ok: true, ...endGame(state, record, 'timeout') };
     });
 }
 
-/** Remembers the message of board `gameId`, so the board can still be updated after a restart. */
-export async function attachMinesMessage(client, guildId, userId, gameId, messageId) {
+/** The name settleIdleGame had when mines was the only saved game (it settles a chicken the same way). */
+export const settleIdleMines = settleIdleGame;
+
+/** Remembers the message of the saved game `gameId` (a mines board or a chicken), so it can still be updated after a restart. */
+export async function attachGameMessage(client, guildId, userId, gameId, messageId) {
     if (!messageId) return { ok: false };
     return updateCCState(client, guildId, userId, (state, record) => {
-        const game = readMinesGame(record.ccCasino);
+        const game = readSavedGame(record.ccCasino);
         if (!game || game.id !== gameId) return { ok: false, skipSave: true };
         game.messageId = String(messageId);
         return { ok: true };
+    });
+}
+
+/** The name attachGameMessage had when mines was the only saved game. */
+export const attachMinesMessage = attachGameMessage;
+
+// ---- Chicken ----
+
+/** `base` to the power `exponent`, multiplied out in whole numbers (exact while it stays under 2^53). */
+function power(base, exponent) {
+    let value = 1;
+    for (let i = 0; i < exponent; i += 1) value *= base;
+    return value;
+}
+
+/** How many equally likely draws a chicken game starts with: outOf ^ maxSteps (5^20). */
+export const chickenDraws = () => power(CASINO.chicken.outOf, CASINO.chicken.maxSteps);
+
+/**
+ * The lane the chicken of draw `u` (0 … outOf^maxSteps − 1) dies on, 1 … maxSteps, or null when it crosses every
+ * lane. It makes lane k when u < survive^k × outOf^(maxSteps − k): that is (survive / outOf)^k of the draws, and
+ * those of lane k are a part of those of lane k − 1, so each lane is made after the one before with probability
+ * exactly survive / outOf (4/5), whatever happened before.
+ */
+export function chickenDeathStep(u, maxSteps = CASINO.chicken.maxSteps) {
+    const { survive, outOf } = CASINO.chicken;
+    if (!Number.isSafeInteger(u) || u < 0 || u >= power(outOf, maxSteps)) throw new Error('Invalid casino random draw');
+    for (let lane = 1; lane <= maxSteps; lane += 1) {
+        if (u >= power(survive, lane) * power(outOf, maxSteps - lane)) return lane;
+    }
+    return null;
+}
+
+/** The lane a new chicken dies on (or null), from one crypto.randomInt draw unless a test passes `randomInt`. */
+export function drawChickenDeath(randomInt = secureRandomInt) {
+    return chickenDeathStep(draw(randomInt, chickenDraws()));
+}
+
+/**
+ * What cashing out a chicken pays after `steps` lanes: the bet with none, else
+ * bet × (100 − edge)% × (outOf / survive)^steps rounded down, i.e. ⌊bet × 97 × 5^steps / (100 × 4^steps)⌋. The
+ * product is a BigInt, so it is exact even at the bet ceiling (the result, at most ×84.13, stays a safe Number).
+ */
+export function chickenPayout(bet, steps) {
+    const { survive, outOf, maxSteps, edgePercent } = CASINO.chicken;
+    if (!Number.isSafeInteger(steps) || steps < 0 || steps > maxSteps) throw new Error('Invalid chicken steps');
+    if (!Number.isSafeInteger(bet) || bet < 0) throw new Error('Invalid casino bet');
+    if (steps === 0) return bet;
+    const lanes = BigInt(steps);
+    return Number((BigInt(bet) * BigInt(100 - edgePercent) * BigInt(outOf) ** lanes) / (100n * BigInt(survive) ** lanes));
+}
+
+/** The same multiplier in hundredths, rounded down, for the board (`×1.89` is 189 after 3 lanes; 100 before the first). */
+export function chickenMultiplierHundredths(steps) {
+    return chickenPayout(100, steps);
+}
+
+/** The chance in % that the chicken makes the next lane (80). */
+export const chickenSurvivePercent = () => Math.round((CASINO.chicken.survive * 100) / CASINO.chicken.outOf);
+
+/**
+ * Starts a chicken: takes the bet and draws, once, the lane a car gets it on (or none), in the same save (`lang`
+ * is the game's language). Returns `{ ok: true, game, before, balance, previous }` (`previous` is an idle game
+ * settled first, or null) or `{ ok: false, reason }` with reason one of: bad_bet, active (with `game`), no_cc
+ * (with `balance`).
+ */
+export async function startChicken(client, guildId, userId, { bet, channelId = null, lang = null } = {}, { now = Date.now(), randomInt = secureRandomInt, idleMs = CASINO.idleMs } = {}) {
+    if (!isValidBet(bet)) return { ok: false, reason: 'bad_bet' };
+    return updateCCState(client, guildId, userId, (state, record) => {
+        const previous = endIdleGame(state, record, now, idleMs);
+        const refused = refuseStart(state, record, bet);
+        if (refused) return { ...refused, previous, skipSave: !previous };
+        const before = state.cc;
+        takeBet(state, bet);
+        const game = {
+            id: randomBytes(6).toString('hex'), game: 'chicken', bet, steps: 0, deathStep: drawChickenDeath(randomInt),
+            guildId: guildId ? String(guildId) : null, channelId: channelId ? String(channelId) : null, messageId: null,
+            lang: readLang(lang), startedAt: now, lastActionAt: now,
+        };
+        record.ccCasino = game;
+        return { ok: true, game, before, previous };
+    });
+}
+
+/**
+ * One lane on for the chicken of game `gameId`, pressed on the board that showed `steps` lanes crossed (the step
+ * button carries it). Returns `{ ok: true, outcome, game }` with outcome 'safe' (it made the lane, the game goes
+ * on), 'outdated' (the game is no longer at `steps`: a double press or an old board message; nothing changed),
+ * 'lost' (a car got it on that lane: the bet is gone), 'crossed' (it made the last lane: paid at the top
+ * multiplier) or 'timeout' (it was idle past the timeout: paid at its multiplier, the lane isn't tried); ended
+ * games also have `bet`, `payout` and `balance`. `{ ok: false, reason: 'stale' }` when that game isn't running any
+ * more. So one board moves the chicken one lane at most, however often it is pressed.
+ */
+export async function stepChicken(client, guildId, userId, gameId, steps, { now = Date.now(), idleMs = CASINO.idleMs } = {}) {
+    if (!Number.isSafeInteger(steps) || steps < 0) return { ok: false, reason: 'stale' };
+    return updateCCState(client, guildId, userId, (state, record) => {
+        const game = readChickenGame(record.ccCasino);
+        if (!game || game.id !== gameId) return { ok: false, reason: 'stale', skipSave: true };
+        if (now - game.lastActionAt >= idleMs) return { ok: true, ...endGame(state, record, 'timeout') };
+        if (game.steps !== steps) return { ok: true, outcome: 'outdated', game, skipSave: true };
+        if (game.steps + 1 === game.deathStep) return { ok: true, ...endGame(state, record, 'lost') };
+        game.steps += 1;
+        game.lastActionAt = now;
+        if (game.steps === CASINO.chicken.maxSteps) return { ok: true, ...endGame(state, record, 'crossed') };
+        return { ok: true, outcome: 'safe', game };
+    });
+}
+
+/**
+ * Cash out: ends the chicken `gameId` at its multiplier, once. A second click finds no game:
+ * `{ ok: false, reason: 'stale' }`. Otherwise like an ended stepChicken (outcome 'cashout' or 'timeout').
+ */
+export async function cashOutChicken(client, guildId, userId, gameId, { now = Date.now(), idleMs = CASINO.idleMs } = {}) {
+    return updateCCState(client, guildId, userId, (state, record) => {
+        const game = readChickenGame(record.ccCasino);
+        if (!game || game.id !== gameId) return { ok: false, reason: 'stale', skipSave: true };
+        return { ok: true, ...endGame(state, record, now - game.lastActionAt >= idleMs ? 'timeout' : 'cashout') };
     });
 }
 
@@ -282,7 +442,7 @@ export async function playCoinflip(client, guildId, userId, { bet, side = 'heads
     if (!isValidBet(bet)) return { ok: false, reason: 'bad_bet' };
     if (!Object.hasOwn(COIN_SIDES, side)) return { ok: false, reason: 'bad_side' };
     return updateCCState(client, guildId, userId, (state, record) => {
-        const previous = endIdleMines(state, record, now, idleMs);
+        const previous = endIdleGame(state, record, now, idleMs);
         const refused = refuseStart(state, record, bet);
         if (refused) return { ...refused, previous, skipSave: !previous };
         const before = state.cc;
@@ -302,7 +462,7 @@ export async function playCoinflip(client, guildId, userId, { bet, side = 'heads
 export async function playSlots(client, guildId, userId, { bet } = {}, { now = Date.now(), randomInt = secureRandomInt, idleMs = CASINO.idleMs } = {}) {
     if (!isValidBet(bet)) return { ok: false, reason: 'bad_bet' };
     return updateCCState(client, guildId, userId, (state, record) => {
-        const previous = endIdleMines(state, record, now, idleMs);
+        const previous = endIdleGame(state, record, now, idleMs);
         const refused = refuseStart(state, record, bet);
         if (refused) return { ...refused, previous, skipSave: !previous };
         const before = state.cc;
@@ -332,6 +492,8 @@ export function casinoEdges() {
         slots: percent(1 - slotsReturn),
         crash: CASINO.crash.edgePercent,
         dice: CASINO.dice.edgePercent,
+        // (survive / outOf)^k of the chickens get k lanes far and are paid (100 − edge)% × (outOf / survive)^k.
+        chicken: CASINO.chicken.edgePercent,
         roulette: percent(1 - rouletteReturn),
         rocket: CASINO.crash.edgePercent,
     };
@@ -399,7 +561,7 @@ export async function playCrash(client, guildId, userId, { bet, target = CASINO.
     if (!isValidBet(bet)) return { ok: false, reason: 'bad_bet' };
     if (!isValidCrashTarget(target)) return { ok: false, reason: 'bad_target' };
     return updateCCState(client, guildId, userId, (state, record) => {
-        const previous = endIdleMines(state, record, now, idleMs);
+        const previous = endIdleGame(state, record, now, idleMs);
         const refused = refuseStart(state, record, bet);
         if (refused) return { ...refused, previous, skipSave: !previous };
         const before = state.cc;
@@ -445,7 +607,7 @@ export async function playDice(client, guildId, userId, { bet, direction = 'unde
     const chance = diceChance(direction, number);
     if (chance === null) return { ok: false, reason: 'bad_dice' };
     return updateCCState(client, guildId, userId, (state, record) => {
-        const previous = endIdleMines(state, record, now, idleMs);
+        const previous = endIdleGame(state, record, now, idleMs);
         const refused = refuseStart(state, record, bet);
         if (refused) return { ...refused, previous, skipSave: !previous };
         const before = state.cc;

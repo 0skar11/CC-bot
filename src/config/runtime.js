@@ -15,7 +15,7 @@ export const streakEnabled = () => process.env.STREAK_ENABLED === 'true';
 export const traderRoleAnchors = new Map(ids(process.env.TRADER_ROLE_ANCHORS).map((pair) => pair.split(':')));
 // Casino (src/config/casino.js): its own channels/categories, and the most CC one bet can take.
 // `ceiling` keeps every payout (at most ×122.22 of the bet: mines; crash and rocket ×100, dice ×97,
-// roulette ×36) far inside Number.MAX_SAFE_INTEGER.
+// chicken ×84.13, roulette ×36) far inside Number.MAX_SAFE_INTEGER.
 export const CASINO_BET_LIMITS = { min: 10, defaultMax: 10_000_000_000_000, ceiling: 10_000_000_000_000 };
 export const casinoChannelIds = new Set(ids(process.env.CASINO_CHANNEL_IDS));
 export const casinoMaxBet = Number(process.env.CASINO_MAX_BET?.trim() || CASINO_BET_LIMITS.defaultMax);

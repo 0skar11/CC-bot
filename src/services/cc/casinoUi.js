@@ -1,14 +1,18 @@
 // casinoUi.js — the casino's solo-game embeds and buttons, shared by the `casino` command
-// (src/commands/Games/casino.js), the mines buttons (src/interactions/buttons/store/casino.js) and the
-// mines timeout and restart check (casinoSessions.js). The group rounds are casinoGroupUi.js. Plain embed
-// objects so the emojis stay; each Arabic line starts with Arabic or an emoji so Discord doesn't reorder it.
-// Every text exists in Arabic and English (TEXT below, 'ar' by default); the language comes from the command
-// (src/services/cc/lang.js), and a mines board keeps the language it was opened in (its saved `lang`).
+// (src/commands/Games/casino.js), the mines and chicken buttons (src/interactions/buttons/store/casino.js) and
+// the timeout and restart check of those saved games (casinoSessions.js). The group rounds are casinoGroupUi.js.
+// Plain embed objects so the emojis stay; each Arabic line starts with Arabic or an emoji so Discord doesn't
+// reorder it. Every text exists in Arabic and English (TEXT below, 'ar' by default); the language comes from the
+// command (src/services/cc/lang.js), and a mines board or a chicken keeps the language it was opened in (its
+// saved `lang`). gameResultPayload, gameNoticeText, previousGameNote and the 'active' refusal show whichever
+// saved game they are about (a result's `game.game`, or `kind` for a damaged one; mines when it can't be told).
 
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { CC, ccEmbed, formatCC } from '../../config/cc.js';
 import { CASINO, CASINO_BUTTON_PREFIX, COIN_SIDES, DICE_DIRECTIONS } from '../../config/casino.js';
-import { diceMultiplierHundredths, diceWins, minesPayout, minesMultiplierHundredths } from './casinoService.js';
+import {
+    chickenMultiplierHundredths, chickenPayout, chickenSurvivePercent, diceMultiplierHundredths, diceWins, minesPayout, minesMultiplierHundredths,
+} from './casinoService.js';
 import { multiplierText } from './casinoGroupUi.js';
 import { inLang, readLang } from './lang.js';
 
@@ -17,6 +21,8 @@ const idleSeconds = Math.round(CASINO.idleMs / 1000);
 const times = (hundredths) => `×${(hundredths / 100).toFixed(2)}`;
 const coinflipTimes = () => times(CASINO.coinflip.payoutPercent);
 const topSlots = () => Math.max(...Object.values(CASINO.slots.triple));
+const lanes = () => CASINO.chicken.maxSteps;
+const topChicken = () => times(chickenMultiplierHundredths(CASINO.chicken.maxSteps));
 const quiet = (embed, components = []) => ({ content: '', embeds: [embed], components, allowedMentions: { parse: [] } });
 
 const TEXT = {
@@ -60,12 +66,28 @@ const TEXT = {
         diceRule: (direction, line) => (direction === 'under' ? `أقل من ${line}.00` : `${line}.00 أو أكتر`),
         diceBet: (user, cc, side, line, emoji, rule) => `${user} راهن بـ ${cc} على **${side} ${line}** ${emoji} (لازم يطلع ${rule})`,
         diceFooter: (chance, multiplier) => `فرصة المكسب ${chance}% ・ المكسب ${multiplier} من الرهان`,
+        // Chicken
+        chickenTitle: '🐔 الفرخة',
+        chickenLine: (userId, cc) => `<@${userId}> ・ 💵 الرهان: ${cc}`,
+        crossed: (steps, all) => `🐔 الفرخة عدّت **${steps}** من **${all}** حارة`,
+        nextLane: (multiplier, cc, chance) => `⏭️ الحارة الجاية: **${multiplier}** ← ${cc} (فرصة إنها تعدّي ${chance}%)`,
+        chickenIdleRule: `⏰ لو سبت الفرخة ${idleSeconds} ثانية من غير ما تتقدّم، بتعمل كاش أوت لوحدها بالمضاعف الحالي (ولو ماعدّتش ولا حارة رهانك بيرجعلك كامل).`,
+        stepButton: 'تقدّم',
+        chickenBroken: (cc) => `⚠️ لعبة فرخة قديمة كانت بايظة فاتقفلت ورجعلك رهانك ${cc}.`,
+        chickenLost: (lane, cc) => `💀 **الفرخة اتفرمت!** عربية خبطتها في الحارة **${lane}** وخسرت ${cc}. 🍗`,
+        chickenCrossed: (multiplier, cc) => `🏆 الفرخة عدّت الطريق كله! خدت **${multiplier}** ← ${cc}.`,
+        chickenTimeout: (multiplier, cc) => `⏰ الفرخة فضلت واقفة ${idleSeconds} ثانية من غير لعب فعملت كاش أوت لوحدها بـ **${multiplier}** ← ${cc}.`,
+        chickenCashedOut: (multiplier, cc) => `✅ عملت كاش أوت بـ **${multiplier}** وخدت ${cc}.`,
+        chickenFate: (lane) => (lane === null ? '🔍 كانت هتعدّي الطريق كله سليمة.' : `🔍 العربية كانت مستنياها في الحارة **${lane}**.`),
+        previousChicken: (cc) => `⏰ لعبة الفرخة اللي فاتت كانت واقفة فاتقفلت لوحدها، واتصرفلك منها ${cc}.`,
+        chickenActive: (ends) => `⚠️ عندك لعبة فرخة شغالة، كملها أو اعمل كاش أوت الأول${ends}.`,
         // Usage: one typed example per game. `كراش` is the rocket.
         usage: {
             mines: () => `💣 \`مينز 100 3\` ・ ماينز: افتح خانات من غير ما تلاقي لغم (من ${CASINO.mines.min} لـ ${CASINO.mines.max} ألغام) واعمل كاش أوت وقت ما تحب`,
             coinflip: () => `🪙 \`عملة 100 ملك\` ・ ملك ولا كتابة، المكسب ${coinflipTimes()}`,
             slots: () => `🎰 \`سلوت 100\` ・ سلوت، 3 زي بعض لحد ×${topSlots()}`,
             dice: () => `🎲 \`نرد 100 فوق 70\` أو \`نرد 100 تحت 30\` ・ نرد من 0.00 لـ 99.99، وكل ما الفرصة أقل المكسب أكبر`,
+            chicken: () => `🐔 \`فرخة 100\` ・ الفرخة: كل حارة تعدّيها بتكبّر المضاعف (لحد ${topChicken()} بعد ${lanes()} حارة)، واعمل كاش أوت قبل ما عربية تخبطها`,
             roulette: () => `🎡 \`روليت 100 احمر\` أو \`روليت 100 17\` ・ روليت جماعي: 🔴 / ⚫ ×${CASINO.roulette.colorPays}، رقم من 0 لـ 36 ×${CASINO.roulette.numberPays}`,
             rocket: () => `🚀 \`صاروخ 100\` أو \`صاروخ 100 2\` (أو \`كراش 100 2.5\`) ・ صاروخ (كراش جماعي): اركب مع الروم واعمل كاش أوت قبل ما ينفجر`,
         },
@@ -133,12 +155,28 @@ const TEXT = {
         diceRule: (direction, line) => (direction === 'under' ? `below ${line}.00` : `${line}.00 or more`),
         diceBet: (user, cc, side, line, emoji, rule) => `${user} bet ${cc} on **${side} ${line}** ${emoji} (it needs ${rule})`,
         diceFooter: (chance, multiplier) => `Win chance ${chance}% ・ A win pays ${multiplier} the bet`,
+        // Chicken
+        chickenTitle: '🐔 Chicken',
+        chickenLine: (userId, cc) => `<@${userId}> ・ 💵 Bet: ${cc}`,
+        crossed: (steps, all) => `🐔 The chicken crossed **${steps}** of **${all}** lanes`,
+        nextLane: (multiplier, cc, chance) => `⏭️ Next lane: **${multiplier}** → ${cc} (${chance}% chance to make it)`,
+        chickenIdleRule: `⏰ Leave the chicken alone for ${idleSeconds} seconds and it cashes out by itself at the current multiplier (with no lane crossed you get your whole bet back).`,
+        stepButton: 'Step',
+        chickenBroken: (cc) => `⚠️ An old chicken game was damaged, so it was closed and your bet of ${cc} was given back.`,
+        chickenLost: (lane, cc) => `💀 **Splat!** A car hit the chicken on lane **${lane}** and you lost ${cc}. 🍗`,
+        chickenCrossed: (multiplier, cc) => `🏆 The chicken crossed the whole road! You took **${multiplier}** → ${cc}.`,
+        chickenTimeout: (multiplier, cc) => `⏰ The chicken stood still for ${idleSeconds} seconds, so it cashed out by itself at **${multiplier}** → ${cc}.`,
+        chickenCashedOut: (multiplier, cc) => `✅ You cashed out at **${multiplier}** and took ${cc}.`,
+        chickenFate: (lane) => (lane === null ? '🔍 It would have crossed the whole road safely.' : `🔍 The car was waiting on lane **${lane}**.`),
+        previousChicken: (cc) => `⏰ Your last chicken game was left idle, so it closed by itself and paid you ${cc}.`,
+        chickenActive: (ends) => `⚠️ You have a chicken game running: finish it or cash out first${ends}.`,
         // Usage: one typed example per game. `crash` is the rocket.
         usage: {
             mines: () => `💣 \`mines 100 3\` ・ Mines: open tiles without hitting a mine (${CASINO.mines.min} to ${CASINO.mines.max} mines) and cash out whenever you like`,
             coinflip: () => `🪙 \`coinflip 100 heads\` ・ Heads or tails, a win pays ${coinflipTimes()}`,
             slots: () => `🎰 \`slots 100\` ・ Slots, three of a kind pays up to ×${topSlots()}`,
             dice: () => '🎲 `dice 100 over 70` or `dice 100 under 30` ・ Dice from 0.00 to 99.99: the smaller your chance, the bigger the win',
+            chicken: () => `🐔 \`chicken 100\` ・ Chicken: every lane it crosses raises the multiplier (up to ${topChicken()} after ${lanes()} lanes); cash out before a car hits it`,
             roulette: () => `🎡 \`roulette 100 red\` or \`roulette 100 17\` ・ Group roulette: 🔴 / ⚫ ×${CASINO.roulette.colorPays}, a number from 0 to 36 ×${CASINO.roulette.numberPays}`,
             rocket: () => '🚀 `rocket 100` or `rocket 100 2` (or `crash 100 2.5`) ・ Rocket (group crash): ride with the room and cash out before it blows up',
         },
@@ -268,9 +306,129 @@ export function minesNoticeText(result, userId, lang = null) {
     return `<@${userId}> ${minesEndLine(result, resultLanguage(result, lang))}`;
 }
 
-/** The line shown with a new game when an older board was settled first (in the new command's language). */
+// ---- Chicken ----
+
+// How many lanes the road shows at once: the chicken, a couple of lanes behind it and the lanes ahead.
+const ROAD_LANES = 8;
+
+/**
+ * The road as one line of emojis: `🟫🟩🟩🐔⬜⬛⬛⬛⬛⋯` — 🟩 the lanes crossed, 🐔 the chicken (💀 where a car got it),
+ * ⬜ the next lane, ⬛ the road ahead, 🏁 the far side (⋯ for lanes off screen, 🟫 the sidewalk it started on).
+ * At the end (`over`) the lane where the car was waiting shows 🚗.
+ */
+export function chickenRoad(game, { over = false, dead = false } = {}) {
+    const all = CASINO.chicken.maxSteps;
+    const at = dead ? game.deathStep : game.steps;
+    const first = Math.max(1, Math.min(at - 2, all - ROAD_LANES + 1));
+    const last = Math.min(all, first + ROAD_LANES - 1);
+    const lane = (n) => {
+        if (n === at) return dead ? '💀' : '🐔';
+        if (n < at) return '🟩';
+        if (over) return n === game.deathStep ? '🚗' : '⬛';
+        return n === at + 1 ? '⬜' : '⬛';
+    };
+    const start = first > 1 ? '⋯' : (at === 0 ? '🐔' : '🟫');
+    const road = Array.from({ length: last - first + 1 }, (_, i) => lane(first + i)).join('');
+    return `${start}${road}${last === all ? '🏁' : '⋯'}`;
+}
+
+const chickenLine = (game, userId, lang) => say(lang).chickenLine(userId, formatCC(game.bet));
+
+/**
+ * A running chicken: the road, what cashing out pays now, what the next lane would pay (and its chance), the
+ * timeout rule and its two buttons, 🐔 Step (`casino:chick:<gameId>:<steps>:<userId>`, with the lanes crossed so far,
+ * so a second press of the same board can't move the chicken again) and 💰 Cash out
+ * (`casino:chickout:<gameId>:<userId>`). In the game's own language (`game.lang`) unless `lang` says otherwise.
+ * Nothing on it tells where the car waits.
+ */
+export function chickenBoardPayload(game, userId, { note = '', lang = game.lang } = {}) {
+    const text = say(lang);
+    const all = CASINO.chicken.maxSteps;
+    const now = chickenPayout(game.bet, game.steps);
+    const embed = ccEmbed(text.chickenTitle, [
+        ...(note ? [note, ''] : []),
+        chickenLine(game, userId, lang),
+        text.crossed(game.steps, all),
+        chickenRoad(game),
+        '',
+        text.cashOutNow(times(chickenMultiplierHundredths(game.steps)), formatCC(now)),
+        ...(game.steps < all ? [text.nextLane(times(chickenMultiplierHundredths(game.steps + 1)), formatCC(chickenPayout(game.bet, game.steps + 1)), chickenSurvivePercent())] : []),
+        '',
+        text.chickenIdleRule,
+    ].join('\n'));
+    const buttons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`${CASINO_BUTTON_PREFIX}:chick:${game.id}:${game.steps}:${userId}`)
+            .setLabel(text.stepButton)
+            .setEmoji('🐔')
+            .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+            .setCustomId(`${CASINO_BUTTON_PREFIX}:chickout:${game.id}:${userId}`)
+            .setLabel(text.cashOutButton(number(now)))
+            .setEmoji('💰')
+            .setStyle(ButtonStyle.Primary),
+    );
+    return { content: '', embeds: [embed], components: [buttons], allowedMentions: { parse: [] } };
+}
+
+/** The line about an ended chicken, also sent alone when its message can't be edited any more. */
+function chickenEndLine(result, lang) {
+    const text = say(lang);
+    const { game, payout, outcome } = result;
+    if (!game) return text.chickenBroken(formatCC(payout));
+    if (outcome === 'lost') return text.chickenLost(game.deathStep, formatCC(game.bet));
+    const multiplier = times(chickenMultiplierHundredths(game.steps));
+    if (outcome === 'crossed') return text.chickenCrossed(multiplier, formatCC(payout));
+    if (outcome === 'timeout') return text.chickenTimeout(multiplier, formatCC(payout));
+    return text.chickenCashedOut(multiplier, formatCC(payout));
+}
+
+/**
+ * An ended chicken (run over, cashed out, timed out or across the whole road): the road with the chicken where it
+ * stopped (💀 where it died, 🚗 where the car was waiting), the payout, the profit and the balance. No buttons.
+ */
+export function chickenResultPayload(result, userId, lang = null) {
+    const shown = resultLanguage(result, lang);
+    if (!result.game) return { content: chickenNoticeText(result, userId, shown), embeds: [], components: [], allowedMentions: { parse: [] } };
+    const text = say(shown);
+    const { game, outcome } = result;
+    const dead = outcome === 'lost';
+    const embed = ccEmbed(text.chickenTitle, [
+        chickenLine(game, userId, shown),
+        chickenRoad(game, { over: true, dead }),
+        '',
+        chickenEndLine(result, shown),
+        ...(outcome === 'cashout' || outcome === 'timeout' ? [text.chickenFate(game.deathStep)] : []),
+        `📊 ${profitLine(game.bet, result.payout, shown)}`,
+        ...balanceLine(result.balance, shown),
+    ].join('\n'));
+    return { content: '', embeds: [embed], components: [], allowedMentions: { parse: [] } };
+}
+
+/** `<@member> …` in the chicken's room when its message is gone (timeout after a restart, or a damaged game). */
+export function chickenNoticeText(result, userId, lang = null) {
+    return `<@${userId}> ${chickenEndLine(result, resultLanguage(result, lang))}`;
+}
+
+// ---- Either saved game ----
+
+/** Which saved game a result, a refusal or a game settled on the way is about: 'chicken', else 'mines'. */
+const kindOf = (result) => ((result?.game?.game ?? result?.kind) === 'chicken' ? 'chicken' : 'mines');
+
+/** An ended saved game, with its own embed (a mines board or a chicken). */
+export function gameResultPayload(result, userId, lang = null) {
+    return kindOf(result) === 'chicken' ? chickenResultPayload(result, userId, lang) : minesResultPayload(result, userId, lang);
+}
+
+/** The short notice of an ended saved game whose message is gone. */
+export function gameNoticeText(result, userId, lang = null) {
+    return kindOf(result) === 'chicken' ? chickenNoticeText(result, userId, lang) : minesNoticeText(result, userId, lang);
+}
+
+/** The line shown with a new game when an older board or chicken was settled first (in the new command's language). */
 export function previousGameNote(previous, lang) {
-    return say(lang).previousGame(formatCC(previous.payout));
+    const text = say(lang);
+    return (kindOf(previous) === 'chicken' ? text.previousChicken : text.previousGame)(formatCC(previous.payout));
 }
 
 export function coinflipPayload(result, user, lang) {
@@ -368,7 +526,7 @@ export function casinoFailureText(result, lang) {
     if (result.reason === 'no_cc') return text.noCC(formatCC(result.balance ?? 0));
     if (result.reason === 'active') {
         const ends = Number.isFinite(result.game?.lastActionAt) ? text.activeEnds(Math.ceil((result.game.lastActionAt + CASINO.idleMs) / 1000)) : '';
-        return text.active(ends);
+        return kindOf(result) === 'chicken' ? text.chickenActive(ends) : text.active(ends);
     }
     if (result.reason === 'bad_target') return text.badTarget();
     if (result.reason === 'bad_dice') return text.badDice(CASINO.dice.minChance, CASINO.dice.maxChance);

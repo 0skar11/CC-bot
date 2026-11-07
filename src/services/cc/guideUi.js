@@ -11,7 +11,7 @@ import { casinoChannelIds, initialCC, isAllowedChannel, traderRoleEnabled } from
 import { bourseAssets, bourseSettings, SELL_ALL_WORDS } from '../../config/store/bourse.js';
 import { assetsFor, maxOwnedOf } from './bourseService.js';
 import { perkPrices } from './boursePerks.js';
-import { casinoEdges } from './casinoService.js';
+import { casinoEdges, chickenMultiplierHundredths, chickenSurvivePercent } from './casinoService.js';
 import { multiplierText } from './casinoGroupUi.js';
 import { slotsTableText } from './casinoUi.js';
 import { isStreakGuild, streakGuideEmbed } from './streakService.js';
@@ -88,7 +88,7 @@ function bourseGuideEmbed(guildId) {
 }
 
 function casinoGuideEmbed() {
-    const { mines, coinflip, roulette, rocket, minBet, maxBet, idleMs } = CASINO;
+    const { mines, coinflip, chicken, roulette, rocket, minBet, maxBet, idleMs } = CASINO;
     const edges = casinoEdges();
     const bet = minBet * 10;
     const rows = mines.cells / mines.columns;
@@ -108,12 +108,14 @@ function casinoGuideEmbed() {
         `> ${slotsTableText()} ・ مكتوبة: ${code(aliasesFor('casino slots'))}`,
         `🎲 \`/casino dice\` ・ \`نرد ${bet} فوق 70\``,
         `> رقم من 0.00 لـ 99.99، \`فوق\` أو \`تحت\` رقمك: فرصة أقل = مكسب أكبر ・ مكتوبة: ${code(aliasesFor('casino dice'))}`,
+        `🐔 \`/casino chicken\` ・ \`فرخة ${bet}\``,
+        `> الفرخة بتعدّي طريق فيه ${chicken.maxSteps} حارة، حارة مع كل دوسة على 🐔 تقدّم (فرصتها ${chickenSurvivePercent()}%). كل حارة بتكبّر المضاعف لحد **${times(chickenMultiplierHundredths(chicken.maxSteps))}**، واعمل كاش أوت وقت ما تحب، ولو عربية خبطتها تخسر الرهان. لو سبتها ${Math.round(idleMs / 1000)} ثانية بتعمل كاش أوت لوحدها ・ مكتوبة: ${code(aliasesFor('casino chicken'))}`,
         `🎡 \`/casino roulette\` ・ \`روليت ${bet} احمر\` (جماعية)`,
         `> جولة ${seconds(roulette.joinMs)} ثانية للروم كله: 🔴 / ⚫ ×${roulette.colorPays} أو رقم من 0 لـ 36 ×${roulette.numberPays}، ولفة واحدة للكل ・ مكتوبة: ${code(aliasesFor('casino roulette'))}`,
         `🚀 \`/casino rocket\` ・ \`صاروخ ${bet} 2\` (جماعية)`,
         `> كراش للروم كله بعد ${seconds(rocket.joinMs)} ثانية: دوس 💰 كاش أوت قبل ما ينفجر، أو حط مضاعف يخرّجك لوحده ・ مكتوبة: ${code(aliasesFor('casino rocket'))}`,
         '',
-        `⚖️ بصراحة: البيت ليه نسبة، **${edges.mines}%** في الماينز و**${edges.coinflip}%** في العملة و**${edges.slots}%** في السلوت و**${edges.dice}%** في النرد و**${edges.roulette}%** في الروليت و**${edges.rocket}%** في الصاروخ، يعني على المدى الطويل الكازينو بيكسب. العب بمزاج وماتراهنش بحاجة مش مستعد تخسرها.`,
+        `⚖️ بصراحة: البيت ليه نسبة، **${edges.mines}%** في الماينز و**${edges.coinflip}%** في العملة و**${edges.slots}%** في السلوت و**${edges.dice}%** في النرد و**${edges.chicken}%** في الفرخة و**${edges.roulette}%** في الروليت و**${edges.rocket}%** في الصاروخ، يعني على المدى الطويل الكازينو بيكسب. العب بمزاج وماتراهنش بحاجة مش مستعد تخسرها.`,
     ].join('\n'));
 }
 

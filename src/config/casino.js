@@ -1,9 +1,9 @@
-// casino.js — the CC casino (الكازينو), played with a CC bet. Solo games: mines, coinflip, slots and dice.
+// casino.js — the CC casino (الكازينو), played with a CC bet. Solo games: mines, coinflip, slots, dice and chicken.
 // Group games, one shared round per room: roulette and rocket (a group crash). Crash is the rocket: the typed
 // `كراش` / `crash` run the same group rocket as `صاروخ` / `rocket` (src/config/commands/commandAliases.js), and
 // there is no solo crash any more (its crash point, below, is the rocket's).
 // Run by src/services/cc/casinoService.js (the solo games' money and rules, and the crash point),
-// casinoUi.js (their embeds and buttons), casinoSessions.js (the live mines boards), casinoGroupService.js,
+// casinoUi.js (their embeds and buttons), casinoSessions.js (the live mines and chicken games), casinoGroupService.js,
 // casinoGroupSessions.js and casinoGroupUi.js (the group rounds) and gamesMenuUi.js (the `العاب` / `games` menu);
 // the commands are src/commands/Games/casino.js and games.js. Everything a member reads is in Arabic or English,
 // following the command (src/services/cc/lang.js); a round's shared message stays in its opener's language.
@@ -26,6 +26,16 @@
 //   dice      3%: the dice lands on 0.00–99.99 (10,000 equally likely rolls). `تحت 30` wins below 30.00 (a 30%
 //                 chance), `فوق 70` wins from 70.00 up (also 30%). A win with a c% chance pays bet × 97 / c, so
 //                 it returns c% × 97 / c = 97% whatever the number.
+//   chicken   3%: the chicken crosses a road of 20 lanes, one lane per press of its button. It makes each lane with
+//                 probability 4/5 (a car gets it with 1/5), and cashing out after k lanes pays 97% of the fair odds
+//                 of getting that far, bet × 0.97 × (5/4)^k = ⌊bet × 97 × 5^k / (100 × 4^k)⌋, worked out in whole
+//                 numbers (BigInt, exact at the bet ceiling). Getting past k lanes happens with probability (4/5)^k,
+//                 so every way of playing returns 97% of the bet on average. Cashing out before the first lane (or a
+//                 chicken left alone that long) gives the bet back; making the 20th lane cashes out by itself at
+//                 ×84.13. How far the chicken gets is drawn once, when the game starts: u uniform in 0 … 5^20 − 1
+//                 (crypto.randomInt), and it makes lane k when u < 4^k × 5^(20 − k), i.e. for (4/5)^k of the draws,
+//                 so each lane is made after the one before with probability exactly 4/5. The lane it dies on (or
+//                 none) is saved with the game and never shown before the game ends.
 //   roulette  2.70%: a single zero, 37 equally likely pockets. Red or black (18 pockets each) pays ×2 and one
 //                 number (0 is the green one) pays ×36: 18 × 2 / 37 = 36 / 37 = 97.30% back for every bet.
 //   rocket    3%: the group crash (also typed `كراش` / `crash`), with crash's crash point drawn once for the whole
@@ -35,7 +45,8 @@
 //                 at the latest and pays ×100 to everybody still on board (the same as a ×100 target, 97%).
 // Payouts are rounded down to whole CC, so rounding only ever adds to the edge, by under 1 CC per paid game:
 // under 1 point from 100 CC bets, more on the smallest ones (a 10 CC coinflip win pays 19, a 5% edge; 10 CC
-// with 1 mine cashed out after one cell pays back just the 10, an 11% edge).
+// with 1 mine cashed out after one cell pays back just the 10, an 11% edge; 10 CC of chicken cashed out after one
+// lane pays 12, a 4% edge).
 
 import { CASINO_BET_LIMITS, casinoChannelIds, casinoMaxBet } from './runtime.js';
 import { BOURSE_GUILD_NOTICE } from './bourseGuild.js';
@@ -45,7 +56,7 @@ export const CASINO_BUTTON_PREFIX = 'casino';
 // `/games` and the typed `العاب`: the menu of every game (src/commands/Games/games.js).
 export const GAMES_COMMAND = 'games';
 // The `/casino` games played by one member against the house, and the ones played by the whole room.
-export const SOLO_GAMES = ['mines', 'coinflip', 'slots', 'dice'];
+export const SOLO_GAMES = ['mines', 'coinflip', 'slots', 'dice', 'chicken'];
 export const GROUP_GAMES = ['roulette', 'rocket'];
 
 export const CASINO = {
@@ -55,7 +66,7 @@ export const CASINO = {
     unlimited: casinoMaxBet >= CASINO_BET_LIMITS.ceiling,
     // A short pause between two games started by the same member (spam guard, not a money guard).
     cooldownMs: 3_000,
-    // A mines board nobody touched for this long cashes out by itself at its current multiplier.
+    // A mines board (or a chicken) nobody touched for this long cashes out by itself at its current multiplier.
     idleMs: 60_000,
     // When saving that cash-out (or a group round) fails (database down), it is tried again after this long.
     idleRetryMs: 15_000,
@@ -89,6 +100,15 @@ export const CASINO = {
         maxChance: 95,
         // `نرد 100` alone is `تحت 50`.
         defaultNumber: 50,
+    },
+    chicken: {
+        edgePercent: 3,
+        // The chicken makes each lane with probability survive / outOf (4/5): a car gets it with the rest (1/5).
+        survive: 4,
+        outOf: 5,
+        // The road has this many lanes: making the last one cashes out by itself (×84.13). outOf ** maxSteps is the
+        // number of equally likely draws a game starts with (5^20), and must stay under crypto.randomInt's 2^48.
+        maxSteps: 20,
     },
     roulette: {
         pockets: 37,
@@ -184,14 +204,16 @@ export function targetHundredths(value, fallback = null) {
 
 /**
  * The typed words after a new game's name, the bet first: `صاروخ 100 [2]` / `كراش 100 2.5` (the rocket, with an
- * optional automatic cash-out multiplier), `نرد 100 [فوق|تحت] [70]` (in any order) and `روليت 100 احمر` /
- * `روليت 100 17` (or the colour first); the English words read the same way (`rocket 100 2`, `dice 100 over 70`).
+ * optional automatic cash-out multiplier), `نرد 100 [فوق|تحت] [70]` (in any order), `روليت 100 احمر` /
+ * `روليت 100 17` (or the colour first) and `فرخة 100` (the bet alone); the English words read the same way
+ * (`rocket 100 2`, `dice 100 over 70`, `chicken 100`).
  * Returns `{ values }` (the numbers are checked by the game) or `{ error: 'usage' }` when it isn't a game command.
  */
 export function readGameArgs(game, words) {
     const rest = words.map(String);
     const usage = { error: 'usage' };
     if (!rest.length) return usage;
+    if (game === 'chicken') return rest.length === 1 && isWhole(rest[0]) ? { values: { bet: Number(rest[0]) } } : usage;
     if (game === 'crash' || game === 'rocket') {
         if (rest.length > 2 || !isWhole(rest[0])) return usage;
         const target = rest.length === 2 ? multiplierHundredths(rest[1]) : null;

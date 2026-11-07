@@ -7,7 +7,7 @@ const commands = await loadCommands(client);
 await loadInteractions(client);
 assert.deepEqual(commands.map((command) => command.name), ['addcc', 'bourse', 'casino', 'cc', 'cctop', 'daily', 'games', 'give', 'help', 'removecc']);
 // `crash` has no subcommand of its own: the typed `crash` / `كراش` are the group rocket.
-assert.deepEqual(commands[2].options.map((sub) => sub.name), ['mines', 'coinflip', 'slots', 'dice', 'roulette', 'rocket']);
+assert.deepEqual(commands[2].options.map((sub) => sub.name), ['mines', 'coinflip', 'slots', 'dice', 'chicken', 'roulette', 'rocket']);
 assert.deepEqual([...client.buttons.keys()].sort(), ['bourse', 'bourseperk', 'casino']);
 assert.ok(Object.values(commandArgAliases).every((alias) => client.commands.has(alias.split(' ')[0])));
 console.log(JSON.stringify({ commands, prefixAliases: commandArgAliases, buttons: [...client.buttons.keys()], selectMenus: [], modals: [] }, null, 2));

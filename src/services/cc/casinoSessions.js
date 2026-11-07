@@ -1,10 +1,11 @@
-// casinoSessions.js — the live side of the casino's mines boards (the rules and money are casinoService.js):
-// one lock per member, so their clicks, the timeout and the board edits happen in order; the inactivity
-// timer that cashes a board out by itself CASINO.idleMs after its last move; the start cooldown; and the
-// startup check that settles the boards a restart or a crash left behind. The timers live in memory only:
-// the game itself is saved in the member's record, so a lost timer never loses a bet (the next start or
-// restart settles the board). The board's messages and notices are in the board's saved language (its `lang`).
-// The group rounds are casinoGroupSessions.js.
+// casinoSessions.js — the live side of the casino's saved games, the mines boards and the chickens (the rules and
+// money are casinoService.js): one lock per member, so their clicks, the timeout and the game's edits happen in
+// order; the inactivity timer that cashes a game out by itself CASINO.idleMs after its last move; the start
+// cooldown; and the startup check that settles the games a restart or a crash left behind. The timers live in
+// memory only: the game itself is saved in the member's record, so a lost timer never loses a bet (the next start
+// or restart settles the game). Every step here works on whichever game is saved (readSavedGame,
+// settleIdleGame) and shows it with its own embed (gameResultPayload). The messages and notices are in the
+// game's saved language (its `lang`). The group rounds are casinoGroupSessions.js.
 
 import { CASINO } from '../../config/casino.js';
 import { economyScopeId } from '../../config/runtime.js';
@@ -12,10 +13,10 @@ import { economyScope } from '../../config/sharedEconomy.js';
 import { getEconomyPrefix } from '../../utils/database/keys.js';
 import { Mutex } from '../../utils/mutex.js';
 import { logger } from '../../utils/logger.js';
-import { readMinesGame, settleIdleMines } from './casinoService.js';
-import { minesResultPayload, minesNoticeText } from './casinoUi.js';
+import { readSavedGame, settleIdleGame } from './casinoService.js';
+import { gameResultPayload, gameNoticeText } from './casinoUi.js';
 
-// userId → { gameId, edit, timer }: the running board's inactivity timer.
+// userId → { gameId, edit, timer }: the running game's inactivity timer.
 const timers = new Map();
 // userId → when they last started a game (CASINO.cooldownMs).
 const lastStart = new Map();
@@ -50,11 +51,12 @@ async function fetchChannel(client, channelId) {
 }
 
 /**
- * Shows an ended board: through `edit` (the live message) when given, else on the board's saved message,
- * else as a short notice in its room, in the board's language. Returns true when something was shown.
+ * Shows an ended game (a mines board or a chicken, each with its own embed): through `edit` (the live message)
+ * when given, else on the game's saved message, else as a short notice in its room, in the game's language.
+ * Returns true when something was shown.
  */
-export async function showMinesResult(client, result, userId, edit = null) {
-    const payload = minesResultPayload(result, userId);
+export async function showGameResult(client, result, userId, edit = null) {
+    const payload = gameResultPayload(result, userId);
     if (edit && await tryEdit(edit, payload)) return true;
     const channelId = result.game?.channelId || result.channelId;
     const channel = channelId ? await fetchChannel(client, channelId) : null;
@@ -62,10 +64,13 @@ export async function showMinesResult(client, result, userId, edit = null) {
     const messageId = result.game?.messageId;
     if (messageId && channel.messages?.edit && await tryEdit((value) => channel.messages.edit(messageId, value), payload)) return true;
     if (!channel.send) return false;
-    return tryEdit((value) => channel.send(value), { content: minesNoticeText(result, userId), allowedMentions: { users: [userId] } });
+    return tryEdit((value) => channel.send(value), { content: gameNoticeText(result, userId), allowedMentions: { users: [userId] } });
 }
 
-/** Stops the inactivity timer of the member's board (only board `gameId` when given). */
+/** The name showGameResult had when mines was the only saved game. */
+export const showMinesResult = showGameResult;
+
+/** Stops the inactivity timer of the member's game (only game `gameId` when given). */
 export function cancelIdleCashOut(userId, gameId = null) {
     const entry = timers.get(userId);
     if (!entry || (gameId !== null && entry.gameId !== gameId)) return;
@@ -74,8 +79,8 @@ export function cancelIdleCashOut(userId, gameId = null) {
 }
 
 /**
- * (Re)starts the inactivity timer of a running board: `idleMs` after its last move it cashes out by
- * itself at its multiplier (settleIdleMines) and the board shows the result through `edit`, or on its
+ * (Re)starts the inactivity timer of a running game (mines or chicken): `idleMs` after its last move it cashes
+ * out by itself at its multiplier (settleIdleGame) and the game shows the result through `edit`, or on its
  * saved message when there is no `edit` (after a restart). A save that fails is tried again later.
  */
 export function scheduleIdleCashOut(client, game, userId, { edit = null, idleMs = CASINO.idleMs, now = Date.now() } = {}) {
@@ -91,17 +96,17 @@ export function scheduleIdleCashOut(client, game, userId, { edit = null, idleMs 
         timers.delete(userId);
         try {
             await withCasinoLock(userId, async () => {
-                const result = await settleIdleMines(client, game.guildId || economyScopeId, userId, game.id, { idleMs });
-                // The board moved without a new timer here (another bot process took the click): wait for its new deadline.
+                const result = await settleIdleGame(client, game.guildId || economyScopeId, userId, game.id, { idleMs });
+                // The game moved without a new timer here (another bot process took the click): wait for its new deadline.
                 if (result.reason === 'active') {
                     if (!timers.has(userId)) scheduleIdleCashOut(client, result.game, userId, { edit, idleMs });
                     return null;
                 }
-                if (result.ok) await showMinesResult(client, result, userId, edit);
+                if (result.ok) await showGameResult(client, result, userId, edit);
                 return null;
             });
         } catch (error) {
-            logger.warn(`[CASINO] Could not cash out an idle mines game: ${error.message}`);
+            logger.warn(`[CASINO] Could not cash out an idle ${game.game || 'mines'} game: ${error.message}`);
             if (!timers.has(userId)) arm(CASINO.idleRetryMs);
         }
     }
@@ -109,9 +114,9 @@ export function scheduleIdleCashOut(client, game, userId, { edit = null, idleMs 
 }
 
 /**
- * Startup: every mines board saved in the economy is settled when its timeout already passed (the bot was
- * off or crashed), cashing out at its multiplier (the bet back when nothing was opened), and the others get
- * their timer back, so a restart never eats a bet. Returns `{ settled, resumed, failed }`.
+ * Startup: every game saved in the economy (a mines board or a chicken) is settled when its timeout already
+ * passed (the bot was off or crashed), cashing out at its multiplier (the bet back when nothing was opened or
+ * crossed), and the others get their timer back, so a restart never eats a bet. Returns `{ settled, resumed, failed }`.
  */
 export async function recoverCasinoGames(client, { now = Date.now(), idleMs = CASINO.idleMs } = {}) {
     const prefix = getEconomyPrefix(economyScope());
@@ -122,31 +127,31 @@ export async function recoverCasinoGames(client, { now = Date.now(), idleMs = CA
         try {
             const record = await client.db.get(key, null);
             if (!record?.ccCasino) continue;
-            const game = readMinesGame(record.ccCasino);
+            const game = readSavedGame(record.ccCasino);
             if (game && now - game.lastActionAt < idleMs) {
                 scheduleIdleCashOut(client, game, userId, { idleMs, now });
                 summary.resumed += 1;
                 continue;
             }
             await withCasinoLock(userId, async () => {
-                const result = await settleIdleMines(client, game?.guildId || economyScopeId, userId, null, { now, idleMs });
+                const result = await settleIdleGame(client, game?.guildId || economyScopeId, userId, null, { now, idleMs });
                 if (!result.ok) return;
                 summary.settled += 1;
-                await showMinesResult(client, result, userId);
+                await showGameResult(client, result, userId);
             });
         } catch (error) {
             summary.failed += 1;
-            logger.warn(`[CASINO] Could not recover the mines game of ${userId}: ${error.message}`);
+            logger.warn(`[CASINO] Could not recover the casino game of ${userId}: ${error.message}`);
         }
     }
     return summary;
 }
 
-/** A new game settled an idle board first (casinoService.js): stop its timer and update its old message. */
+/** A new game settled an idle mines board or chicken first (casinoService.js): stop its timer and update its old message. */
 export function closePreviousBoard(client, previous, userId) {
     if (!previous) return;
     if (previous.game) cancelIdleCashOut(userId, previous.game.id);
-    showMinesResult(client, previous, userId).catch(() => {});
+    showGameResult(client, previous, userId).catch(() => {});
 }
 
 /** For tests. */
