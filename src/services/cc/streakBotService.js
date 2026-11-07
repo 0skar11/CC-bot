@@ -14,7 +14,7 @@ const streakBotId = () => (process.env.STREAKBOT_ID || '').trim();
 const UPDATE_TITLE = /تم تحديث الستريك/u;
 const MENTION = /<@!?(\d{17,20})>/u;
 // The streak day is the line that is only a bullet/emoji and a number (`🔥 · 2`, `・2`); `v1.3.34`, mentions and ids don't match.
-const COUNT_LINE = /^[^\d\n<>@]{1,40}?(\d{1,4})[ \t]*$/mu;
+const COUNT_LINE = /^[^\d\n<>@]{1,40}?(\d{1,4})(?:\*\*)?[ \t]*$/mu;
 const MAX_STREAK_DAYS = 3650;
 const utcDay = (now) => new Date(now).toISOString().slice(0, 10);
 

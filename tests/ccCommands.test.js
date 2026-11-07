@@ -209,3 +209,12 @@ test('a components-v2 StreakBot message (container > text displays) is read thro
     const message = { author: { bot: true, id: '9' }, content: '', embeds: [], components: [container] };
     assert.deepEqual(await parseStreakUpdate(message), { userId: SELF.id, count: 28 });
 });
+
+test('the real StreakBot embed (markdown headings, animated emoji, bold day) is read', async () => {
+    const { parseStreakUpdate } = await import('../src/services/cc/streakBotService.js');
+    const description = `# <:Mark:1263859313596960798>・تم تحديث الستريك\n- <@${SELF.id}>\n  - <a:Streak:1263860890973765652>・**10**\n  - <:Shield_Icon:1263860684416880660>・(<:Empty_shield:1263860684416880661><:Empty_shield:1263860684416880661>)\n-# v1.3.34`;
+    const message = { author: { bot: true, id: '9' }, content: '', embeds: [{ type: 'rich', description }] };
+    assert.deepEqual(await parseStreakUpdate(message), { userId: SELF.id, count: 10 });
+    const ninetyFive = { ...message, embeds: [{ type: 'rich', description: description.replace('**10**', '**95**') }] };
+    assert.deepEqual(await parseStreakUpdate(ninetyFive), { userId: SELF.id, count: 95 });
+});
