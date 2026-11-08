@@ -168,17 +168,30 @@ test('removecc is owner only and never takes a balance below zero', async () => 
     assert.match(replies[1].embeds[0].description, /كل رصيده/u);
 });
 
-test('give needs the sender to be in the server for 5 days (anti-alt); the receiver can be new', async () => {
+test('anyone can transfer to anyone from day one; the sender age rule only applies when minServerDays is set', async () => {
+    const { CC } = await import('../src/config/cc.js');
+    assert.equal(CC.transfer.minServerDays, 0);
     const client = await setup();
     const mk = (content, joined, replies) => ({ content, guildId: GUILD, author: SELF, guild: { members: { fetch: async (id) => ({ joinedTimestamp: id === OTHER.id ? joined.other : joined.self }) } }, channel: { send: async (p) => replies.push(p) } });
     const day = 86_400_000;
+    // A sender who joined a moment ago (even without a known join date) can transfer: no age rule by default.
     let replies = [];
-    await messageCreate.execute(mk(`تحويل <@${OTHER.id}> 100`, { self: Date.now() - 4 * day, other: Date.now() - 40 * day }, replies), client);
-    assert.match(replies[0].content, /ليك في السيرفر 5 يوم/u);
-    assert.equal((await client.db.get(getEconomyKey(economyScopeId, SELF.id))).cc, 100);
-    replies = [];
-    await messageCreate.execute(mk(`تحويل <@${OTHER.id}> 100`, { self: Date.now() - 40 * day, other: Date.now() - 1 * day }, replies), client);
+    await messageCreate.execute(mk(`تحويل <@${OTHER.id}> 100`, { self: Date.now() - 60_000, other: Date.now() - 1 * day }, replies), client);
     assert.equal((await client.db.get(getEconomyKey(economyScopeId, SELF.id))).cc, 0);
+    // The rule still works when it is set again (the sender must be old enough, the receiver can be new).
+    CC.transfer.minServerDays = 5;
+    try {
+        const second = await setup();
+        replies = [];
+        await messageCreate.execute(mk(`تحويل <@${OTHER.id}> 100`, { self: Date.now() - 4 * day, other: Date.now() - 40 * day }, replies), second);
+        assert.match(replies[0].content, /ليك في السيرفر 5 يوم/u);
+        assert.equal((await second.db.get(getEconomyKey(economyScopeId, SELF.id))).cc, 100);
+        replies = [];
+        await messageCreate.execute(mk(`تحويل <@${OTHER.id}> 100`, { self: Date.now() - 40 * day, other: Date.now() - 1 * day }, replies), second);
+        assert.equal((await second.db.get(getEconomyKey(economyScopeId, SELF.id))).cc, 0);
+    } finally {
+        CC.transfer.minServerDays = 0;
+    }
 });
 
 test('the pasted StreakBot message (bullets, no fire emoji, day 2) is read, and the notice goes to its room', async () => {

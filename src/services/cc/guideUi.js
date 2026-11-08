@@ -43,7 +43,7 @@ function ccGuideEmbed({ streak }) {
         '💸 **تجيب CC منين؟**',
         ...earn,
         `🎁 \`daily\` ・ ${number(CC.daily.amount)} ${CC.short} كل يوم.`,
-        `🔁 \`تحويل @عضو 100\` ・ تحويل CC لعضو تاني (ضريبة ${CC.transfer.taxPercent}% وبتزيد لو حوّلت كتير في الأسبوع، أقل تحويل ${number(CC.transfer.minAmount)}). لازم تكون في السيرفر بقالك **${CC.transfer.minServerDays} يوم** على الأقل (المستلم عادي يكون جديد).`,
+        `🔁 \`تحويل @عضو 100\` ・ تحويل CC لعضو تاني (ضريبة ${CC.transfer.taxPercent}% وبتزيد لو حوّلت كتير في الأسبوع، أقل تحويل ${number(CC.transfer.minAmount)}).${CC.transfer.minServerDays > 0 ? ` لازم تكون في السيرفر بقالك **${CC.transfer.minServerDays} يوم** على الأقل (المستلم عادي يكون جديد).` : ' أي حد يقدر يحوّل لأي حد من أول يوم.'}`,
         '',
         '💰 **رصيدك والترتيب**',
         `👛 \`/cc\` رصيدك، و\`/cc user:\` رصيد أي عضو. مكتوبة: ${code(['cc', ...aliasesFor('cc')])} (وممكن بعدها منشن أو ID).`,

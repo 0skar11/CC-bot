@@ -6,7 +6,7 @@ export const CC = {
     // Wins announced by the games bot (Clover): `win` = group game, `answer` = first to type the answer.
     // `dailyCap` = most CC one member can get from them per UTC day.
     gamesBot: { win: 500, answer: 50, dailyCap: 2000 },
-    transfer: { minServerDays: 5, minAmount: 10, taxPercent: 5, cheapPerWeek: 3, extraPercentPerTransfer: 5, maxTaxPercent: 50 },
+    transfer: { minServerDays: 0, minAmount: 10, taxPercent: 5, cheapPerWeek: 3, extraPercentPerTransfer: 5, maxTaxPercent: 50 },
 };
 export function ccEmbed(title, description = '', { fields = [], thumbnail = null } = {}) {
     return {
