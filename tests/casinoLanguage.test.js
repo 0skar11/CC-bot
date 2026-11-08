@@ -222,7 +222,8 @@ describe('typed and slash games answer in their command’s language', () => {
         await typed(A, 'mines 100 3');
         const board = casinoRoom.sent[0];
         assert.equal(board.embeds[0].title, '💣 Mines');
-        assert.match(board.embeds[0].description, /You opened \*\*0\*\* of \*\*6\*\* safe tiles[\s\S]*Cash out now: \*\*×1\.00\*\* → \*\*100\*\*[\s\S]*Next tile: \*\*×1\.45\*\*[\s\S]*Leave the board alone for 60 seconds/u);
+        assert.match(board.embeds[0].description, /You opened \*\*0\*\* of \*\*6\*\* safe tiles[\s\S]*Cash out now: \*\*×1\.00\*\* → \*\*100\*\*[\s\S]*Next tile: \*\*×1\.45\*\*/u);
+        assert.match(board.embeds[0].footer.text, /Leave the board alone for 60 seconds/u);
         assert.equal(buttonsOf(board)[9].label, 'Cash out · 100 CC');
         const game = saved(client, A).ccCasino;
         assert.equal(game.lang, 'en');

@@ -37,8 +37,8 @@ const threshold = (k) => 4n ** BigInt(k) * 5n ** BigInt(20 - k);
 const diesOn = (lane) => () => Number(threshold(lane));
 /** A random source whose chicken crosses the whole road. */
 const never = () => 0;
-// The road's pieces (src/services/cc/casinoUi.js chickenRoad).
-const [CROSSED, CHICK, NEXT, AHEAD, DEAD, CAR, FINISH, MORE, SIDEWALK] = ['\u{1F7E9}', '\u{1F414}', '\u2B1C', '\u2B1B', '\u{1F480}', '\u{1F697}', '\u{1F3C1}', '\u22EF', '\u{1F7EB}'];
+// The road's pieces (src/services/cc/casinoUi.js chickenRoad, the registry's defaults; NEXT is the danger sign of the next lane).
+const [CROSSED, CHICK, NEXT, AHEAD, DEAD, CAR, FINISH, MORE, SIDEWALK] = ['\u{1F7E9}', '\u{1F414}', '\u26A0\uFE0F', '\u2B1B', '\u{1F480}', '\u{1F697}', '\u{1F3C1}', '\u22EF', '\u{1F7EB}'];
 
 function fakeClient(records = {}) {
     const store = new Map(Object.entries(records));
@@ -548,7 +548,8 @@ describe('chicken: the road, the buttons and the commands', () => {
         assert.ok(game.deathStep === null || (game.deathStep >= 1 && game.deathStep <= 20));
         const [board] = replies;
         assert.equal(board.embeds[0].title, '🐔 Chicken');
-        assert.match(board.embeds[0].description, /The chicken crossed \*\*0\*\* of \*\*20\*\* lanes[\s\S]*Cash out now: \*\*×1\.00\*\* → \*\*100\*\*[\s\S]*Next lane: \*\*×1\.21\*\* → \*\*121\*\* 🌀 CC \(80% chance to make it\)[\s\S]*Leave the chicken alone for 60 seconds/u);
+        assert.match(board.embeds[0].description, /The chicken crossed \*\*0\*\* of \*\*20\*\* lanes[\s\S]*Cash out now: \*\*×1\.00\*\* → \*\*100\*\*[\s\S]*Next lane: \*\*×1\.21\*\* → \*\*121\*\* 🌀 CC \(80% chance to make it\)/u);
+        assert.match(board.embeds[0].footer.text, /Leave the chicken alone for 60 seconds/u);
         assert.deepEqual(buttonsOf(board).map((button) => button.label), ['Step', 'Cash out · 100 CC']);
         assert.equal(await balance(client, A), 900);
         // Another game waits for it, in the language of that command.

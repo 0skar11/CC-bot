@@ -5,16 +5,25 @@
 // its buttons) is written in the round's own language (`round.lang`, its opener's), so a room that mixes
 // languages sees the opener's language there; the private answers (cash-out clicks, the join form) take the
 // language of the member they answer.
+// The roulette's emojis come from the casino's emoji registry (src/config/emojis.js: E() where Discord shows
+// custom emojis, P() in titles, footers and the form title) and its embeds have their own colours (CASINO_COLORS:
+// the felt green while it takes bets, the pocket's colour once it spun). The rocket's messages keep their own
+// emojis and the CC gold, exactly as they were.
 
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 import { ccEmbed, formatCC } from '../../config/cc.js';
-import { CASINO, CASINO_BUTTON_PREFIX, ROULETTE_COLORS } from '../../config/casino.js';
+import { CASINO, CASINO_BUTTON_PREFIX, CASINO_COLORS, ROULETTE_COLORS, casinoColor } from '../../config/casino.js';
+import { casinoEmoji as E, plainEmoji as P } from '../../config/emojis.js';
 import { pocketColor, roundLanguage } from './casinoGroupService.js';
 import { inLang } from './lang.js';
 
 const seconds = (ms) => Math.ceil(ms / 1000);
 const quiet = (embeds, components = []) => ({ content: '', embeds, components, allowedMentions: { parse: [] } });
 const total = (bets) => bets.reduce((sum, entry) => sum + entry.bet, 0);
+// Discord's limit on an embed's description.
+const DESCRIPTION_LIMIT = 4096;
+// The pockets in the order they sit on a single-zero wheel, for the strip drawn on the roulette table.
+const WHEEL = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
 
 /** `×2.50`, `×1,234.00`: a multiplier kept in hundredths. */
 export function multiplierText(hundredths) {
@@ -31,21 +40,25 @@ const TEXT = {
         amountHint: (min) => `الرقم بس، من ${min}`,
         choiceLabel: 'تراهن على إيه؟',
         choiceHint: 'احمر أو اسود أو رقم من 0 لـ 36',
-        rouletteForm: '🎡 راهن على الروليت',
+        rouletteForm: () => `${P('roulette.icon')} راهن على الروليت`,
         rocketForm: '🚀 اركب الصاروخ',
         // Roulette
-        rouletteTitle: '🎡 روليت',
-        noBets: '😶 لسه محدش راهن.',
-        spinning: '🌀 **العجلة بتلف...** خلاص مفيش رهانات تاني.',
-        spinsAt: (at) => `⏳ العجلة بتلف <t:${at}:R> ・ دوس 🎡 **راهن** أو اكتب \`روليت 100 احمر\` / \`روليت 100 17\``,
-        rouletteRule: (red, black, colorPays, green, numberPays) => `🎯 ${red} أو ${black} ×${colorPays} ・ رقم من 0 لـ 36 (${green}) ×${numberPays}`,
-        betsHead: (count, max, cc) => `📋 **الرهانات** (${count}/${max}) ・ 💵 ${cc}`,
-        refunded: (head, cc) => `↩️ ${head} ・ رجعله رهانه ${cc}`,
-        stakeWon: (head, bet, cc) => `🏆 ${head} ・ راهن ${bet} ← كسب ${cc}`,
-        stakeLost: (head, cc) => `💸 ${head} ・ خسر ${cc}`,
-        nobodyBet: '😶 محدش كان راهن.',
-        paid: (cc, bets) => `💰 اتدفع ${cc} من رهانات ${bets}`,
-        landed: (pocket) => `🎯 الكورة وقفت على ${pocket}`,
+        rouletteTitle: () => `${P('roulette.icon')} روليت`,
+        noBets: () => `${E('ui.empty')} لسه محدش راهن.`,
+        spinning: () => `${E('roulette.spin')} **العجلة بتلف...** خلاص مفيش رهانات تاني.`,
+        spinsAt: (at) => `${E('roulette.timer')} العجلة بتلف <t:${at}:R> ・ دوس ${E('roulette.icon')} **راهن** أو اكتب \`روليت 100 احمر\` / \`روليت 100 17\``,
+        rouletteRule: (red, black, colorPays, green, numberPays) => `${E('roulette.rule')} ${red} أو ${black} ×${colorPays} ・ رقم من 0 لـ 36 (${green}) ×${numberPays}`,
+        betsHead: (count, max, cc) => `${E('roulette.bets')} **الرهانات** (${count}/${max}) ・ ${E('ui.bet')} ${cc}`,
+        moreBets: (count) => `${E('roulette.bets')} رهانات تانية: **${count}**`,
+        tableFooter: (perMember, max) => `${P('roulette.icon')} لحد ${perMember} رهانات ليك في الجولة ・ ${max} رهان في الجولة كلها`,
+        resultFooter: () => `${P('roulette.icon')} العب تاني: روليت 100 احمر أو روليت 100 17`,
+        // The stake lines are shared with the rocket's restart notice, which keeps the default emojis.
+        refunded: (head, cc, icon = '↩️') => `${icon} ${head} ・ رجعله رهانه ${cc}`,
+        stakeWon: (head, bet, cc, icon = '🏆') => `${icon} ${head} ・ راهن ${bet} ← كسب ${cc}`,
+        stakeLost: (head, cc, icon = '💸') => `${icon} ${head} ・ خسر ${cc}`,
+        nobodyBet: (icon = '😶') => `${icon} محدش كان راهن.`,
+        paid: (cc, bets, icon = '💰') => `${icon} اتدفع ${cc} من رهانات ${bets}`,
+        landed: (pocket) => `${E('roulette.landed')} الكورة وقفت على ${pocket}`,
         on: (choice) => `على ${choice}`,
         // Rocket
         rocketTitle: '🚀 صاروخ',
@@ -90,21 +103,25 @@ const TEXT = {
         amountHint: (min) => `Just the number, from ${min}`,
         choiceLabel: 'What do you bet on?',
         choiceHint: 'red, black or a number from 0 to 36',
-        rouletteForm: '🎡 Bet on the roulette',
+        rouletteForm: () => `${P('roulette.icon')} Bet on the roulette`,
         rocketForm: '🚀 Ride the rocket',
         // Roulette
-        rouletteTitle: '🎡 Roulette',
-        noBets: '😶 No bets yet.',
-        spinning: '🌀 **The wheel is spinning...** No more bets.',
-        spinsAt: (at) => `⏳ The wheel spins <t:${at}:R> ・ press 🎡 **Bet** or type \`roulette 100 red\` / \`roulette 100 17\``,
-        rouletteRule: (red, black, colorPays, green, numberPays) => `🎯 ${red} or ${black} ×${colorPays} ・ a number from 0 to 36 (${green}) ×${numberPays}`,
-        betsHead: (count, max, cc) => `📋 **Bets** (${count}/${max}) ・ 💵 ${cc}`,
-        refunded: (head, cc) => `↩️ ${head} ・ got the bet back ${cc}`,
-        stakeWon: (head, bet, cc) => `🏆 ${head} ・ bet ${bet} → won ${cc}`,
-        stakeLost: (head, cc) => `💸 ${head} ・ lost ${cc}`,
-        nobodyBet: '😶 Nobody bet.',
-        paid: (cc, bets) => `💰 Paid ${cc} out of ${bets} in bets`,
-        landed: (pocket) => `🎯 The ball landed on ${pocket}`,
+        rouletteTitle: () => `${P('roulette.icon')} Roulette`,
+        noBets: () => `${E('ui.empty')} No bets yet.`,
+        spinning: () => `${E('roulette.spin')} **The wheel is spinning...** No more bets.`,
+        spinsAt: (at) => `${E('roulette.timer')} The wheel spins <t:${at}:R> ・ press ${E('roulette.icon')} **Bet** or type \`roulette 100 red\` / \`roulette 100 17\``,
+        rouletteRule: (red, black, colorPays, green, numberPays) => `${E('roulette.rule')} ${red} or ${black} ×${colorPays} ・ a number from 0 to 36 (${green}) ×${numberPays}`,
+        betsHead: (count, max, cc) => `${E('roulette.bets')} **Bets** (${count}/${max}) ・ ${E('ui.bet')} ${cc}`,
+        moreBets: (count) => `${E('roulette.bets')} More bets: **${count}**`,
+        tableFooter: (perMember, max) => `${P('roulette.icon')} Up to ${perMember} bets each per round ・ ${max} bets per round in all`,
+        resultFooter: () => `${P('roulette.icon')} Play again: roulette 100 red or roulette 100 17`,
+        // The stake lines are shared with the rocket's restart notice, which keeps the default emojis.
+        refunded: (head, cc, icon = '↩️') => `${icon} ${head} ・ got the bet back ${cc}`,
+        stakeWon: (head, bet, cc, icon = '🏆') => `${icon} ${head} ・ bet ${bet} → won ${cc}`,
+        stakeLost: (head, cc, icon = '💸') => `${icon} ${head} ・ lost ${cc}`,
+        nobodyBet: (icon = '😶') => `${icon} Nobody bet.`,
+        paid: (cc, bets, icon = '💰') => `${icon} Paid ${cc} out of ${bets} in bets`,
+        landed: (pocket) => `${E('roulette.landed')} The ball landed on ${pocket}`,
         on: (choice) => `on ${choice}`,
         // Rocket
         rocketTitle: '🚀 Rocket',
@@ -146,13 +163,37 @@ const say = (lang) => inLang(lang, TEXT);
 
 /** `🔴 أحمر` / `🔴 Red`, `⚫ أسود` / `⚫ Black`, `🟢 0`, `🔢 17`. */
 export function choiceLabel(choice, lang) {
-    if (choice === 'red' || choice === 'black') return `${ROULETTE_COLORS[choice].emoji} ${say(lang).colorName(choice)}`;
-    return choice === 0 ? `${ROULETTE_COLORS.green.emoji} 0` : `🔢 ${choice}`;
+    if (choice === 'red' || choice === 'black') return `${E(`roulette.${choice}`)} ${say(lang).colorName(choice)}`;
+    return choice === 0 ? `${E('roulette.green')} 0` : `${E('roulette.number')} ${choice}`;
 }
 
 /** `🔴 **32**`: where the ball landed. */
 export function pocketLabel(pocket) {
-    return `${ROULETTE_COLORS[pocketColor(pocket)].emoji} **${pocket}**`;
+    return `${E(`roulette.${pocketColor(pocket)}`)} **${pocket}**`;
+}
+
+/** `🔴⚫🔴⚫🟢🔴⚫🔴⚫`: the pockets around `center` (a pocket number) in the wheel's own order. */
+export function wheelStrip(center = 0, side = 4) {
+    const at = Math.max(0, WHEEL.indexOf(center));
+    return Array.from({ length: side * 2 + 1 }, (_, i) => E(`roulette.${pocketColor(WHEEL[(at - side + i + WHEEL.length * 2) % WHEEL.length])}`)).join('');
+}
+
+/**
+ * `head`, then as many of `items` as fit in an embed description with `tail` after them; the ones that don't fit
+ * become one `more(count)` line (40 bets with long names and custom emojis can pass Discord's 4,096 characters).
+ */
+function fitLines(head, items, more, tail = []) {
+    const fixed = [...head, ...tail].reduce((sum, line) => sum + line.length + 1, 0);
+    const room = DESCRIPTION_LIMIT - fixed - more(items.length).length - 1;
+    const shown = [];
+    let used = 0;
+    for (const line of items) {
+        if (used + line.length + 1 > room) break;
+        shown.push(line);
+        used += line.length + 1;
+    }
+    const rest = items.length - shown.length;
+    return [...head, ...shown, ...(rest ? [more(rest)] : []), ...tail].join('\n');
 }
 
 // ---- The join button and its form ----
@@ -165,7 +206,7 @@ function joinRow(round) {
         new ButtonBuilder()
             .setCustomId(`${CASINO_BUTTON_PREFIX}:join:${round.game}:${round.id}`)
             .setLabel(roulette ? text.betButton : text.rideButton)
-            .setEmoji(roulette ? '🎡' : '🚀')
+            .setEmoji(roulette ? E('roulette.icon') : '🚀')
             .setStyle(ButtonStyle.Primary),
     );
 }
@@ -195,7 +236,8 @@ export function joinModal(game, roundId, lang) {
     }
     return new ModalBuilder()
         .setCustomId(`${CASINO_BUTTON_PREFIX}:joinm:${game}:${roundId}`)
-        .setTitle(roulette ? text.rouletteForm : text.rocketForm)
+        // Discord caps a form's title at 45 characters: an unusually long emoji override is cut, never an error.
+        .setTitle(String(roulette ? text.rouletteForm() : text.rocketForm).slice(0, 45))
         .addComponents(...rows);
 }
 
@@ -210,55 +252,73 @@ export function parseFormAmount(text) {
 // ---- Roulette ----
 
 function rouletteBetLines(round, lang) {
-    if (!round.bets.length) return [say(lang).noBets];
     return round.bets.map((entry) => `${choiceLabel(entry.choice, lang)} ・ <@${entry.userId}> ・ ${formatCC(entry.bet)}`);
 }
 
-/** The roulette round taking bets (or, `spinning`, the wheel turning with no more bets). */
+/**
+ * The roulette round taking bets (or, `spinning`, the wheel turning with no more bets): a strip of the wheel,
+ * the countdown (or the spin in big letters), what pays what, then every bet with its colour chip.
+ */
 export function rouletteTablePayload(round, { spinning = false } = {}) {
     const lang = roundLanguage(round);
     const text = say(lang);
-    const { colorPays, numberPays, maxBets } = CASINO.roulette;
-    return quiet([ccEmbed(text.rouletteTitle, [
-        spinning ? text.spinning : text.spinsAt(seconds(round.closesAt)),
+    const { colorPays, numberPays, maxBets, maxBetsPerMember } = CASINO.roulette;
+    const head = [
+        `${E('roulette.icon')} ${wheelStrip(0)}`,
+        spinning ? `### ${text.spinning()}` : text.spinsAt(seconds(round.closesAt)),
         text.rouletteRule(choiceLabel('red', lang), choiceLabel('black', lang), colorPays, choiceLabel(0, lang), numberPays),
         '',
         text.betsHead(round.bets.length, maxBets, formatCC(total(round.bets))),
-        ...rouletteBetLines(round, lang),
-    ].join('\n'))], spinning ? [] : [joinRow(round)]);
+    ];
+    const bets = round.bets.length ? rouletteBetLines(round, lang) : [text.noBets()];
+    return quiet([ccEmbed(text.rouletteTitle(), fitLines(head, bets, text.moreBets), {
+        color: casinoColor('roulette'),
+        footer: text.tableFooter(maxBetsPerMember, maxBets),
+    })], spinning ? [] : [joinRow(round)]);
 }
 
-/** One line per settled stake: won, lost or given back. */
-function stakeLines(results, label, lang) {
+/** The roulette's stake emojis (registry); the rocket's restart notice keeps the TEXT defaults. */
+const rouletteIcons = () => ({ won: E('roulette.won'), lost: E('roulette.lost'), refunded: E('roulette.refund'), none: E('ui.empty'), paid: E('roulette.paid') });
+
+/**
+ * One line per settled stake: won, lost or given back (`icons` for the roulette's emojis; `sorted` puts the
+ * winners first, biggest payout first, then the bets given back, then the losses).
+ */
+function stakeLines(results, label, lang, { icons = {}, sorted = false } = {}) {
     const text = say(lang);
     const lines = [];
     for (const result of results) {
         for (const stake of result.settled) {
             const head = [`<@${result.userId}>`, label(stake)].filter(Boolean).join(' ');
-            if (stake.refunded) lines.push(text.refunded(head, formatCC(stake.bet)));
-            else if (stake.payout > 0) lines.push(text.stakeWon(head, formatCC(stake.bet), formatCC(stake.payout)));
-            else lines.push(text.stakeLost(head, formatCC(stake.bet)));
+            if (stake.refunded) lines.push({ rank: 1, payout: stake.payout, line: text.refunded(head, formatCC(stake.bet), icons.refunded) });
+            else if (stake.payout > 0) lines.push({ rank: 0, payout: stake.payout, line: text.stakeWon(head, formatCC(stake.bet), formatCC(stake.payout), icons.won) });
+            else lines.push({ rank: 2, payout: 0, line: text.stakeLost(head, formatCC(stake.bet), icons.lost) });
         }
     }
-    return lines.length ? lines : [text.nobodyBet];
+    if (sorted) lines.sort((a, b) => a.rank - b.rank || b.payout - a.payout);
+    return lines.length ? lines.map((entry) => entry.line) : [text.nobodyBet(icons.none)];
 }
 
-function paidLine(results, lang) {
+function paidLine(results, lang, icon = undefined) {
     const stakes = results.flatMap((result) => result.settled);
-    return say(lang).paid(formatCC(stakes.reduce((sum, stake) => sum + stake.payout, 0)), formatCC(total(stakes)));
+    return say(lang).paid(formatCC(stakes.reduce((sum, stake) => sum + stake.payout, 0)), formatCC(total(stakes)), icon);
 }
 
-/** The spun roulette: the pocket, then every bet won or lost. */
+/**
+ * The spun roulette: the pocket in big letters (the embed takes its colour), where the ball landed, every bet won,
+ * given back or lost (winners first), and what was paid out of what was bet.
+ */
 export function rouletteResultPayload(round, results) {
     const lang = roundLanguage(round);
     const text = say(lang);
-    return quiet([ccEmbed(text.rouletteTitle, [
-        text.landed(pocketLabel(round.pocket)),
-        '',
-        ...stakeLines(results, (stake) => text.on(choiceLabel(stake.choice, lang)), lang),
-        '',
-        paidLine(results, lang),
-    ].join('\n'))]);
+    const icons = rouletteIcons();
+    const color = pocketColor(round.pocket);
+    const head = [`# ${E(`roulette.${color}`)} ${round.pocket}`, text.landed(pocketLabel(round.pocket)), ''];
+    const lines = stakeLines(results, (stake) => text.on(choiceLabel(stake.choice, lang)), lang, { icons, sorted: true });
+    return quiet([ccEmbed(text.rouletteTitle(), fitLines(head, lines, text.moreBets, ['', `> ${paidLine(results, lang, icons.paid)}`]), {
+        color: CASINO_COLORS.pockets[color],
+        footer: text.resultFooter(),
+    })]);
 }
 
 // ---- Rocket ----
@@ -380,7 +440,8 @@ export function rocketClickText(result, lang) {
 export function groupRecoveryPayload(round, results) {
     const lang = roundLanguage(round);
     const text = say(lang);
-    const title = round.game === 'roulette' ? text.rouletteTitle : text.rocketTitle;
+    const roulette = round.game === 'roulette';
+    const title = roulette ? text.rouletteTitle() : text.rocketTitle;
     const crash = round.crash ? multiplierText(Math.max(100, round.crash)) : '';
     const heads = {
         open: text.recoveryOpen,
@@ -389,8 +450,14 @@ export function groupRecoveryPayload(round, results) {
         crashed: text.recoveryCrashed(crash),
     };
     const head = heads[round.status] || heads.open;
-    const label = round.game === 'roulette'
+    const label = roulette
         ? (stake) => text.on(choiceLabel(stake.choice, lang))
         : (stake) => (stake.target ? `(🎯 ${multiplierText(stake.target)})` : '');
-    return quiet([ccEmbed(title, [head, '', ...stakeLines(results, label, lang), '', paidLine(results, lang)].join('\n'))]);
+    // The roulette's notice takes its emojis and colours (the pocket's once it spun); the rocket's stays as it was.
+    const icons = roulette ? rouletteIcons() : {};
+    const lines = stakeLines(results, label, lang, { icons, sorted: roulette });
+    const description = fitLines([head, ''], lines, text.moreBets, ['', paidLine(results, lang, icons.paid)]);
+    if (!roulette) return quiet([ccEmbed(title, description)]);
+    const spun = round.status === 'spun' && Number.isInteger(round.pocket);
+    return quiet([ccEmbed(title, description, { color: spun ? CASINO_COLORS.pockets[pocketColor(round.pocket)] : casinoColor('roulette') })]);
 }

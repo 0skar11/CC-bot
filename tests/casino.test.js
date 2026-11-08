@@ -439,7 +439,8 @@ describe('casino buttons and commands', () => {
         // Every closed cell is the same button apart from its own id: nothing tells a mine apart.
         assert.equal(new Set(buttons.slice(0, 9).map(({ custom_id: _id, ...look }) => JSON.stringify(look))).size, 1);
         assert.ok(buttons.slice(0, 9).every((button, cell) => button.custom_id === `casino:pick:${game.id}:${cell}:${A}`));
-        assert.match(replies[0].embeds[0].description, /60 ثانية/u);
+        // The timeout rule is the board's footer.
+        assert.match(replies[0].embeds[0].footer.text, /60 ثانية/u);
         // Cashing out now gives the bet back; the next safe cell (3 mines) pays 0.97 × 9/6 = ×1.45.
         assert.match(replies[0].embeds[0].description, /×1\.00[\s\S]*×1\.45\*\* ← \*\*145\*\*/u);
         assert.match(buttons[9].label, /100 CC/u);
@@ -470,7 +471,8 @@ describe('casino buttons and commands', () => {
         assert.deepEqual(saved(client, A).ccStats, { earned: 594, spent: 300 });
         assert.match(coinflipPayload(flip, user).embeds[0].description, /كسبت/u);
         assert.match(coinflipPayload(lost, user).embeds[0].description, /خسرت/u);
-        assert.match(slotsPayload(spin, user).embeds[0].description, /🍒 \| 🍒 \| 🍒/u);
+        // The three reels sit in the machine's frame, with the win line marked.
+        assert.match(slotsPayload(spin, user).embeds[0].description, /🟪🟪🟪🟪🟪\n🟪🍒🍒🍒🟪 ⬅️ ×4\n🟪🟪🟪🟪🟪/u);
         assert.match(slotsPayload(spin, user).embeds[0].footer.text, /^🌀🌀🌀 ×25/u);
     });
 

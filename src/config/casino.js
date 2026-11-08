@@ -139,6 +139,32 @@ export const CASINO = {
     groupRenderMs: 1_500,
 };
 
+// The embed colours (casinoUi.js, casinoGroupUi.js): each game has its own while it runs (a mines board, a chicken,
+// the roulette table), and a result takes its outcome's: green when it paid more than the bet, red when it paid
+// less, gold when it gave the bet back. The spun roulette takes the colour of its pocket. The rocket keeps the CC gold.
+export const CASINO_COLORS = {
+    mines: 0x1abc9c,
+    coinflip: 0xf1c40f,
+    slots: 0x9b59b6,
+    dice: 0x3498db,
+    chicken: 0xe67e22,
+    roulette: 0x0b6e4f,
+    rocket: 0xc9a227,
+    win: 0x2ecc71,
+    loss: 0xe74c3c,
+    push: 0xc9a227,
+    pockets: { red: 0xe74c3c, black: 0x4e5058, green: 0x2ecc71 },
+};
+
+/** 'win', 'loss' or 'push' for a game that took `bet` and paid `payout`. */
+export const outcomeOf = (bet, payout) => (payout > bet ? 'win' : (payout < bet ? 'loss' : 'push'));
+
+/** A game's own colour, or its outcome's ('win', 'loss', 'push') when one is given. */
+export function casinoColor(game, outcome = null) {
+    if (outcome && Object.hasOwn(CASINO_COLORS, outcome) && typeof CASINO_COLORS[outcome] === 'number') return CASINO_COLORS[outcome];
+    return typeof CASINO_COLORS[game] === 'number' ? CASINO_COLORS[game] : CASINO_COLORS.rocket;
+}
+
 // `عملة 100 ملك`: the words for each side of the coin.
 export const COIN_SIDES = {
     heads: { name: 'ملك', emoji: '👑', words: ['heads', 'head', 'h', 'ملك'] },
