@@ -5,7 +5,7 @@
 // Discord doesn't reorder it.
 
 import { CC, ccEmbed } from '../../config/cc.js';
-import { CASINO, GAMES_COMMAND, GROUP_GAMES, SOLO_GAMES } from '../../config/casino.js';
+import { ALL_IN_WORDS, CASINO, GAMES_COMMAND, GROUP_GAMES, SOLO_GAMES } from '../../config/casino.js';
 import { commandArgAliases } from '../../config/commands/commandAliases.js';
 import { casinoChannelIds, initialCC, isAllowedChannel, traderRoleEnabled } from '../../config/runtime.js';
 import { bourseAssets, bourseSettings, SELL_ALL_WORDS } from '../../config/store/bourse.js';
@@ -97,6 +97,7 @@ function casinoGuideEmbed() {
         `💵 الرهان من **${number(minBet)}** ${CC.short}${CASINO.unlimited ? ' من غير حد أقصى' : ` لـ **${number(maxBet)}** ${CC.short}`}، ومايزيدش عن رصيدك.`,
         ...(rooms ? [rooms] : []),
         `🎮 اكتب ${code(aliasesFor(GAMES_COMMAND).filter((word) => word !== GAMES_COMMAND).slice(0, 2))} أو \`/${GAMES_COMMAND}\` تشوف كل الألعاب (الفردية والجماعية) في قايمة واحدة.`,
+        `🔥 **كل فلوسك**: اكتب \`كل\` مكان الرهان في أي لعبة (\`صاروخ كل\`، \`صاروخ كل 2\`، \`مينز كل 3\`، \`نرد كل فوق 70\`، \`روليت كل احمر\`) أو في فورم الدخول، وتدخل برصيدك كله${CASINO.unlimited ? '' : ` لحد **${number(maxBet)}** ${CC.short}`}. الكلمات: ${code([...ALL_IN_WORDS])} (مكتوبة بس، مش في \`/casino\`).`,
         '',
         `💣 \`/casino mines\` ・ \`مينز ${bet} ${mines.default}\``,
         `> لوحة ${mines.columns}×${rows} فيها من ${mines.min} لـ ${mines.max} ألغام (الافتراضي ${mines.default}). كل خانة أمان بتكبّر المضاعف، واعمل كاش أوت وقت ما تحب، ولو لقيت لغم تخسر الرهان.`,

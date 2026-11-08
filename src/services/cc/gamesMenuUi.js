@@ -1,7 +1,8 @@
 // gamesMenuUi.js — the games menu: `/games` and the typed `العاب` / `games` (src/commands/Games/games.js), in
 // Arabic or English. ONE embed that is quick to read: a short intro, the solo games and the group games as two
 // blocks (each game is a title line with what it does, then a line with the typed example), and one footer line
-// with every house edge. The solo games are mines, coinflip, slots, dice and chicken. The rocket also shows
+// with every house edge. The intro also says how to go all-in (`كل` / `all` in place of the bet, src/config/casino.js
+// ALL_IN_WORDS). The solo games are mines, coinflip, slots, dice and chicken. The rocket also shows
 // `كراش` / `crash`, which is the same game. Every number is read from
 // CASINO and casinoEdges(), so the menu never drifts from what the games really do. Each line starts with an emoji
 // so Discord keeps the Arabic lines in order.
@@ -35,6 +36,7 @@ function menuText(lang) {
             intro: [
                 `${CC.emoji} Bets from **${number(CASINO.minBet)} ${CC.short}**${maxBet ? ` up to **${maxBet} ${CC.short}**` : ''}, never more than your balance.`,
                 `⌨️ Type the command in the casino room (no \`${prefix}\` needed) or use \`/casino\`.`,
+                `🔥 Type \`all\` instead of the bet to go all-in${maxBet ? ` (up to ${maxBet})` : ''}: \`rocket all\` ・ \`mines all 3\` ・ \`dice all over 70\``,
                 ...(rooms ? [`🚪 Games run in ${rooms}`] : []),
             ],
             soloTitle: '🎯 Solo — you against the house',
@@ -58,6 +60,7 @@ function menuText(lang) {
         intro: [
             `${CC.emoji} الرهان من **${number(CASINO.minBet)} ${CC.short}**${maxBet ? ` لحد **${maxBet} ${CC.short}**` : ''} ومايزيدش عن رصيدك.`,
             `⌨️ اكتب الأمر في روم الكازينو (من غير \`${prefix}\`) أو استخدم \`/casino\`.`,
+            `🔥 اكتب \`كل\` مكان الرهان وتدخل بكل فلوسك${maxBet ? ` (لحد ${maxBet})` : ''}: \`صاروخ كل\` ・ \`مينز كل 3\` ・ \`نرد كل فوق 70\``,
             ...(rooms ? [`🚪 الألعاب شغالة في ${rooms}`] : []),
         ],
         soloTitle: '🎯 فردية — انت والبيت بس',

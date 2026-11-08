@@ -2,10 +2,10 @@ import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { CC } from '../../config/cc.js';
 import { isAllowedGuild, isCasinoChannel } from '../../config/runtime.js';
 import {
-    CASINO, CASINO_COMMAND, GROUP_GAMES, SOLO_GAMES, casinoChannelNotice, casinoGuildNotice, coinSide, diceDirection, readGameArgs, rouletteChoice, targetHundredths,
+    ALL_IN, CASINO, CASINO_COMMAND, GROUP_GAMES, SOLO_GAMES, betWord, casinoChannelNotice, casinoGuildNotice, coinSide, diceDirection, readGameArgs, rouletteChoice, targetHundredths,
 } from '../../config/casino.js';
 import {
-    isValidBet, isValidMineCount, isValidCrashTarget, diceChance, startMines, cashOutMines, startChicken, cashOutChicken, attachGameMessage, playCoinflip, playSlots, playDice,
+    isBetRequest, isValidMineCount, isValidCrashTarget, diceChance, startMines, cashOutMines, startChicken, cashOutChicken, attachGameMessage, playCoinflip, playSlots, playDice,
     chickenMultiplierHundredths,
 } from '../../services/cc/casinoService.js';
 import {
@@ -29,6 +29,9 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 // Every answer is in the command's language (src/services/cc/lang.js): an English typed word in English, an
 // Arabic one in Arabic, a slash command in the member's Discord language. A group round stays the room's one
 // round whatever the language; its message is in the language of the member who opened it.
+// All-in: a typed all-in word where the bet goes (`صاروخ كل`, `مينز كل 3`, `rocket all 2`; ALL_IN_WORDS in
+// src/config/casino.js) asks the game for the bet ALL_IN, and the game's own save turns it into the balance (up to
+// the max bet) as it takes it (casinoService.js betFor). The slash commands keep their whole-number `bet`.
 const SUBCOMMANDS = [...SOLO_GAMES, ...GROUP_GAMES];
 const NEWER_GAMES = ['dice', 'chicken', 'roulette', 'rocket'];
 // `!casino crash 100 2` is the rocket, like the typed `crash` / `كراش`.
@@ -52,6 +55,27 @@ const targetOption = (description) => (option) => option
     .setDescription(description)
     .setMinValue(lowest)
     .setMaxValue(top);
+
+/**
+ * The options of a typed game, read like a slash command's. A typed all-in word has no number: `allIn` is true and
+ * getInteger('bet') null (a slash command's options have no `allIn`: its `bet` is a whole number).
+ */
+function typedOptions(sub, { bet, ...integers }, strings = {}, target = null) {
+    const allIn = bet === ALL_IN;
+    const numbers = { ...integers, bet: allIn ? null : bet };
+    const read = (values, name) => (Object.hasOwn(values, name) ? values[name] ?? null : null);
+    return {
+        allIn,
+        getSubcommand: () => sub,
+        getInteger: (name) => read(numbers, name),
+        getNumber: (name) => (name === 'target' && target !== null ? target / 100 : null),
+        getString: (name) => read(strings, name),
+        getUser: () => null,
+    };
+}
+
+/** The bet asked for: ALL_IN for a typed all-in word, else the whole number of the slash or typed command. */
+const betOf = (options) => (options.allIn === true ? ALL_IN : options.getInteger('bet'));
 
 /** The answer when a game didn't start, with the note about an older board that was settled on the way. */
 function failure(result, lang) {
@@ -178,6 +202,7 @@ export default {
     // Typed form after the aliases: `mines <bet> [mines]`, `coinflip <bet> [side]` (side and bet in any
     // order), `slots <bet>`, and for the newer games readGameArgs (src/config/casino.js):
     // `dice <bet> [over|under] [number]`, `chicken <bet>`, `roulette <bet> <choice>`, `rocket <bet> [target]` (`crash` too).
+    // `<bet>` is a whole number or an all-in word (`كل`, `all`...: options.allIn).
     // `lang` is the language of the typed command word, for the usage answers. Returns `{ options }` for execute,
     // or `{ error }` to send instead.
     parsePrefixArgs(args, { lang = null } = {}) {
@@ -187,42 +212,22 @@ export default {
             const read = readGameArgs(sub, rest);
             if (read.error) return { error: gameUsageText(sub, lang) };
             const { bet, target = null, direction = null, number = null, choice = null } = read.values;
-            const integers = { bet, number };
-            const strings = { direction, choice };
-            return {
-                options: {
-                    getSubcommand: () => sub,
-                    getInteger: (name) => integers[name] ?? null,
-                    getNumber: (name) => (name === 'target' && target !== null ? target / 100 : null),
-                    getString: (name) => strings[name] ?? null,
-                    getUser: () => null,
-                },
-            };
+            return { options: typedOptions(sub, { bet, number }, { direction, choice }, target) };
         }
         const usage = { error: casinoUsageText(lang) };
         if (!SUBCOMMANDS.includes(sub) || !rest.length || rest.length > 2) return usage;
-        const integers = { bet: null, mines: null };
-        let side = null;
         if (sub === 'coinflip') {
-            const amounts = rest.filter(isNumber);
+            const amounts = rest.filter((value) => betWord(value) !== null);
             if (amounts.length !== 1) return usage;
-            integers.bet = Number(amounts[0]);
-            const word = rest.find((value) => !isNumber(value));
-            if (word !== undefined && !(side = coinSide(word))) return { error: casinoFailureText({ reason: 'bad_side' }, lang) };
-        } else {
-            if (!rest.every(isNumber) || (sub === 'slots' && rest.length !== 1)) return usage;
-            integers.bet = Number(rest[0]);
-            if (rest.length === 2) integers.mines = Number(rest[1]);
+            const word = rest.find((value) => betWord(value) === null);
+            const side = word === undefined ? null : coinSide(word);
+            if (word !== undefined && !side) return { error: casinoFailureText({ reason: 'bad_side' }, lang) };
+            return { options: typedOptions(sub, { bet: betWord(amounts[0]) }, { side }) };
         }
-        return {
-            options: {
-                getSubcommand: () => sub,
-                getInteger: (name) => (Object.hasOwn(integers, name) ? integers[name] : null),
-                getNumber: () => null,
-                getString: (name) => (name === 'side' ? side : null),
-                getUser: () => null,
-            },
-        };
+        // Mines and slots: the bet first, then (mines) the mine count.
+        const bet = betWord(rest[0]);
+        if (bet === null || !rest.slice(1).every(isNumber) || (sub === 'slots' && rest.length !== 1)) return usage;
+        return { options: typedOptions(sub, { bet, mines: rest.length === 2 ? Number(rest[1]) : null }) };
     },
 
     async execute(interaction, _config, client) {
@@ -235,8 +240,9 @@ export default {
         const sub = interaction.options.getSubcommand();
         if (!SUBCOMMANDS.includes(sub)) return reply({ content: casinoUsageText(lang) });
         const { guildId, user } = interaction;
-        const bet = interaction.options.getInteger('bet');
-        if (!isValidBet(bet)) return reply(failure({ reason: 'bad_bet' }, lang));
+        // ALL_IN is only resolved in the save that takes the bet (the balance of that very save).
+        const bet = betOf(interaction.options);
+        if (!isBetRequest(bet)) return reply(failure({ reason: 'bad_bet' }, lang));
 
         if (sub === 'mines') {
             const mines = interaction.options.getInteger('mines') ?? CASINO.mines.default;

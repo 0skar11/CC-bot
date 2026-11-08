@@ -15,7 +15,12 @@
 //   ccCasino: { id, game: 'chicken', bet, steps, deathStep, guildId, channelId, messageId, lang, startedAt,
 //               lastActionAt }
 // `lang` ('ar' | 'en', text only) is the language of the command that opened the game: every later edit of
-// it (clicks, the timeout, the restart check) stays in that language.
+// it (clicks, the timeout, the restart check) stays in that language. `allIn: true` (text only, only on a game bet
+// all-in) puts the all-in tag on its board; `bet` is always the real number taken.
+// All-in: a game asked with the bet ALL_IN (a typed `كل` / `all`, src/config/casino.js) bets the balance up to
+// CASINO.maxBet, worked out by betFor inside the same updateCCState save that takes it (after an idle game settled
+// in that save is paid), so it is the balance of that very save: never stale, never more than the member has.
+// Under CASINO.minBet it is refused as no_cc and nothing is taken.
 // `mines` are the cells (0–8, row by row) hiding a mine, drawn with crypto.randomInt when the game starts
 // and never shown before it ends; `picks` are the safe cells opened, in order. `steps` are the lanes the chicken
 // crossed; `deathStep` is the lane a car gets it on (1–20), or null when it would cross the whole road, drawn
@@ -26,7 +31,7 @@
 //   ccCasinoStats: { played, won, lost, wagered, paidOut } (a payout equal to the bet is neither won nor lost).
 
 import { randomBytes, randomInt as cryptoRandomInt } from 'node:crypto';
-import { CASINO, COIN_SIDES } from '../../config/casino.js';
+import { ALL_IN, CASINO, COIN_SIDES } from '../../config/casino.js';
 import { CASINO_BET_LIMITS } from '../../config/runtime.js';
 import { updateCCState } from './ccService.js';
 import { readLang } from './lang.js';
@@ -45,6 +50,31 @@ export function draw(randomInt, max) {
 export function isValidBet(bet, settings = CASINO) {
     return Number.isSafeInteger(bet) && bet >= settings.minBet && bet <= settings.maxBet;
 }
+
+/** Whether a game may be asked for `bet`: a valid bet, or ALL_IN (whose amount only the save that takes it knows). */
+export function isBetRequest(bet, settings = CASINO) {
+    return bet === ALL_IN || isValidBet(bet, settings);
+}
+
+/**
+ * What an all-in bets from a balance of `cc`: all of it, up to CASINO.maxBet (the bet ceiling when the casino has
+ * no cap), or null when that is under CASINO.minBet (or isn't a whole number of CC).
+ */
+export function allInBet(cc, settings = CASINO) {
+    const bet = Math.min(cc, settings.maxBet);
+    return isValidBet(bet, settings) ? bet : null;
+}
+
+/**
+ * The bet a save takes when `asked` was asked for: `asked` itself, or for ALL_IN allInBet of the balance this save
+ * holds (`state`, read under the member's lock). Only ever called inside that save. null: an all-in that can't play.
+ */
+export function betFor(state, asked) {
+    return asked === ALL_IN ? allInBet(state.cc) : asked;
+}
+
+/** `{ allIn: true }` for what was asked all-in (the saved game, the stake, the result), else nothing. */
+export const allInMark = (asked) => (asked === ALL_IN ? { allIn: true } : {});
 
 export function isValidMineCount(count) {
     return Number.isSafeInteger(count) && count >= CASINO.mines.min && count <= CASINO.mines.max;
@@ -219,23 +249,28 @@ function endIdleGame(state, record, now, idleMs) {
     return endGame(state, record, 'timeout');
 }
 
-/** Why a new game can't start (another game running, mines or chicken, or the balance under the bet), else null. */
+/**
+ * Why a new game can't start (another game running, mines or chicken, or the balance under the bet, or an all-in
+ * under the smallest bet: `bet` null), else null.
+ */
 function refuseStart(state, record, bet) {
     if (record.ccCasino) return { ok: false, reason: 'active', game: readSavedGame(record.ccCasino) };
-    if (state.cc < bet) return { ok: false, reason: 'no_cc', balance: state.cc };
+    if (bet === null || state.cc < bet) return { ok: false, reason: 'no_cc', balance: state.cc };
     return null;
 }
 
 /**
  * Starts a mines board: takes the bet and hides `mines` mines in the same save (`lang` is the board's language).
- * Returns `{ ok: true, game, before, balance, previous }` (`previous` is an idle board settled first, or null) or
+ * `bet` may be ALL_IN (the balance up to the max bet, read in that save). Returns `{ ok: true, game, before,
+ * balance, previous }` (`previous` is an idle board settled first, or null; an all-in game has `allIn`) or
  * `{ ok: false, reason }` with reason one of: bad_bet, bad_mines, active (with `game`), no_cc (with `balance`).
  */
-export async function startMines(client, guildId, userId, { bet, mines = CASINO.mines.default, channelId = null, lang = null } = {}, { now = Date.now(), randomInt = secureRandomInt, idleMs = CASINO.idleMs } = {}) {
-    if (!isValidBet(bet)) return { ok: false, reason: 'bad_bet' };
+export async function startMines(client, guildId, userId, { bet: asked, mines = CASINO.mines.default, channelId = null, lang = null } = {}, { now = Date.now(), randomInt = secureRandomInt, idleMs = CASINO.idleMs } = {}) {
+    if (!isBetRequest(asked)) return { ok: false, reason: 'bad_bet' };
     if (!isValidMineCount(mines)) return { ok: false, reason: 'bad_mines' };
     return updateCCState(client, guildId, userId, (state, record) => {
         const previous = endIdleGame(state, record, now, idleMs);
+        const bet = betFor(state, asked);
         const refused = refuseStart(state, record, bet);
         if (refused) return { ...refused, previous, skipSave: !previous };
         const before = state.cc;
@@ -243,7 +278,7 @@ export async function startMines(client, guildId, userId, { bet, mines = CASINO.
         const game = {
             id: randomBytes(6).toString('hex'), game: 'mines', bet, mines: placeMines(mines, randomInt), picks: [],
             guildId: guildId ? String(guildId) : null, channelId: channelId ? String(channelId) : null, messageId: null,
-            lang: readLang(lang), startedAt: now, lastActionAt: now,
+            lang: readLang(lang), startedAt: now, lastActionAt: now, ...allInMark(asked),
         };
         record.ccCasino = game;
         return { ok: true, game, before, previous };
@@ -375,14 +410,15 @@ export const chickenSurvivePercent = () => Math.round((CASINO.chicken.survive * 
 
 /**
  * Starts a chicken: takes the bet and draws, once, the lane a car gets it on (or none), in the same save (`lang`
- * is the game's language). Returns `{ ok: true, game, before, balance, previous }` (`previous` is an idle game
- * settled first, or null) or `{ ok: false, reason }` with reason one of: bad_bet, active (with `game`), no_cc
- * (with `balance`).
+ * is the game's language). `bet` may be ALL_IN, like startMines. Returns `{ ok: true, game, before, balance,
+ * previous }` (`previous` is an idle game settled first, or null) or `{ ok: false, reason }` with reason one of:
+ * bad_bet, active (with `game`), no_cc (with `balance`).
  */
-export async function startChicken(client, guildId, userId, { bet, channelId = null, lang = null } = {}, { now = Date.now(), randomInt = secureRandomInt, idleMs = CASINO.idleMs } = {}) {
-    if (!isValidBet(bet)) return { ok: false, reason: 'bad_bet' };
+export async function startChicken(client, guildId, userId, { bet: asked, channelId = null, lang = null } = {}, { now = Date.now(), randomInt = secureRandomInt, idleMs = CASINO.idleMs } = {}) {
+    if (!isBetRequest(asked)) return { ok: false, reason: 'bad_bet' };
     return updateCCState(client, guildId, userId, (state, record) => {
         const previous = endIdleGame(state, record, now, idleMs);
+        const bet = betFor(state, asked);
         const refused = refuseStart(state, record, bet);
         if (refused) return { ...refused, previous, skipSave: !previous };
         const before = state.cc;
@@ -390,7 +426,7 @@ export async function startChicken(client, guildId, userId, { bet, channelId = n
         const game = {
             id: randomBytes(6).toString('hex'), game: 'chicken', bet, steps: 0, deathStep: drawChickenDeath(randomInt),
             guildId: guildId ? String(guildId) : null, channelId: channelId ? String(channelId) : null, messageId: null,
-            lang: readLang(lang), startedAt: now, lastActionAt: now,
+            lang: readLang(lang), startedAt: now, lastActionAt: now, ...allInMark(asked),
         };
         record.ccCasino = game;
         return { ok: true, game, before, previous };
@@ -435,14 +471,15 @@ export async function cashOutChicken(client, guildId, userId, gameId, { now = Da
 
 /**
  * Coinflip on `side` ('heads' or 'tails'), bet and payout in one save. Returns
- * `{ ok: true, bet, side, landed, payout, before, balance, previous }` or `{ ok: false, reason }`
- * (bad_bet, bad_side, active, no_cc) like startMines.
+ * `{ ok: true, bet, side, landed, payout, before, balance, previous }` (with `allIn` for an ALL_IN bet, whose
+ * `bet` is the real amount) or `{ ok: false, reason }` (bad_bet, bad_side, active, no_cc) like startMines.
  */
-export async function playCoinflip(client, guildId, userId, { bet, side = 'heads' } = {}, { now = Date.now(), randomInt = secureRandomInt, idleMs = CASINO.idleMs } = {}) {
-    if (!isValidBet(bet)) return { ok: false, reason: 'bad_bet' };
+export async function playCoinflip(client, guildId, userId, { bet: asked, side = 'heads' } = {}, { now = Date.now(), randomInt = secureRandomInt, idleMs = CASINO.idleMs } = {}) {
+    if (!isBetRequest(asked)) return { ok: false, reason: 'bad_bet' };
     if (!Object.hasOwn(COIN_SIDES, side)) return { ok: false, reason: 'bad_side' };
     return updateCCState(client, guildId, userId, (state, record) => {
         const previous = endIdleGame(state, record, now, idleMs);
+        const bet = betFor(state, asked);
         const refused = refuseStart(state, record, bet);
         if (refused) return { ...refused, previous, skipSave: !previous };
         const before = state.cc;
@@ -450,19 +487,20 @@ export async function playCoinflip(client, guildId, userId, { bet, side = 'heads
         const landed = draw(randomInt, 2) === 0 ? 'heads' : 'tails';
         const payout = landed === side ? coinflipPayout(bet) : 0;
         payOut(state, record, bet, payout);
-        return { ok: true, bet, side, landed, payout, before, previous };
+        return { ok: true, bet, side, landed, payout, before, previous, ...allInMark(asked) };
     });
 }
 
 /**
  * One spin of the slots, bet and payout in one save. Returns
- * `{ ok: true, bet, reels, kind, symbol, multiplier, payout, before, balance, previous }` or
- * `{ ok: false, reason }` (bad_bet, active, no_cc) like startMines.
+ * `{ ok: true, bet, reels, kind, symbol, multiplier, payout, before, balance, previous }` (with `allIn` for an
+ * ALL_IN bet) or `{ ok: false, reason }` (bad_bet, active, no_cc) like startMines.
  */
-export async function playSlots(client, guildId, userId, { bet } = {}, { now = Date.now(), randomInt = secureRandomInt, idleMs = CASINO.idleMs } = {}) {
-    if (!isValidBet(bet)) return { ok: false, reason: 'bad_bet' };
+export async function playSlots(client, guildId, userId, { bet: asked } = {}, { now = Date.now(), randomInt = secureRandomInt, idleMs = CASINO.idleMs } = {}) {
+    if (!isBetRequest(asked)) return { ok: false, reason: 'bad_bet' };
     return updateCCState(client, guildId, userId, (state, record) => {
         const previous = endIdleGame(state, record, now, idleMs);
+        const bet = betFor(state, asked);
         const refused = refuseStart(state, record, bet);
         if (refused) return { ...refused, previous, skipSave: !previous };
         const before = state.cc;
@@ -470,7 +508,7 @@ export async function playSlots(client, guildId, userId, { bet } = {}, { now = D
         const reels = spinReels(randomInt);
         const spin = slotsResult(reels, bet);
         payOut(state, record, bet, spin.payout);
-        return { ok: true, bet, reels, ...spin, before, previous };
+        return { ok: true, bet, reels, ...spin, before, previous, ...allInMark(asked) };
     });
 }
 
@@ -599,15 +637,16 @@ export function diceMultiplierHundredths(chance) {
 
 /**
  * One roll of the dice, bet and payout in one save. Returns
- * `{ ok: true, bet, direction, number, chance, roll, payout, before, balance, previous }` or
- * `{ ok: false, reason }` (bad_bet, bad_dice, active, no_cc) like startMines.
+ * `{ ok: true, bet, direction, number, chance, roll, payout, before, balance, previous }` (with `allIn` for an
+ * ALL_IN bet) or `{ ok: false, reason }` (bad_bet, bad_dice, active, no_cc) like startMines.
  */
-export async function playDice(client, guildId, userId, { bet, direction = 'under', number = CASINO.dice.defaultNumber } = {}, { now = Date.now(), randomInt = secureRandomInt, idleMs = CASINO.idleMs } = {}) {
-    if (!isValidBet(bet)) return { ok: false, reason: 'bad_bet' };
+export async function playDice(client, guildId, userId, { bet: asked, direction = 'under', number = CASINO.dice.defaultNumber } = {}, { now = Date.now(), randomInt = secureRandomInt, idleMs = CASINO.idleMs } = {}) {
+    if (!isBetRequest(asked)) return { ok: false, reason: 'bad_bet' };
     const chance = diceChance(direction, number);
     if (chance === null) return { ok: false, reason: 'bad_dice' };
     return updateCCState(client, guildId, userId, (state, record) => {
         const previous = endIdleGame(state, record, now, idleMs);
+        const bet = betFor(state, asked);
         const refused = refuseStart(state, record, bet);
         if (refused) return { ...refused, previous, skipSave: !previous };
         const before = state.cc;
@@ -615,6 +654,6 @@ export async function playDice(client, guildId, userId, { bet, direction = 'unde
         const roll = draw(randomInt, CASINO.dice.faces);
         const payout = diceWins(roll, direction, number) ? dicePayout(bet, chance) : 0;
         payOut(state, record, bet, payout);
-        return { ok: true, bet, direction, number, chance, roll, payout, before, previous };
+        return { ok: true, bet, direction, number, chance, roll, payout, before, previous, ...allInMark(asked) };
     });
 }

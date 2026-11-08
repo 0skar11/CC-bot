@@ -9,6 +9,9 @@
 // custom emojis, P() in titles, footers and the form title) and its embeds have their own colours (CASINO_COLORS:
 // the felt green while it takes bets, the pocket's colour once it spun). The rocket's messages keep their own
 // emojis and the CC gold, exactly as they were.
+// A bet placed all-in (`روليت كل احمر`, `صاروخ كل`, `كل` in the join form: its entry's or stake's `allIn`) ends its
+// line with the all-in tag (`🔥 كل فلوسه` / `🔥 all-in`; the roulette's 🔥 from the registry, the rocket's its own),
+// with the amount bet where its line doesn't show it already. Every other line is as it was.
 
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 import { ccEmbed, formatCC } from '../../config/cc.js';
@@ -93,6 +96,7 @@ const TEXT = {
         recoverySpun: (pocket) => `🎯 الكورة كانت وقفت على ${pocket} قبل ما البوت يعمل ريستارت، ودي النتيجة:`,
         recoveryFlying: (crash) => `⚠️ الصاروخ اتقطع وهو طاير لما البوت عمل ريستارت (كان هينفجر عند **${crash}**): اللي حاطط خروج تلقائي اتحسبله، والباقي رجعله رهانه.`,
         recoveryCrashed: (crash) => `💥 الصاروخ كان انفجر عند **${crash}** قبل ما البوت يعمل ريستارت، ودي النتيجة:`,
+        allIn: 'كل فلوسه',
     },
     en: {
         colorName: (color) => ({ red: 'Red', black: 'Black' })[color],
@@ -156,10 +160,20 @@ const TEXT = {
         recoverySpun: (pocket) => `🎯 The ball had landed on ${pocket} before the bot restarted. The result:`,
         recoveryFlying: (crash) => `⚠️ The rocket was cut off mid-flight when the bot restarted (it would have blown up at **${crash}**): automatic cash-outs were paid and everyone else got their bet back.`,
         recoveryCrashed: (crash) => `💥 The rocket had blown up at **${crash}** before the bot restarted. The result:`,
+        allIn: 'all-in',
     },
 };
 
 const say = (lang) => inLang(lang, TEXT);
+
+/**
+ * ` ・ 🔥 all-in` after the line of a bet placed all-in (`entry.allIn`), with its amount when `amount` (the line
+ * doesn't show the bet); '' for any other bet. `icon` is the roulette's registry emoji; the rocket keeps 🔥.
+ */
+function allInTag(entry, lang, { icon = '🔥', amount = false } = {}) {
+    if (!entry?.allIn) return '';
+    return ` ・ ${icon} ${say(lang).allIn}${amount ? ` ${formatCC(entry.bet)}` : ''}`;
+}
 
 /** `🔴 أحمر` / `🔴 Red`, `⚫ أسود` / `⚫ Black`, `🟢 0`, `🔢 17`. */
 export function choiceLabel(choice, lang) {
@@ -252,7 +266,7 @@ export function parseFormAmount(text) {
 // ---- Roulette ----
 
 function rouletteBetLines(round, lang) {
-    return round.bets.map((entry) => `${choiceLabel(entry.choice, lang)} ・ <@${entry.userId}> ・ ${formatCC(entry.bet)}`);
+    return round.bets.map((entry) => `${choiceLabel(entry.choice, lang)} ・ <@${entry.userId}> ・ ${formatCC(entry.bet)}${allInTag(entry, lang, { icon: E('ui.allIn') })}`);
 }
 
 /**
@@ -278,7 +292,7 @@ export function rouletteTablePayload(round, { spinning = false } = {}) {
 }
 
 /** The roulette's stake emojis (registry); the rocket's restart notice keeps the TEXT defaults. */
-const rouletteIcons = () => ({ won: E('roulette.won'), lost: E('roulette.lost'), refunded: E('roulette.refund'), none: E('ui.empty'), paid: E('roulette.paid') });
+const rouletteIcons = () => ({ won: E('roulette.won'), lost: E('roulette.lost'), refunded: E('roulette.refund'), none: E('ui.empty'), paid: E('roulette.paid'), allIn: E('ui.allIn') });
 
 /**
  * One line per settled stake: won, lost or given back (`icons` for the roulette's emojis; `sorted` puts the
@@ -289,7 +303,7 @@ function stakeLines(results, label, lang, { icons = {}, sorted = false } = {}) {
     const lines = [];
     for (const result of results) {
         for (const stake of result.settled) {
-            const head = [`<@${result.userId}>`, label(stake)].filter(Boolean).join(' ');
+            const head = [`<@${result.userId}>`, label(stake)].filter(Boolean).join(' ') + allInTag(stake, lang, { icon: icons.allIn });
             if (stake.refunded) lines.push({ rank: 1, payout: stake.payout, line: text.refunded(head, formatCC(stake.bet), icons.refunded) });
             else if (stake.payout > 0) lines.push({ rank: 0, payout: stake.payout, line: text.stakeWon(head, formatCC(stake.bet), formatCC(stake.payout), icons.won) });
             else lines.push({ rank: 2, payout: 0, line: text.stakeLost(head, formatCC(stake.bet), icons.lost) });
@@ -325,15 +339,18 @@ export function rouletteResultPayload(round, results) {
 
 const targetText = (target) => (target ? ` ・ 🎯 ${multiplierText(target)}` : '');
 
-/** A rider who left: by their automatic cash-out (🎯) or by the button (✅). */
+/** A rider who left: by their automatic cash-out (🎯) or by the button (✅). An all-in rider's line also says what they bet. */
 function cashedLine(entry, lang, won = false) {
     const auto = Boolean(entry.target && entry.cashedOut === entry.target);
-    return say(lang).cashedOut(auto, entry.userId, multiplierText(entry.cashedOut), won, formatCC(entry.payout));
+    return say(lang).cashedOut(auto, entry.userId, multiplierText(entry.cashedOut), won, formatCC(entry.payout)) + allInTag(entry, lang, { amount: true });
 }
+
+/** A rider still on board: their bet, their automatic cash-out, the all-in tag. */
+const boardedLine = (entry, lang) => `🧑‍🚀 <@${entry.userId}> ・ ${formatCC(entry.bet)}${targetText(entry.target)}${allInTag(entry, lang)}`;
 
 function riderLines(round, lang) {
     if (!round.bets.length) return [say(lang).noRiders];
-    return round.bets.map((entry) => (entry.cashedOut ? cashedLine(entry, lang) : `🧑‍🚀 <@${entry.userId}> ・ ${formatCC(entry.bet)}${targetText(entry.target)}`));
+    return round.bets.map((entry) => (entry.cashedOut ? cashedLine(entry, lang) : boardedLine(entry, lang)));
 }
 
 function cashOutRow(round, multiplier, { disabled = false } = {}) {
@@ -394,14 +411,14 @@ export function rocketEndPayload(round, results = null) {
         }
         const result = settled.get(entry.userId);
         if (!result) {
-            if (!results) lines.push(`🧑‍🚀 <@${entry.userId}> ・ ${formatCC(entry.bet)}${targetText(entry.target)}`);
+            if (!results) lines.push(boardedLine(entry, lang));
             continue;
         }
         if (result.payout > 0) {
             const at = entry.target && entry.target <= round.crash ? text.autoAt(multiplierText(entry.target)) : text.rodeTo(multiplierText(round.crash));
-            lines.push(text.riderWon(entry.userId, at, formatCC(result.payout)));
+            lines.push(text.riderWon(entry.userId, at, formatCC(result.payout)) + allInTag(entry, lang, { amount: true }));
         } else {
-            lines.push(text.riderLost(entry.userId, formatCC(entry.bet)));
+            lines.push(text.riderLost(entry.userId, formatCC(entry.bet)) + allInTag(entry, lang));
         }
     }
     if (!round.bets.length) lines.push(text.nobodyRode);
@@ -416,10 +433,10 @@ export function groupJoinText(result, userId, lang = roundLanguage(result.round)
     const { round, stake } = result;
     const balance = Number.isSafeInteger(result.balance) ? text.balance(formatCC(result.balance)) : '';
     if (round.game === 'roulette') {
-        return text.joinedRoulette(userId, formatCC(stake.bet), choiceLabel(stake.choice, lang), seconds(round.closesAt), balance);
+        return text.joinedRoulette(userId, formatCC(stake.bet), `${choiceLabel(stake.choice, lang)}${allInTag(stake, lang, { icon: E('ui.allIn') })}`, seconds(round.closesAt), balance);
     }
     const auto = stake.target ? text.autoExit(multiplierText(stake.target)) : '';
-    return text.joinedRocket(userId, formatCC(stake.bet), auto, seconds(round.closesAt), balance);
+    return text.joinedRocket(userId, formatCC(stake.bet), `${auto}${allInTag(stake, lang)}`, seconds(round.closesAt), balance);
 }
 
 /** The private answer to a cash-out click, in the language of the member who clicked. */

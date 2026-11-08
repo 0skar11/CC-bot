@@ -218,8 +218,9 @@ async function replySafely(reply, payload) {
  * edits it later), or joins the open one silently. The round is the room's whatever the language: `lang` (the
  * member's, 'ar' or 'en') only picks the language of a round this bet opens, which its shared message keeps to
  * the end (a member typing the other language joins it as it is). A round left in the room by an earlier run is
- * settled first. Returns joinRound's result (casinoGroupService.js); `randomInt` (tests) draws the round's pocket
- * or crash point.
+ * settled first. `bet` may be ALL_IN (`روليت كل احمر`, `صاروخ كل`): joinRound works it out from the balance in the
+ * save that takes it. Returns joinRound's result (casinoGroupService.js); `randomInt` (tests) draws the round's
+ * pocket or crash point.
  */
 export async function placeGroupBet(client, { guildId, userId, channelId, game, bet, pick = null, lang = null, reply, editFor }, { randomInt = secureRandomInt } = {}) {
     const key = roundKey(game, channelId);

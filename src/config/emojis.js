@@ -38,6 +38,8 @@ export const CASINO_EMOJI_DEFAULTS = Object.freeze({
     'ui.warning': '⚠️',
     'ui.reveal': '🔍',
     'ui.empty': '😶',
+    // The all-in tag on the first line of a game (or a roulette bet) bet with `كل` / `all`.
+    'ui.allIn': '🔥',
     // Mines
     'mines.icon': '💣',
     'mines.hidden': '❔',

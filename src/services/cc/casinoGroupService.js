@@ -20,6 +20,9 @@
 //     ccCasinoBets: [{ round, game, channelId, bet, choice | target, at }]
 //   Joining takes the bet and adds the stake in the member's save, and the round gets the bet in the same
 //   database transaction (written first, so a failed member save never leaves a stake without its round).
+//   An all-in bet (`روليت كل احمر`, `صاروخ كل`, `كل` in the join form: the bet ALL_IN) is the balance that member
+//   save reads, up to CASINO.maxBet: their other stakes are already out of it, so it is what is left. Its stake and
+//   its entry in the round carry `allIn: true` (text only: the all-in tag on the messages); `bet` is the real number.
 //   Settling removes the stake in the same save that pays it, so a stake is paid exactly once whoever settles
 //   it (the round's timer, a double click, the restart check).
 // - A round the bot couldn't finish (restart, crash) is settled from what was saved: a spun roulette pays with
@@ -35,7 +38,7 @@ import { getCasinoRoundKey } from '../../utils/database/keys.js';
 import { Mutex } from '../../utils/mutex.js';
 import { updateCCState } from './ccService.js';
 import {
-    draw, drawCrashPoint, isValidBet, isValidCrashTarget, multiplyHundredths, payOut, returnBet, secureRandomInt, takeBet,
+    allInMark, betFor, draw, drawCrashPoint, isBetRequest, isValidCrashTarget, multiplyHundredths, payOut, returnBet, secureRandomInt, takeBet,
 } from './casinoService.js';
 import { DEFAULT_LANG, isLang, readLang } from './lang.js';
 
@@ -165,15 +168,17 @@ function badPick(game, pick) {
 
 /**
  * Puts `bet` on the room's round of `game` (a new round when none is open): the bet is taken from the member and
- * written into the round in one transaction. `pick` is roulette's choice or the rocket's automatic cash-out
- * (hundredths, or null); `lang` the language the member bets in (a new round takes it for its message). Returns
- * `{ ok: true, round, created, stake, before, balance }` or `{ ok: false, reason }`: bad_bet, bad_choice,
- * bad_target, busy (a round is being played, with `round`), full, too_many (the member's roulette bets in the
- * round), joined (already on this rocket), no_cc (with `balance`).
+ * written into the round in one transaction. `bet` may be ALL_IN: what is left of the balance, up to the max
+ * bet, read in that same save. `pick` is roulette's choice or the rocket's automatic cash-out (hundredths, or
+ * null); `lang` the language the member bets in (a new round takes it for its message). Returns
+ * `{ ok: true, round, created, stake, before, balance }` (`stake.bet` the real amount, `stake.allIn` for an all-in)
+ * or `{ ok: false, reason }`: bad_bet, bad_choice, bad_target, busy (a round is being played, with `round`), full,
+ * too_many (the member's roulette bets in the round), joined (already on this rocket), no_cc (with `balance`; an
+ * all-in under the smallest bet too).
  */
-export async function joinRound(client, guildId, userId, game, { channelId, bet, pick = null, lang = null } = {}, { now = Date.now() } = {}) {
+export async function joinRound(client, guildId, userId, game, { channelId, bet: asked, pick = null, lang = null } = {}, { now = Date.now() } = {}) {
     if (!GROUP_GAMES.includes(game) || !channelId) return { ok: false, reason: 'busy' };
-    if (!isValidBet(bet)) return { ok: false, reason: 'bad_bet' };
+    if (!isBetRequest(asked)) return { ok: false, reason: 'bad_bet' };
     const bad = badPick(game, pick);
     if (bad) return { ok: false, reason: bad };
     const key = roundKey(game, channelId);
@@ -189,15 +194,18 @@ export async function joinRound(client, guildId, userId, game, { channelId, bet,
             if (mine) return { ok: false, reason: 'joined', round, skipSave: true };
             if (round.bets.length >= CASINO.rocket.maxPlayers) return { ok: false, reason: 'full', skipSave: true };
         }
-        if (state.cc < bet) return { ok: false, reason: 'no_cc', balance: state.cc, skipSave: true };
+        // An all-in bets the balance as this save reads it (null: under the smallest bet).
+        const bet = betFor(state, asked);
+        if (bet === null || state.cc < bet) return { ok: false, reason: 'no_cc', balance: state.cc, skipSave: true };
         const before = state.cc;
         takeBet(state, bet);
         const detail = game === 'roulette' ? { choice: pick } : { target: pick };
-        const stake = { round: round.id, game, channelId: String(channelId), bet, ...detail, at: now };
+        const mark = allInMark(asked);
+        const stake = { round: round.id, game, channelId: String(channelId), bet, ...detail, ...mark, at: now };
         setStakes(record, [...savedStakes(record), stake]);
         // The member's own language only when it differs from the round's (see the header).
         const own = isLang(lang) && lang !== round.lang ? { lang } : {};
-        round.bets.push({ userId, bet, ...detail, ...own });
+        round.bets.push({ userId, bet, ...detail, ...own, ...mark });
         await saveRound(client, key, round);
         return { ok: true, round, created: !saved, stake, before };
     }));

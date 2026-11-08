@@ -1,7 +1,7 @@
 import { MessageFlags } from 'discord.js';
 import { isAllowedGuild, isCasinoChannel } from '../../../config/runtime.js';
-import { CASINO_BUTTON_PREFIX, GROUP_GAMES, casinoChannelNotice, rouletteChoice } from '../../../config/casino.js';
-import { isValidBet, pickMinesCell, cashOutMines, stepChicken, cashOutChicken } from '../../../services/cc/casinoService.js';
+import { ALL_IN, CASINO_BUTTON_PREFIX, GROUP_GAMES, casinoChannelNotice, isAllInWord, rouletteChoice } from '../../../config/casino.js';
+import { isBetRequest, pickMinesCell, cashOutMines, stepChicken, cashOutChicken } from '../../../services/cc/casinoService.js';
 import { minesBoardPayload, chickenBoardPayload, casinoErrorText, casinoFailureText } from '../../../services/cc/casinoUi.js';
 import { onCasinoCooldown, withCasinoLock, scheduleIdleCashOut, cancelIdleCashOut, showGameResult } from '../../../services/cc/casinoSessions.js';
 import { rocketCashOut, placeGroupBet, liveRound } from '../../../services/cc/casinoGroupSessions.js';
@@ -39,6 +39,7 @@ const TEXT = {
         tryAgainQuickly: '❌ حصل خطأ. حاول تاني بسرعة.',
         joined: (bet, what) => `✅ دخلت بـ **${bet}** CC${what}.`,
         on: (choice) => ` على ${choice}`,
+        allIn: ' ・ 🔥 كل فلوسك',
     },
     en: {
         dead: 'This button no longer works.',
@@ -49,6 +50,7 @@ const TEXT = {
         tryAgainQuickly: '❌ Something went wrong. Try again quickly.',
         joined: (bet, what) => `✅ You're in with **${bet}** CC${what}.`,
         on: (choice) => ` on ${choice}`,
+        allIn: ' ・ 🔥 all-in',
     },
 };
 const say = (lang) => inLang(lang, TEXT);
@@ -98,7 +100,9 @@ async function rocketButton(interaction, client, roundId) {
 }
 
 // The join button of a group round (`casino:join:<game>:<roundId>`) opens a small form; its submit
-// (`casino:joinm:<game>:<roundId>`) puts the member's bet on that round, but only while it still takes bets.
+// (`casino:joinm:<game>:<roundId>`) puts the member's bet on that round, but only while it still takes bets. Its
+// amount is a whole number or an all-in word (`كل`, `all`...: src/config/casino.js), which bets what is left of
+// the balance, worked out in the save that takes it (casinoGroupService.js joinRound).
 async function joinButton(interaction, game, roundId) {
     const open = openRound(game, interaction.channelId, roundId);
     const lang = roundAnswerLanguage(interaction, open?.round);
@@ -113,8 +117,9 @@ async function joinSubmit(interaction, client, game, roundId) {
     // The form was in this language (joinButton), so is everything said about it.
     const lang = roundAnswerLanguage(interaction, open?.round);
     if (!open) return privately(interaction, say(lang).roundClosed);
-    const bet = parseFormAmount(interaction.fields.getTextInputValue('amount'));
-    if (!isValidBet(bet)) return privately(interaction, casinoFailureText({ reason: 'bad_bet' }, lang));
+    const amount = interaction.fields.getTextInputValue('amount');
+    const bet = isAllInWord(amount) ? ALL_IN : parseFormAmount(amount);
+    if (!isBetRequest(bet)) return privately(interaction, casinoFailureText({ reason: 'bad_bet' }, lang));
     let pick = null;
     if (game === 'roulette') {
         pick = rouletteChoice(interaction.fields.getTextInputValue('choice'));
@@ -130,7 +135,7 @@ async function joinSubmit(interaction, client, game, roundId) {
             editFor: (sent) => (payload) => sent.edit(payload),
         }));
         if (!result.ok) return followUp(interaction, casinoFailureText(result, lang));
-        const what = game === 'roulette' ? say(lang).on(choiceLabel(result.stake.choice, lang)) : '';
+        const what = `${game === 'roulette' ? say(lang).on(choiceLabel(result.stake.choice, lang)) : ''}${result.stake.allIn ? say(lang).allIn : ''}`;
         return followUp(interaction, say(lang).joined(result.stake.bet.toLocaleString('en-US'), what));
     } catch (error) {
         logger.error('Group join failed', error.code || error.message);

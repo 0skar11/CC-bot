@@ -47,6 +47,11 @@
 // under 1 point from 100 CC bets, more on the smallest ones (a 10 CC coinflip win pays 19, a 5% edge; 10 CC
 // with 1 mine cashed out after one cell pays back just the 10, an 11% edge; 10 CC of chicken cashed out after one
 // lane pays 12, a 4% edge).
+//
+// All-in (ALL_IN_WORDS below): a typed `كل` / `all`... where the bet goes (`صاروخ كل`, `مينز كل 3`, `نرد كل فوق 70`,
+// and the amount of a group round's join form) bets the member's whole balance, up to CASINO.maxBet. The amount is
+// worked out inside the save that takes the bet, on the balance that save reads, never before it; under
+// CASINO.minBet the game is refused like a bet the balance can't cover. Payouts and edges don't change.
 
 import { CASINO_BET_LIMITS, casinoChannelIds, casinoMaxBet } from './runtime.js';
 import { BOURSE_GUILD_NOTICE } from './bourseGuild.js';
@@ -184,8 +189,27 @@ export const ROULETTE_COLORS = {
     green: { name: 'أخضر', emoji: '🟢', words: ['green', 'g', 'zero', 'اخضر', 'أخضر', 'الاخضر', 'الأخضر', 'صفر'] },
 };
 
+// `صاروخ كل`, `rocket all`, `مينز كل 3`, `عملة كل ملك`: the words that bet everything (all-in) in place of the bet,
+// typed in every game and in the amount of a group round's join form. The slash commands keep their whole-number
+// `bet` (no all-in there). The amount is the balance up to CASINO.maxBet, worked out by the save that takes it
+// (casinoService.js betFor, casinoGroupService.js joinRound).
+export const ALL_IN_WORDS = new Set(['كل', 'الكل', 'كلو', 'all', 'allin', 'all-in', 'max']);
+/** The bet readGameArgs and the typed commands give for an all-in word. Never saved: a game saves the real number. */
+export const ALL_IN = 'all';
+
 const wordOf = (word) => String(word ?? '').trim().toLowerCase();
 const isWhole = (word) => /^\d+$/u.test(String(word));
+
+/** Whether `word` is an all-in word (ALL_IN_WORDS: `كل`, `الكل`, `كلو`, `all`, `allin`, `all-in`, `max`), in any case, trimmed. */
+export function isAllInWord(word) {
+    return ALL_IN_WORDS.has(wordOf(word));
+}
+
+/** A typed bet: a whole number, ALL_IN for an all-in word, else null. */
+export function betWord(word) {
+    if (isWhole(word)) return Number(word);
+    return isAllInWord(word) ? ALL_IN : null;
+}
 
 /** `heads` or `tails` for a typed side (`ملك`, `كتابة`, `h`, `tails`...), else null. */
 export function coinSide(word) {
@@ -232,22 +256,24 @@ export function targetHundredths(value, fallback = null) {
  * The typed words after a new game's name, the bet first: `صاروخ 100 [2]` / `كراش 100 2.5` (the rocket, with an
  * optional automatic cash-out multiplier), `نرد 100 [فوق|تحت] [70]` (in any order), `روليت 100 احمر` /
  * `روليت 100 17` (or the colour first) and `فرخة 100` (the bet alone); the English words read the same way
- * (`rocket 100 2`, `dice 100 over 70`, `chicken 100`).
+ * (`rocket 100 2`, `dice 100 over 70`, `chicken 100`). An all-in word stands where the bet does (`صاروخ كل 2`,
+ * `نرد كل فوق 70`, `روليت كل احمر` or `روليت احمر كل`, `فرخة كل`) and reads as the bet ALL_IN.
  * Returns `{ values }` (the numbers are checked by the game) or `{ error: 'usage' }` when it isn't a game command.
  */
 export function readGameArgs(game, words) {
     const rest = words.map(String);
     const usage = { error: 'usage' };
     if (!rest.length) return usage;
-    if (game === 'chicken') return rest.length === 1 && isWhole(rest[0]) ? { values: { bet: Number(rest[0]) } } : usage;
+    const bet = betWord(rest[0]);
+    if (game === 'chicken') return rest.length === 1 && bet !== null ? { values: { bet } } : usage;
     if (game === 'crash' || game === 'rocket') {
-        if (rest.length > 2 || !isWhole(rest[0])) return usage;
+        if (rest.length > 2 || bet === null) return usage;
         const target = rest.length === 2 ? multiplierHundredths(rest[1]) : null;
         if (rest.length === 2 && target === null) return usage;
-        return { values: { bet: Number(rest[0]), target } };
+        return { values: { bet, target } };
     }
     if (game === 'dice') {
-        if (rest.length > 3 || !isWhole(rest[0])) return usage;
+        if (rest.length > 3 || bet === null) return usage;
         let direction = null;
         let number = null;
         for (const word of rest.slice(1)) {
@@ -255,17 +281,19 @@ export function readGameArgs(game, words) {
             else if (diceDirection(word) && direction === null) direction = diceDirection(word);
             else return usage;
         }
-        return { values: { bet: Number(rest[0]), direction, number } };
+        return { values: { bet, direction, number } };
     }
     if (game === 'roulette') {
         if (rest.length > 2) return usage;
-        const at = isWhole(rest[0]) ? 0 : (rest.length === 2 && isWhole(rest[1]) ? 1 : -1);
+        // The bet is the all-in word wherever it is; else the number first, or the colour first and then the number.
+        const allIn = rest.findIndex(isAllInWord);
+        const at = allIn >= 0 ? allIn : (isWhole(rest[0]) ? 0 : (rest.length === 2 && isWhole(rest[1]) ? 1 : -1));
         if (at < 0) return usage;
-        if (rest.length === 1) return { values: { bet: Number(rest[0]), choice: null } };
+        if (rest.length === 1) return { values: { bet: betWord(rest[0]), choice: null } };
         const word = rest[1 - at];
         // A word that is neither a colour nor a number is chat, not a bet (a number above 36 is a bad bet).
         if (!isWhole(word) && rouletteChoice(word) === null) return usage;
-        return { values: { bet: Number(rest[at]), choice: word } };
+        return { values: { bet: betWord(rest[at]), choice: word } };
     }
     return usage;
 }

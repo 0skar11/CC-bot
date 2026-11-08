@@ -7,6 +7,9 @@
 // saved `lang`). gameResultPayload, gameNoticeText, previousGameNote and the 'active' refusal show whichever
 // saved game they are about (a result's `game.game`, or `kind` for a damaged one; mines when it can't be told).
 //
+// A game bet all-in (`كل` / `all`: its result's or saved game's `allIn`) ends its first line with the all-in tag
+// (`🔥 كل فلوسه` / `🔥 all-in`); its bet shows the real number taken. Without it every line is as it was.
+//
 // Every message has the same shape: the game in the title (its own colour while it runs, green / red / gold by
 // the outcome once it ends: CASINO_COLORS), a first line with the player and the bet, the game's picture (the
 // board, the coin, the reels, the roll, the road), the result in big letters, the money in a quote block (bet,
@@ -47,6 +50,7 @@ const TEXT = {
         won: (cc, multiplier) => `${E('ui.win')} كسبت! خدت ${cc} (${multiplier})`,
         lost: (cc) => `${E('ui.lose')} خسرت ${cc}`,
         ladder: (steps) => `${E('ui.ladder')} بعدها: ${steps.join(' ← ')}`,
+        allIn: () => `${E('ui.allIn')} **كل فلوسه**`,
         // Mines
         minesTitle: () => `${P('mines.icon')} ماينز`,
         minesLine: (userId, cc, mines) => `${E('ui.player')} <@${userId}> ・ ${E('ui.bet')} الرهان: ${cc} ・ ${E('mines.bomb')} الألغام: **${mines}**`,
@@ -108,6 +112,7 @@ const TEXT = {
             rocket: () => `🚀 \`صاروخ 100\` أو \`صاروخ 100 2\` (أو \`كراش 100 2.5\`) ・ صاروخ (كراش جماعي): اركب مع الروم واعمل كاش أوت قبل ما ينفجر`,
         },
         casinoHead: () => `🎰 **الكازينو** ・ الرهان من ${number(CASINO.minBet)} ${CC.short} لحد رصيدك${CASINO.unlimited ? '' : ` (أقصى رهان ${number(CASINO.maxBet)})`}`,
+        allInHint: () => `🔥 اكتب \`كل\` مكان الرهان وتدخل بكل فلوسك${CASINO.unlimited ? '' : ` (لحد ${number(CASINO.maxBet)})`}: \`صاروخ كل\` ・ \`مينز كل 3\` ・ \`نرد كل فوق 70\``,
         menuHint: '🎮 اكتب `العاب` تشوف كل الألعاب وشرحها.',
         writeItSo: (example) => `❌ اكتبها كده: ${example}`,
         gamesHint: '🎮 اكتب `العاب` تشوف كل الألعاب.',
@@ -140,6 +145,7 @@ const TEXT = {
         won: (cc, multiplier) => `${E('ui.win')} You won! You took ${cc} (${multiplier})`,
         lost: (cc) => `${E('ui.lose')} You lost ${cc}`,
         ladder: (steps) => `${E('ui.ladder')} Then: ${steps.join(' → ')}`,
+        allIn: () => `${E('ui.allIn')} **all-in**`,
         // Mines
         minesTitle: () => `${P('mines.icon')} Mines`,
         minesLine: (userId, cc, mines) => `${E('ui.player')} <@${userId}> ・ ${E('ui.bet')} Bet: ${cc} ・ ${E('mines.bomb')} Mines: **${mines}**`,
@@ -201,6 +207,7 @@ const TEXT = {
             rocket: () => '🚀 `rocket 100` or `rocket 100 2` (or `crash 100 2.5`) ・ Rocket (group crash): ride with the room and cash out before it blows up',
         },
         casinoHead: () => `🎰 **Casino** ・ Bets from ${number(CASINO.minBet)} ${CC.short} up to your balance${CASINO.unlimited ? '' : ` (max bet ${number(CASINO.maxBet)})`}`,
+        allInHint: () => `🔥 Type \`all\` instead of the bet to go all-in${CASINO.unlimited ? '' : ` (up to ${number(CASINO.maxBet)})`}: \`rocket all\` ・ \`mines all 3\` ・ \`dice all over 70\``,
         menuHint: '🎮 Type `games` to see every game and how it works.',
         writeItSo: (example) => `❌ Type it like this: ${example}`,
         gamesHint: '🎮 Type `games` to see every game.',
@@ -229,6 +236,9 @@ const TEXT = {
 const say = (lang) => inLang(lang, TEXT);
 
 // ---- The pieces every message shares ----
+
+/** A game's first line, with the all-in tag at its end when the game was bet all-in. */
+const withAllIn = (line, allIn, lang) => (allIn ? `${line} ・ ${say(lang).allIn()}` : line);
 
 function profitLine(bet, payout, lang) {
     const text = say(lang);
@@ -291,7 +301,7 @@ function boardRows(game, userId, { over = false } = {}) {
     return rows;
 }
 
-const gameLine = (game, userId, lang) => say(lang).minesLine(userId, formatCC(game.bet), game.mines.length);
+const gameLine = (game, userId, lang) => withAllIn(say(lang).minesLine(userId, formatCC(game.bet), game.mines.length), game.allIn, lang);
 
 /**
  * A running mines board: what cashing out pays now (in big letters), what the next safe cell would pay, the
@@ -400,7 +410,7 @@ export function chickenRoad(game, { over = false, dead = false } = {}) {
     return `${start}${road}${E(last === all ? 'chicken.finish' : 'chicken.more')}`;
 }
 
-const chickenLine = (game, userId, lang) => say(lang).chickenLine(userId, formatCC(game.bet));
+const chickenLine = (game, userId, lang) => withAllIn(say(lang).chickenLine(userId, formatCC(game.bet)), game.allIn, lang);
 
 /**
  * A running chicken: the road, what cashing out pays now (in big letters), what the next lane would pay (and its
@@ -509,7 +519,7 @@ export function coinflipPayload(result, user, lang) {
     const chosen = E(`coin.${result.side}`);
     const landed = E(`coin.${result.landed}`);
     const embed = ccEmbed(text.coinflipTitle(), [
-        text.picked(user, text.sideName(result.side), chosen, formatCC(result.bet)),
+        withAllIn(text.picked(user, text.sideName(result.side), chosen, formatCC(result.bet)), result.allIn, lang),
         `# ${landed}`,
         text.landed(text.sideName(result.landed), landed),
         resultLine(result.payout > 0 ? text.won(formatCC(result.payout), coinflipTimes()) : text.lost(formatCC(result.bet))),
@@ -557,7 +567,7 @@ export function slotsPayload(result, user, lang) {
     if (kind === 'triple') line = text.slotsTriple(slotSymbol(symbol), multiplier, formatCC(payout));
     else if (kind === 'pair') line = text.slotsBack(formatCC(payout));
     const embed = ccEmbed(text.slotsTitle(), [
-        text.betBy(user, formatCC(bet)),
+        withAllIn(text.betBy(user, formatCC(bet)), result.allIn, lang),
         ...slotMachine(reels, { kind, multiplier }),
         resultLine(line),
         ...summaryLines(bet, payout, result.balance, lang),
@@ -589,7 +599,7 @@ export function dicePayload(result, user, lang) {
     const text = say(lang);
     const multiplier = diceMultiplierHundredths(result.chance);
     const embed = ccEmbed(text.diceTitle(), [
-        text.diceBet(user, formatCC(result.bet), text.directionName(result.direction), result.number, E(`dice.${result.direction}`), text.diceRule(result.direction, result.number)),
+        withAllIn(text.diceBet(user, formatCC(result.bet), text.directionName(result.direction), result.number, E(`dice.${result.direction}`), text.diceRule(result.direction, result.number)), result.allIn, lang),
         heroLine(E('dice.icon'), rollText(result.roll)),
         diceBar(result),
         resultLine(result.payout > 0 ? text.won(formatCC(result.payout), times(multiplier)) : text.lost(formatCC(result.bet))),
@@ -607,10 +617,10 @@ export function dicePayload(result, user, lang) {
 /** One typed example per game, for the usage answers, in each language (`GAME_USAGE.en.rocket()`...). */
 export const GAME_USAGE = { ar: TEXT.ar.usage, en: TEXT.en.usage };
 
-/** `مينز 100 3` … / `mines 100 3` …: how to play, for a typed casino command without a game or a bet. */
+/** `مينز 100 3` … / `mines 100 3` …: how to play, for a typed casino command without a game or a bet (and all-in). */
 export function casinoUsageText(lang) {
     const text = say(lang);
-    return [text.casinoHead(), ...Object.values(text.usage).map((line) => line()), text.menuHint].join('\n');
+    return [text.casinoHead(), ...Object.values(text.usage).map((line) => line()), text.allInHint(), text.menuHint].join('\n');
 }
 
 /** How to play one game, for its typed command with words that don't fit. */
