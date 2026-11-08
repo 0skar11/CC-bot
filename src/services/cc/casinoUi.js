@@ -544,20 +544,12 @@ export function slotsTableText(lang) {
 }
 
 /**
- * The slot machine: the three reels in a frame, three lines of emojis, with the win line marked (`⬅️ ×4`) when
- * the spin paid something.
- *   🟪🟪🟪🟪🟪
- *   🟪🍒🍒🍒🟪 ⬅️ ×4
- *   🟪🟪🟪🟪🟪
+ * The slot machine: the three reels as ONE big heading line (Discord shows emojis in a heading at full size),
+ * separated by bars, so they are easy to read on a phone. The result line under it says what was won.
+ *   # 🍒 ┃ 🍒 ┃ 🍒
  */
-export function slotMachine(reels, { kind = 'none', multiplier = 0 } = {}) {
-    const edge = (key) => E(key).repeat(reels.length);
-    const winLine = kind === 'none' ? '' : ` ${E('slots.winLine')} ×${multiplier}`;
-    return [
-        `${E('slots.frameTopLeft')}${edge('slots.frameTop')}${E('slots.frameTopRight')}`,
-        `${E('slots.frameLeft')}${reels.map((symbol) => slotSymbol(symbol)).join('')}${E('slots.frameRight')}${winLine}`,
-        `${E('slots.frameBottomLeft')}${edge('slots.frameBottom')}${E('slots.frameBottomRight')}`,
-    ];
+export function slotMachine(reels) {
+    return [`# ${reels.map((symbol) => slotSymbol(symbol)).join(' ┃ ')}`];
 }
 
 export function slotsPayload(result, user, lang) {
@@ -568,7 +560,7 @@ export function slotsPayload(result, user, lang) {
     else if (kind === 'pair') line = text.slotsBack(formatCC(payout));
     const embed = ccEmbed(text.slotsTitle(), [
         withAllIn(text.betBy(user, formatCC(bet)), result.allIn, lang),
-        ...slotMachine(reels, { kind, multiplier }),
+        ...slotMachine(reels),
         resultLine(line),
         ...summaryLines(bet, payout, result.balance, lang),
     ].join('\n'), {

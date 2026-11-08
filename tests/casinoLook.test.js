@@ -191,14 +191,13 @@ describe('the emoji registry', () => {
 describe('the games’ look', () => {
     test('a custom emoji override shows on the messages and the buttons, never in a title or a footer', () => {
         applyCasinoEmojis(JSON.stringify({
-            'slots.cherry': '<a:cherry:123456789012345678>', 'slots.frameTop': '<:top:123456789012345671>', 'mines.safe': '<:gem:123456789012345672>', 'mines.hidden': '<:tile:123456789012345673>',
+            'slots.cherry': '<a:cherry:123456789012345678>', 'mines.safe': '<:gem:123456789012345672>', 'mines.hidden': '<:tile:123456789012345673>',
             'chicken.alive': '<:chick:123456789012345674>', 'chicken.car': '<:car:123456789012345675>', 'coin.heads': '<:crown:123456789012345676>', 'dice.marker': '<:die:123456789012345677>',
             'roulette.red': '<:red:123456789012345678>', 'roulette.icon': '<:wheel:123456789012345679>', 'ui.balance': '<:coins:123456789012345680>', 'mines.icon': '<:bomb:123456789012345681>',
         }), { warn: () => {} });
         const spin = slotsPayload({ bet: 100, payout: 400, kind: 'triple', symbol: '🍒', multiplier: 4, reels: ['🍒', '🍒', '🍒'], balance: 1300 }, user, 'en');
         const [embed] = spin.embeds;
         assert.equal(embed.description.split('<a:cherry:123456789012345678>').length - 1, 4, 'three reels and the result line');
-        assert.ok(embed.description.includes('<:top:123456789012345671>'.repeat(3)));
         assert.ok(embed.description.includes('> <:coins:123456789012345680> Your balance: **1,300**'));
         assert.match(embed.footer.text, /🍒🍒🍒 ×4/u);
         assert.doesNotMatch(embed.footer.text, /</u);
@@ -329,8 +328,8 @@ describe('the games’ look', () => {
         assert.match(chickenBoardPayload(chicken, A).embeds[0].description, /Next lane: \*\*×67\.30\*\*[\s\S]*📈 Then: ×84\.13$/u);
         assert.doesNotMatch(chickenBoardPayload({ ...chicken, steps: 19 }, A).embeds[0].description, /Then:/u);
 
-        assert.deepEqual(slotMachine(['🍒', '🍋', '🍒'], { kind: 'pair', multiplier: 1 }), ['🟪🟪🟪🟪🟪', '🟪🍒🍋🍒🟪 ⬅️ ×1', '🟪🟪🟪🟪🟪']);
-        assert.deepEqual(slotMachine(['🍒', '🍋', '🌀']), ['🟪🟪🟪🟪🟪', '🟪🍒🍋🌀🟪', '🟪🟪🟪🟪🟪']);
+        assert.deepEqual(slotMachine(['🍒', '🍋', '🍒']), ['# 🍒 ┃ 🍋 ┃ 🍒']);
+        assert.deepEqual(slotMachine(['🍒', '🍋', '🌀']), ['# 🍒 ┃ 🍋 ┃ 🌀']);
         assert.equal(slotsTableText('en'), '🌀🌀🌀 ×25 ・ 💎💎💎 ×15 ・ 🍇🍇🍇 ×10 ・ 🍋🍋🍋 ×6 ・ 🍒🍒🍒 ×4 ・ two of a kind = your bet back');
 
         // The wheel: 12, 35, 3, 26, 0, 32, 15, 19, 4 around the zero, red and black taking turns.

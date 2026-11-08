@@ -472,7 +472,7 @@ describe('casino buttons and commands', () => {
         assert.match(coinflipPayload(flip, user).embeds[0].description, /كسبت/u);
         assert.match(coinflipPayload(lost, user).embeds[0].description, /خسرت/u);
         // The three reels sit in the machine's frame, with the win line marked.
-        assert.match(slotsPayload(spin, user).embeds[0].description, /🟪🟪🟪🟪🟪\n🟪🍒🍒🍒🟪 ⬅️ ×4\n🟪🟪🟪🟪🟪/u);
+        assert.match(slotsPayload(spin, user).embeds[0].description, /# 🍒 ┃ 🍒 ┃ 🍒\n/u);
         assert.match(slotsPayload(spin, user).embeds[0].footer.text, /^🌀🌀🌀 ×25/u);
     });
 
