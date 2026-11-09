@@ -3,6 +3,7 @@ import { getProfile } from '../../../services/cc/ccService.js';
 import { invest, sell, getHoldings, hourOf } from '../../../services/cc/bourseService.js';
 import { isHomeGuild } from '../../../config/homeGuild.js';
 import { isAllowedGuild, isAllowedChannel } from '../../../config/runtime.js';
+import { logger } from '../../../utils/logger.js';
 import {
     BOURSE_BUTTON_PREFIX,
     PRICE_CHANGED_NOTE,
@@ -44,7 +45,7 @@ async function execute(interaction, client, [action, ...args]) {
     if (action === 'sellall') {
         if (!isHomeGuild(interaction.guildId)) return privately(interaction, '❌ الأمر ده مش متاح هنا.');
         await interaction.deferUpdate().catch(() => {});
-        return interaction.editReply(await sellAll(client, interaction.guildId, interaction.user, Number(args[0]))).catch(() => {});
+        return interaction.editReply(await sellAll(client, interaction.guildId, interaction.user, Number(args[0]))).catch((error) => logger.warn(`[BOURSE] Could not show the sell-all receipt: ${error.code || error.message}`));
     }
 
     await interaction.deferUpdate().catch(() => {});
@@ -65,7 +66,8 @@ async function execute(interaction, client, [action, ...args]) {
     } else {
         payload = failed(bourseFailureText(result));
     }
-    await interaction.editReply(payload).catch(() => {});
+    // The trade is already saved: a failed edit (an invalid embed, a deleted message) is logged, never silent.
+    await interaction.editReply(payload).catch((error) => logger.warn(`[BOURSE] Could not show the ${action} receipt: ${error.code || error.message}`));
 }
 
 /**

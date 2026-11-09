@@ -3,7 +3,7 @@
 // Plain embed objects so the emojis stay. Each line starts with Arabic so Discord doesn't reorder it.
 
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
-import { CC, ccEmbed, formatCC } from '../../config/cc.js';
+import { CC, CC_SUCCESS_COLOR, ccEmbed, formatCC } from '../../config/cc.js';
 import { bourseSettings } from '../../config/store/bourse.js';
 import { sellFee, maxOwnedOf } from './bourseService.js';
 
@@ -177,7 +177,7 @@ export function sellAllReceiptEmbed(user, results, { before, balance }) {
         '',
         `✅ خدت: ${formatCC(received)}`,
         `📊 ${signedCC(received - paid)}`,
-    ].join('\n'), { color: 'success', fields: [balanceField(before, balance)] });
+    ].join('\n'), { color: CC_SUCCESS_COLOR, fields: [balanceField(before, balance)] });
 }
 
 const balanceField = (before, after) => ({ name: '💰 رصيدك', value: `قبل: ${formatCC(before)}\nدلوقتي: ${formatCC(after)}`, inline: true });
@@ -185,7 +185,7 @@ const balanceField = (before, after) => ({ name: '💰 رصيدك', value: `قب
 /** After buying: what was bought on top, then the numbers as cards (3 per row on a computer). */
 export function investReceiptEmbed(user, result) {
     return ccEmbed('✅ تم الاستثمار', `${user} اشترى **${assetLabel(result.asset)} × ${result.quantity}**`, {
-        color: 'success',
+        color: CC_SUCCESS_COLOR,
         fields: [
             { name: '🏷️ سعر القطعة', value: formatCC(result.price), inline: true },
             { name: '💵 اتخصم', value: formatCC(result.cost), inline: true },
@@ -198,7 +198,7 @@ export function investReceiptEmbed(user, result) {
 /** After selling: what was sold on top, then the numbers as cards. */
 export function sellReceiptEmbed(user, result) {
     return ccEmbed('✅ تم البيع', `${user} باع **${assetLabel(result.asset)} × ${result.quantity}**\n${signedCC(result.profit)}`, {
-        color: 'success',
+        color: CC_SUCCESS_COLOR,
         fields: [
             { name: '🏷️ سعر القطعة', value: formatCC(result.price), inline: true },
             { name: '🧾 الرسوم', value: formatCC(result.fee), inline: true },

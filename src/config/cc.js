@@ -10,13 +10,16 @@ export const CC = {
 };
 // The bot's gold, the colour of every embed that doesn't choose its own (the casino's games have theirs: CASINO_COLORS).
 export const CC_COLOR = 0xc9a227;
+// The green of a successful trade or a win. An embed colour is a whole number 0-0xffffff: anything else is ignored (gold).
+export const CC_SUCCESS_COLOR = 0x2ecc71;
+const validColor = (color) => Number.isInteger(color) && color >= 0 && color <= 0xffffff;
 /**
  * A plain embed object, cut to Discord's limits. `color` (default CC_COLOR), `footer` (text) and `author`
  * (`{ name, iconURL }`) are optional; an embed without them is the same object as before they existed.
  */
 export function ccEmbed(title, description = '', { fields = [], thumbnail = null, color = CC_COLOR, footer = '', author = null } = {}) {
     return {
-        color,
+        color: validColor(color) ? color : CC_COLOR,
         title: String(title).slice(0, 256),
         ...(description ? { description: String(description).slice(0, 4096) } : {}),
         ...(fields.length ? { fields: fields.slice(0, 25) } : {}),
