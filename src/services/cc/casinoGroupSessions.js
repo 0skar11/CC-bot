@@ -23,7 +23,7 @@ import {
 
 // key → the round this process plays in that room:
 //   { key, game, roundId, channelId, round (its latest saved copy), phase, edit, messageId, randomInt, results,
-//     timer, renderTimer, chain }
+//     timer, renderTimer, chain, drawing (a flight frame is on its way to Discord) }
 const live = new Map();
 
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, Math.max(0, ms)); });
@@ -169,11 +169,19 @@ async function rocketTick(client, entry) {
             if (result.ok) entry.round = result.round;
         });
     }
-    await render(client, entry, rocketFlightPayload(entry.round, multiplier));
+    // The frame is sent without waiting for Discord to take it: the time an edit takes used to be added to every
+    // tick (frames came late and drifted) and to the crash itself, which showed up that much after it happened.
+    // A frame is skipped while the one before it is still on its way, so slow edits never pile up.
+    const drawnAt = Date.now();
+    if (!entry.drawing) {
+        entry.drawing = true;
+        void render(client, entry, rocketFlightPayload(entry.round, multiplier)).finally(() => { entry.drawing = false; });
+    }
     // The next frame, or the crash itself when it comes first (the crash point stays in memory, never shown).
-    const untilCrash = flightAt + rocketTimeTo(crash) - Date.now();
     const { tickMs } = CASINO.rocket;
-    return schedule(client, entry, Math.max(10, Math.min(tickMs, untilCrash)), () => rocketTick(client, entry), tickMs);
+    const untilCrash = flightAt + rocketTimeTo(crash) - Date.now();
+    const untilFrame = drawnAt + tickMs - Date.now();
+    return schedule(client, entry, Math.max(10, Math.min(untilFrame, untilCrash)), () => rocketTick(client, entry), tickMs);
 }
 
 /** graceMs after the crash: the riders still on board are settled (automatic cash-outs, ×100 at the top, else lost). */
@@ -241,7 +249,7 @@ export async function placeGroupBet(client, { guildId, userId, channelId, game, 
     }
     const entry = {
         key, game, roundId: result.round.id, channelId: String(channelId), round: result.round, phase: 'open',
-        edit: null, messageId: null, randomInt, results: [], timer: null, renderTimer: null, chain: Promise.resolve(),
+        edit: null, messageId: null, randomInt, results: [], timer: null, renderTimer: null, chain: Promise.resolve(), drawing: false,
     };
     live.set(key, entry);
     // The timer comes first: the round closes and pays even if its message can't be sent (the result is then

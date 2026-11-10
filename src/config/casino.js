@@ -138,6 +138,9 @@ export const CASINO = {
         // A cash-out click that reached the bot before the crash still counts when it is handled later; the
         // riders who are still on board lose only this long after the crash.
         graceMs: 2_000,
+        // A cash-out click is answered with one message as soon as it is done; only one still running after
+        // ackMs is acknowledged first and answered after (Discord gives a click 3 s).
+        ackMs: 1_500,
         maxPlayers: 25,
     },
     // How often a round's message is edited at most while people join it.
