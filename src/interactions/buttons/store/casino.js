@@ -1,6 +1,6 @@
 import { MessageFlags } from 'discord.js';
 import { isAllowedGuild, isCasinoChannel } from '../../../config/runtime.js';
-import { ALL_IN, CASINO_BUTTON_PREFIX, GROUP_GAMES, casinoChannelNotice, isAllInWord, rouletteChoice } from '../../../config/casino.js';
+import { ALL_IN, CASINO, CASINO_BUTTON_PREFIX, GROUP_GAMES, casinoChannelNotice, isAllInWord, rouletteChoice } from '../../../config/casino.js';
 import { isBetRequest, pickMinesCell, cashOutMines, stepChicken, cashOutChicken } from '../../../services/cc/casinoService.js';
 import { minesBoardPayload, chickenBoardPayload, casinoErrorText, casinoFailureText } from '../../../services/cc/casinoUi.js';
 import { onCasinoCooldown, withCasinoLock, scheduleIdleCashOut, cancelIdleCashOut, showGameResult } from '../../../services/cc/casinoSessions.js';
@@ -79,24 +79,34 @@ const roundAnswerLanguage = (interaction, round) => buttonLanguage(interaction, 
     ? { member: playerLanguage(round, interaction.user.id), message: roundLanguage(round) }
     : {});
 
+const SLOW = Symbol('slow');
+
 async function rocketButton(interaction, client, roundId) {
     // The click counts when it reached the bot, not when its turn in the queue comes.
     const receivedAt = Date.now();
     if (!roundId || !/^[a-f0-9]{12}$/u.test(roundId)) return privately(interaction, say(buttonLanguage(interaction)).dead);
-    await interaction.deferUpdate().catch(() => {});
     const userId = interaction.user.id;
     // The round as last saved: the rider's own language is kept in their bet.
     const knownRound = (result = {}) => {
         const live = liveRound('rocket', interaction.channelId);
         return result.round || (live?.roundId === roundId ? live.round : null);
     };
-    try {
-        const result = await withCasinoLock(userId, () => rocketCashOut(client, { channelId: interaction.channelId, userId, roundId, receivedAt }));
-        return followUp(interaction, rocketClickText(result, roundAnswerLanguage(interaction, knownRound(result))));
-    } catch (error) {
-        logger.error('Rocket cash-out failed', error.code || error.message);
-        return followUp(interaction, say(roundAnswerLanguage(interaction, knownRound())).tryAgainQuickly);
-    }
+    // The cash-out starts at once and is answered with one message. It used to wait for Discord to take an
+    // acknowledgement first and then send the answer as a second message, two trips for every click. Only a
+    // cash-out that is still running after CASINO.rocket.ackMs is acknowledged first (Discord gives a click 3 s).
+    const work = withCasinoLock(userId, () => rocketCashOut(client, { channelId: interaction.channelId, userId, roundId, receivedAt }))
+        .then((result) => rocketClickText(result, roundAnswerLanguage(interaction, knownRound(result))))
+        .catch((error) => {
+            logger.error('Rocket cash-out failed', error.code || error.message);
+            return say(roundAnswerLanguage(interaction, knownRound())).tryAgainQuickly;
+        });
+    let timer;
+    const slow = new Promise((resolve) => { timer = setTimeout(resolve, CASINO.rocket.ackMs, SLOW); });
+    const first = await Promise.race([work, slow]);
+    clearTimeout(timer);
+    if (first !== SLOW) return privately(interaction, first);
+    await interaction.deferUpdate().catch(() => {});
+    return followUp(interaction, await work);
 }
 
 // The join button of a group round (`casino:join:<game>:<roundId>`) opens a small form; its submit

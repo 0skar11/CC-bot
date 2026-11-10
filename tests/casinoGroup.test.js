@@ -424,6 +424,70 @@ describe('live group rounds', () => {
         assert.equal((await rocketCashOut(client, { channelId: ROOM, userId: C, roundId })).reason, 'stale');
     });
 
+    test('a cash-out click is answered with one message; only a slow one is acknowledged first', async () => {
+        Object.assign(CASINO.rocket, { joinMs: 30, doubleMs: 600, tickMs: 15, graceMs: 20, ackMs: 300 });
+        CASINO.groupRenderMs = 5;
+        const client = fakeClient();
+        for (const id of [A, B]) await fund(client, id, 1000);
+        const table = { id: '700000000000000098', edit: async () => {} };
+        for (const id of [A, B]) {
+            await placeGroupBet(client, {
+                guildId: GUILD, userId: id, channelId: ROOM, game: 'rocket', bet: 100,
+                reply: async () => table, editFor: (sent) => (payload) => sent.edit(payload),
+            }, { randomInt: drawFor(400) });
+        }
+        await until(() => liveRound('rocket', ROOM)?.phase === 'flying');
+        const { roundId } = liveRound('rocket', ROOM);
+        const press = async (userId) => {
+            const calls = [];
+            await casinoButtons.execute({
+                inGuild: () => true, guildId: GUILD, channelId: ROOM, user: { id: userId },
+                deferUpdate: async () => { calls.push('deferUpdate'); },
+                followUp: async (payload) => { calls.push(['followUp', payload.content]); },
+                reply: async (payload) => { calls.push(['reply', payload.content]); },
+            }, client, ['rocket', roundId]);
+            return calls;
+        };
+        const fast = await press(A);
+        assert.equal(fast.length, 1, 'one trip to Discord');
+        assert.equal(fast[0][0], 'reply');
+        assert.match(fast[0][1], /عملت كاش أوت/u);
+        // The database is slow for B: the click is acknowledged before Discord's 3 s run out, then answered.
+        CASINO.rocket.ackMs = 20;
+        const { get } = client.db;
+        client.db.get = async (...args) => { await wait(60); return get(...args); };
+        const slow = await press(B);
+        client.db.get = get;
+        assert.equal(slow[0], 'deferUpdate');
+        assert.equal(slow[1][0], 'followUp');
+        assert.match(slow[1][1], /عملت كاش أوت/u);
+        assert.equal(slow.length, 2);
+        await until(() => liveRound('rocket', ROOM) === null);
+    });
+
+    test('a slow message edit does not hold the rocket back: the crash comes on time', async () => {
+        Object.assign(CASINO.rocket, { joinMs: 30, doubleMs: 200, tickMs: 15, graceMs: 20 });
+        CASINO.groupRenderMs = 5;
+        const client = fakeClient();
+        await fund(client, A, 1000);
+        const shown = [];
+        // Every edit takes longer than the whole flight (×1 to ×4 in 400 ms).
+        const table = { id: '700000000000000097', edit: async (payload) => { await wait(600); shown.push(payload); } };
+        await placeGroupBet(client, {
+            guildId: GUILD, userId: A, channelId: ROOM, game: 'rocket', bet: 100,
+            reply: async () => table, editFor: (sent) => (payload) => sent.edit(payload),
+        }, { randomInt: drawFor(400) });
+        await until(() => liveRound('rocket', ROOM)?.phase === 'flying');
+        const { flightAt } = liveRound('rocket', ROOM).round;
+        await wait(flightAt + 520 - Date.now());
+        assert.notEqual(liveRound('rocket', ROOM)?.phase, 'flying', 'the crash did not wait for the edit');
+        assert.equal(client.store.get(roundKey('rocket', ROOM)).status === 'open', false);
+        await until(() => liveRound('rocket', ROOM) === null && /💀/u.test(shown.at(-1)?.embeds[0].description || ''), 5000);
+        // Frames were skipped while one was on its way, never queued one behind another.
+        assert.ok(shown.filter((payload) => /# 🚀/u.test(payload.embeds[0].description)).length <= 2, String(shown.length));
+        assert.equal(await balance(client, A), 900);
+    });
+
     test('the join button opens a form for the amount, and its submit puts the bet on the open round only', async () => {
         Object.assign(CASINO.roulette, { joinMs: 400, spinMs: 5 });
         const client = fakeClient();

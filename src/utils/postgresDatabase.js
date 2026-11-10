@@ -5,7 +5,13 @@ import { economyScope } from '../config/sharedEconomy.js';
 // Only stock market, holdings/CC, and trader role setup records use this dedicated table.
 export class PostgreSQLDatabase {
     constructor(options = {}) {
-        this.pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 5, connectionTimeoutMillis: 10_000, ...options });
+        // Idle connections are kept for 10 minutes with TCP keep-alive. node-postgres closes them after 10 s by
+        // default, so the first command after a quiet moment waited for a new connection (TCP, TLS, login)
+        // before it could answer.
+        this.pool = new pg.Pool({
+            connectionString: process.env.DATABASE_URL, max: 5, connectionTimeoutMillis: 10_000,
+            idleTimeoutMillis: 600_000, keepAlive: true, keepAliveInitialDelayMillis: 10_000, ...options,
+        });
         this.context = new AsyncLocalStorage();
         this.pool.on('error', (error) => console.error('PostgreSQL connection error:', error.code || 'unknown'));
     }
