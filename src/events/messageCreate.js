@@ -6,11 +6,14 @@ import { handleStreakCommand, handleStreakMessage } from '../services/cc/streakS
 import { handleStreakBotMessage } from '../services/cc/streakBotService.js';
 import { handleGamesBotWin } from '../services/cc/gamesBotService.js';
 import { handleGuideCommand } from '../services/cc/guideUi.js';
+import { blackjackHelpPayload } from '../services/cc/casinoUi.js';
 import { casinoErrorText } from '../services/cc/casinoUi.js';
 import { wordLanguage } from '../services/cc/lang.js';
 import { logger } from '../utils/logger.js';
 
 const userArgument = /^(?:<@!?(\d{17,20})>|(\d{17,20}))$/u;
+// The only words that ask for the blackjack how-to (anything longer stays chat).
+const BLACKJACK_HELP = new Set(['شرح بلاك جاك', 'شرح بلاكجاك', 'blackjack help', 'bj help']);
 
 export default {
     name: 'messageCreate',
@@ -27,6 +30,11 @@ export default {
         if (streakEnabled()) {
             if (await handleStreakCommand(message, typed, words)) return;
             await handleStreakMessage(message);
+        }
+        // `شرح بلاك جاك` / `blackjack help`: the short blackjack how-to, in the room where it was typed (only these exact words).
+        if (BLACKJACK_HELP.has([typed, ...words].join(' ').toLowerCase()) && isCommandChannel(GAMES_COMMAND, message.channel, message.channelId)) {
+            await message.channel.send(blackjackHelpPayload(wordLanguage(typed))).catch(() => {});
+            return;
         }
         const parsed = applyWordAliases(typed.toLowerCase(), words, prefixed);
         // `help` is typed only as the exact guide words above, so `help me` and the like stay chat.

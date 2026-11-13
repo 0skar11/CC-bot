@@ -10,7 +10,7 @@ import {
     playDealerHand, readBlackjackGame, readSavedGame, savedGameKind, standBlackjack, startBlackjack,
 } from '../src/services/cc/casinoService.js';
 import { resetCasinoSessions } from '../src/services/cc/casinoSessions.js';
-import { blackjackBoardPayload, blackjackNoticeText, blackjackResultPayload, formatHandCards } from '../src/services/cc/casinoUi.js';
+import { blackjackBoardPayload, blackjackHelpText, blackjackNoticeText, blackjackResultPayload, formatHandCards } from '../src/services/cc/casinoUi.js';
 import casinoButtons from '../src/interactions/buttons/store/casino.js';
 import casinoCommand from '../src/commands/Games/casino.js';
 import messageCreate from '../src/events/messageCreate.js';
@@ -213,11 +213,19 @@ describe('Blackjack typed aliases and commands', () => {
         assert.ok(payload.embeds.length === 1);
         const embed = payload.embeds[0];
         assert.match(embed.title, /بلاك جاك/u);
-        assert.match(embed.description, /10 ♠/u);
-        assert.match(embed.description, /❓/u);
+        // The dealer's and the player's hands are two side-by-side fields: the dealer's second card is hidden.
+        assert.equal(embed.fields.length, 2);
+        assert.ok(embed.fields.every((field) => field.inline));
+        assert.match(embed.fields[0].name, /الموزع.*[ 10+ ]/u);
+        assert.match(embed.fields[0].value, /K♦️/u);
+        assert.match(embed.fields[0].value, /❓/u);
+        assert.doesNotMatch(embed.fields[0].value, /8♣/u);
+        assert.match(embed.fields[1].name, /[ 17 ]/u);
+        assert.match(embed.fields[1].value, /10♠️.*7♥️/u);
 
         const buttons = buttonsOf(payload);
-        assert.equal(buttons.length, 3);
+        assert.equal(buttons.length, 4);
+        assert.equal(buttons[3].custom_id, `casino:bjinfo:abc123def456:${A}`);
         assert.match(buttons[0].custom_id, /casino:bjhit:abc123def456/u);
         assert.match(buttons[1].custom_id, /casino:bjstand:abc123def456/u);
         assert.match(buttons[2].custom_id, /casino:bjdouble:abc123def456/u);
@@ -310,5 +318,72 @@ describe('Blackjack: walking away is never a free refund', () => {
         const second = await hitBlackjack(client, GUILD, A, 'abc123def456', 2, { now: T0 + 1500 });
         assert.equal(second.outcome, 'outdated');
         assert.equal(saved(client, A).ccCasino.playerHand.length, 3);
+    });
+});
+
+describe('Blackjack look, legend and help', () => {
+    const card = (rank, suit) => ({ rank, suit });
+    const game = (lang) => ({
+        id: 'abc123def456', game: 'blackjack', bet: 500, playerHand: [card('A', '♠'), card('6', '♥')], dealerHand: [card('K', '♦'), card('8', '♣')],
+        deck: [], doubled: false, lang,
+    });
+    const ARABIC = /[\u0600-\u06FF]/u;
+
+    test('the board shows a soft total, a legend and no Arabic in English; the hole card stays hidden', () => {
+        const en = blackjackBoardPayload(game('en'), A).embeds[0];
+        assert.equal(JSON.stringify(en).match(ARABIC), null);
+        assert.match(en.fields[1].name, /\[ 17 \/ 7 \]/u);
+        assert.match(en.footer.text, /Hit = one more card/u);
+        assert.doesNotMatch(JSON.stringify(en), /8♣/u);
+        const ar = blackjackBoardPayload(game('ar'), A).embeds[0];
+        assert.match(ar.footer.text, /سحب = كارت زيادة/u);
+        assert.ok(JSON.stringify(ar).length < 2000);
+    });
+
+    test('the result shows both full hands and the ℹ️ help text is short, in both languages', () => {
+        const ended = { outcome: 'win', game: { ...game('ar'), dealerHand: [card('K', '♦'), card('8', '♣')] }, payout: 1000, balance: 2500 };
+        const [embed] = blackjackResultPayload(ended, A, 'ar').embeds;
+        assert.match(embed.fields[0].value, /K♦️.*8♣️/u);
+        for (const lang of ['ar', 'en']) {
+            const help = blackjackHelpText(lang);
+            assert.ok(help.length < 900, `${help.length}`);
+            assert.match(help, /×2\.50/u);
+            assert.match(help, /60/u);
+        }
+        assert.equal(blackjackHelpText('en').match(ARABIC), null);
+    });
+
+    test('the ℹ️ button answers privately, only to the owner, and never touches the game', async () => {
+        const client = fakeClient();
+        await fund(client, A, 900);
+        const saved0 = { ...game('en'), guildId: GUILD, channelId: ROOM, messageId: null, startedAt: T0, lastActionAt: T0 };
+        await updateCCState(client, GUILD, A, (state, record) => { record.ccCasino = saved0; return { ok: true }; });
+        const said = [];
+        const press = (userId) => casinoButtons.execute({
+            inGuild: () => true, guildId: GUILD, channelId: ROOM, channel: { id: ROOM }, user: { id: userId }, locale: 'en-US',
+            reply: async (payload) => { said.push([userId, payload]); }, deferUpdate: async () => assert.fail('no update'), editReply: async () => assert.fail('no edit'),
+        }, client, ['bjinfo', saved0.id, A]);
+        await press(A);
+        assert.match(said[0][1].content, /Goal/u);
+        assert.equal(said[0][1].flags, 64);
+        await press(B);
+        assert.equal(said.length, 2);
+        assert.doesNotMatch(said[1][1].content, /Goal/u);
+        assert.equal(saved(client, A).ccCasino.lastActionAt, T0);
+        assert.equal(saved(client, A).ccCasino.playerHand.length, 2);
+    });
+
+    test('typed `شرح بلاك جاك` and `blackjack help` send the how-to; longer sentences stay chat', async () => {
+        const client = fakeClient();
+        const sent = [];
+        const typed = (content) => messageCreate.execute({ guildId: GUILD, content, author: { id: A, bot: false }, channel: { id: ROOM, send: async (payload) => { sent.push(payload); } }, channelId: ROOM }, client);
+        await typed('شرح بلاك جاك');
+        await typed('blackjack help');
+        assert.equal(sent.length, 2);
+        assert.match(sent[0].embeds[0].description, /الهدف/u);
+        assert.match(sent[1].embeds[0].description, /Goal/u);
+        await typed('شرح بلاك جاك بسرعة');
+        await typed('blackjack help me');
+        assert.equal(sent.length, 2);
     });
 });

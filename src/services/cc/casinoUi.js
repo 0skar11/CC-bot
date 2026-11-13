@@ -105,9 +105,19 @@ const TEXT = {
         // Blackjack
         blackjackTitle: () => `${P('blackjack.icon')} بلاك جاك`,
         blackjackLine: (userId, cc) => `${E('ui.player')} <@${userId}> ・ ${E('ui.bet')} الرهان: ${cc}`,
-        dealerHand: (cards, score) => `🤵 **الموزع (Dealer):**\n${cards} ・ المجموع: **[ ${score} ]**`,
-        playerHand: (cards, score) => `🧑 **يدك أنت (Player):**\n${cards} ・ المجموع: **[ ${score} ]**`,
-        blackjackIdleRule: () => `${P('ui.timer')} لو سبت اللعبة ${idleSeconds} ثانية من غير لعب، بتعمل وقف (Stand) لوحدها والنتيجة بتتحسب عادي.`,
+        dealerName: (score) => `🤵 الموزع ・ [ ${score} ]`,
+        playerName: (score) => `🧑 انت ・ [ ${score} ]`,
+        blackjackPlaying: () => '🎲 اللعبة شغالة',
+        blackjackLegend: () => `🃏 سحب = كارت زيادة ・ ✋ وقف = الموزع يلعب ・ 💰 دبل = ضعف الرهان وكارت واحد ・ ℹ️ شرح`,
+        blackjackHelp: () => [
+            '🎯 **الهدف:** مجموع كروتك يقرّب من 21 من غير ما يعدّيها، وأحسن من الموزع.',
+            '🃏 **سحب:** كارت زيادة (لو عدّيت 21 بتخسر).',
+            '✋ **وقف:** بتثبّت إيدك والموزع يلعب (بيقف عند 17).',
+            '💰 **دبل:** بتضاعف الرهان وتاخد كارت واحد بس وتقف (في أول كارتين بس).',
+            '🏆 **الدفع:** بلاك جاك (آص + 10 من أول كارتين) ×2.50 ・ كسب عادي ×2 ・ تعادل رهانك يرجع.',
+            '💡 **نصايح:** دبل على 10 أو 11 ・ وقف على 17 أو أكتر ・ اسحب لو مجموعك 11 أو أقل.',
+            `⏰ لو سبت اللعبة ${idleSeconds} ثانية بتعمل وقف لوحدها والنتيجة بتتحسب عادي.`,
+        ].join('\n'),
         hitButton: 'سحب',
         standButton: 'وقف',
         doubleButton: 'دبل',
@@ -219,9 +229,19 @@ const TEXT = {
         // Blackjack
         blackjackTitle: () => `${P('blackjack.icon')} Blackjack`,
         blackjackLine: (userId, cc) => `${E('ui.player')} <@${userId}> ・ ${E('ui.bet')} Bet: ${cc}`,
-        dealerHand: (cards, score) => `🤵 **Dealer:**\n${cards} ・ Total: **[ ${score} ]**`,
-        playerHand: (cards, score) => `🧑 **Your Hand:**\n${cards} ・ Total: **[ ${score} ]**`,
-        blackjackIdleRule: () => `${P('ui.timer')} If left idle for ${idleSeconds}s, you stand automatically and the hand is settled as usual.`,
+        dealerName: (score) => `🤵 Dealer ・ [ ${score} ]`,
+        playerName: (score) => `🧑 You ・ [ ${score} ]`,
+        blackjackPlaying: () => '🎲 Game in progress',
+        blackjackLegend: () => `🃏 Hit = one more card ・ ✋ Stand = dealer plays ・ 💰 Double = 2× bet, 1 card ・ ℹ️ help`,
+        blackjackHelp: () => [
+            '🎯 **Goal:** get closer to 21 than the dealer without going over.',
+            '🃏 **Hit:** one more card (over 21 you lose).',
+            '✋ **Stand:** keep your hand and the dealer plays (dealer stands on 17).',
+            '💰 **Double:** double the bet, take exactly one card and stand (first two cards only).',
+            '🏆 **Payouts:** blackjack (ace + 10 on the first two cards) ×2.50 ・ a normal win ×2 ・ a tie returns your bet.',
+            '💡 **Tips:** double on 10 or 11 ・ stand on 17 or more ・ hit on 11 or less.',
+            `⏰ Idle for ${idleSeconds}s and you stand automatically, settled as usual.`,
+        ].join('\n'),
         hitButton: 'Hit',
         standButton: 'Stand',
         doubleButton: 'Double',
@@ -531,32 +551,51 @@ export function chickenNoticeText(result, userId, lang = null) {
 
 // ---- Blackjack ----
 
+const CARD_SUIT_EMOJI = { '♠': '♠️', '♥': '♥️', '♦': '♦️', '♣': '♣️' };
+const isCustomTag = (value) => /^<a?:w{2,32}:d{17,20}>$/u.test(String(value));
+const CARD_SUIT_KEY = { '♠': 'S', '♥': 'H', '♦': 'D', '♣': 'C' };
+
+/**
+ * One card as a bold chip: `**「A♥️」**`. With custom card emojis in the registry (`blackjack.cardAH` ... `blackjack.cardKC`,
+ * rank 2-10/J/Q/K/A then the suit S/H/D/C, and `blackjack.cardBack`) the chip is that emoji instead (CASINO_EMOJIS).
+ */
+export function cardChip(card, hidden = false) {
+    if (hidden) {
+        const back = E('blackjack.cardBack');
+        return isCustomTag(back) ? back : '**「❓」**';
+    }
+    const custom = E(`blackjack.card${card.rank}${CARD_SUIT_KEY[card.suit]}`);
+    return isCustomTag(custom) ? custom : `**「${card.rank}${CARD_SUIT_EMOJI[card.suit] ?? card.suit}」**`;
+}
+
 export function formatHandCards(hand, hideSecond = false) {
     if (!Array.isArray(hand)) return '';
-    return hand.map((card, idx) => {
-        if (hideSecond && idx === 1) return '`[ ❓ ]`';
-        return `\`[ ${card.rank} ${card.suit} ]\``;
-    }).join(' ');
+    return hand.map((card, idx) => cardChip(card, hideSecond && idx === 1)).join(' ');
 }
+
+/** `11+` for a dealer showing one card, `19` or `19 / 9` (soft hand) for a player. */
+function handTotal(hand, { hidden = false } = {}) {
+    if (hidden) {
+        const first = hand?.[0];
+        return `${first?.rank === 'A' ? 11 : (['K', 'Q', 'J', '10'].includes(first?.rank) ? 10 : first?.rank)}+`;
+    }
+    const score = handScore(hand);
+    return isSoftHand(hand) && score < 21 ? `${score} / ${score - 10}` : `${score}`;
+}
+
+const handFields = (text, game, { hideDealer }) => [
+    { name: text.dealerName(handTotal(game.dealerHand, { hidden: hideDealer })), value: formatHandCards(game.dealerHand, hideDealer), inline: true },
+    { name: text.playerName(handTotal(game.playerHand)), value: formatHandCards(game.playerHand), inline: true },
+];
 
 export function blackjackBoardPayload(game, userId, { note = '', lang = game.lang } = {}) {
     const text = say(lang);
-    const pScore = handScore(game.playerHand);
-    const soft = isSoftHand(game.playerHand) && pScore < 21;
-    const pScoreDisplay = soft ? `${pScore} / ${pScore - 10}` : `${pScore}`;
-    const dFirst = game.dealerHand?.[0];
-    const dScoreDisplay = `${dFirst?.rank === 'A' ? 11 : (['K', 'Q', 'J', '10'].includes(dFirst?.rank) ? 10 : dFirst?.rank)}+`;
-    const betDisplay = formatCC(game.bet);
-    const playerLine = withAllIn(text.blackjackLine(userId, betDisplay), game.allIn, lang);
-
+    const playerLine = withAllIn(text.blackjackLine(userId, formatCC(game.bet)), game.allIn, lang);
     const embed = ccEmbed(text.blackjackTitle(), [
         ...(note ? [note, ''] : []),
         playerLine,
-        '',
-        text.dealerHand(formatHandCards(game.dealerHand, true), dScoreDisplay),
-        '',
-        text.playerHand(formatHandCards(game.playerHand), pScoreDisplay),
-    ].join('\n'), { color: casinoColor('blackjack'), footer: text.blackjackIdleRule() });
+        text.blackjackPlaying(),
+    ].join('\n'), { color: casinoColor('blackjack'), fields: handFields(text, game, { hideDealer: true }), footer: text.blackjackLegend() });
 
     const buttons = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -575,6 +614,10 @@ export function blackjackBoardPayload(game, userId, { note = '', lang = game.lan
             .setEmoji(E('blackjack.double'))
             .setStyle(ButtonStyle.Primary)
             .setDisabled(Boolean(game.doubled || game.playerHand?.length !== 2)),
+        new ButtonBuilder()
+            .setCustomId(`${CASINO_BUTTON_PREFIX}:bjinfo:${game.id}:${userId}`)
+            .setEmoji('ℹ️')
+            .setStyle(ButtonStyle.Secondary),
     );
     return { content: '', embeds: [embed], components: [buttons], allowedMentions: { parse: [] } };
 }
@@ -596,10 +639,7 @@ export function blackjackResultPayload(result, userId, lang = null) {
     if (!result.game) return { content: blackjackNoticeText(result, userId, shown), embeds: [], components: [], allowedMentions: { parse: [] } };
     const text = say(shown);
     const { game, payout, outcome } = result;
-    const pScore = handScore(game.playerHand);
-    const dScore = handScore(game.dealerHand);
-    const betDisplay = formatCC(game.bet);
-    const playerLine = withAllIn(text.blackjackLine(userId, betDisplay), game.allIn, shown);
+    const playerLine = withAllIn(text.blackjackLine(userId, formatCC(game.bet)), game.allIn, shown);
     const endIcon = outcome === 'natural' || outcome === 'win' ? E('ui.win') : (outcome === 'push' ? E('ui.push') : E('ui.lose'));
     const multiplierStr = outcome === 'natural' ? '×2.50' : (outcome === 'win' ? '×2.00' : (outcome === 'push' ? '×1.00' : '×0.00'));
 
@@ -607,16 +647,23 @@ export function blackjackResultPayload(result, userId, lang = null) {
         playerLine,
         heroLine(endIcon, multiplierStr),
         blackjackEndLine(result, shown),
-        '',
-        text.dealerHand(formatHandCards(game.dealerHand), dScore),
-        '',
-        text.playerHand(formatHandCards(game.playerHand), pScore),
         ...summaryLines(game.bet, payout, result.balance, shown),
     ].join('\n'), {
         color: casinoColor('blackjack', outcomeOf(game.bet, payout)),
+        fields: handFields(text, game, { hideDealer: false }),
         footer: text.blackjackOdds(),
     });
     return { content: '', embeds: [embed], components: [], allowedMentions: { parse: [] } };
+}
+
+/** The short how-to: what the buttons do, the payouts and a few tips (the ℹ️ button and `شرح بلاك جاك`). */
+export function blackjackHelpText(lang = null) {
+    return say(lang).blackjackHelp();
+}
+
+export function blackjackHelpPayload(lang = null) {
+    const text = say(lang);
+    return { content: '', embeds: [ccEmbed(text.blackjackTitle(), text.blackjackHelp(), { color: casinoColor('blackjack') })], components: [], allowedMentions: { parse: [] } };
 }
 
 export function blackjackNoticeText(result, userId, lang = null) {

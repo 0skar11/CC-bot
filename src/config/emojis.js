@@ -19,6 +19,11 @@ import { logger } from '../utils/logger.js';
 
 /** Every key and its Unicode default (what the casino shows when CASINO_EMOJIS doesn't set it). */
 export const CASINO_EMOJI_DEFAULTS = Object.freeze({
+    // Blackjack cards: `blackjack.card<rank><suit>` (e.g. `blackjack.cardAH`) (rank 2-10, J, Q, K, A; suit S spades, H hearts, D diamonds, C clubs)
+    // and `blackjack.cardBack`. The default of a card key is its suit emoji and only marks the key as valid: with no
+    // custom emoji the casino draws a text chip (`**「A♥️」**`); a custom emoji tag set here shows instead (a picture of the card).
+    ...Object.fromEntries(['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'].flatMap((rank) => [['S', '♠️'], ['H', '♥️'], ['D', '♦️'], ['C', '♣️']].map(([suit, emoji]) => [`blackjack.card${rank}${suit}`, emoji]))),
+    'blackjack.cardBack': '❓',
     // Shared by every game
     'ui.player': '👤',
     'ui.bet': '💵',

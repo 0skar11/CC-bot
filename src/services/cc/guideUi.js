@@ -111,6 +111,8 @@ function casinoGuideEmbed() {
         `> رقم من 0.00 لـ 99.99، \`فوق\` أو \`تحت\` رقمك: فرصة أقل = مكسب أكبر ・ مكتوبة: ${code(aliasesFor('casino dice'))}`,
         `🐔 \`/casino chicken\` ・ \`فرخة ${bet}\``,
         `> الفرخة بتعدّي طريق فيه ${chicken.maxSteps} حارة، حارة مع كل دوسة على 🐔 تقدّم (فرصتها ${chickenSurvivePercent()}%). كل حارة بتكبّر المضاعف لحد **${times(chickenMultiplierHundredths(chicken.maxSteps))}**، واعمل كاش أوت وقت ما تحب، ولو عربية خبطتها تخسر الرهان. لو سبتها ${Math.round(idleMs / 1000)} ثانية بتعمل كاش أوت لوحدها ・ مكتوبة: ${code(aliasesFor('casino chicken'))}`,
+        `🃏 \`/casino blackjack\` ・ \`بلاك جاك ${bet}\``,
+        `> قرّب من 21 أكتر من الموزع من غير ما تعدّيها: 🃏 سحب كارت ・ ✋ وقف ・ 💰 دبل. البلاك جاك ×2.50 والكسب العادي ×2 والتعادل رهانك يرجع. الزرار ℹ️ بيشرحلك، أو اكتب \`شرح بلاك جاك\` ・ مكتوبة: ${code(aliasesFor('casino blackjack'))}`,
         `🎡 \`/casino roulette\` ・ \`روليت ${bet} احمر\` (جماعية)`,
         `> جولة ${seconds(roulette.joinMs)} ثانية للروم كله: 🔴 / ⚫ ×${roulette.colorPays} أو رقم من 0 لـ 36 ×${roulette.numberPays}، ولفة واحدة للكل ・ مكتوبة: ${code(aliasesFor('casino roulette'))}`,
         `🚀 \`/casino rocket\` ・ \`صاروخ ${bet} 2\` (جماعية)`,

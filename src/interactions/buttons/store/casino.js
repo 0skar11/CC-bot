@@ -2,7 +2,7 @@ import { MessageFlags } from 'discord.js';
 import { isAllowedGuild, isCasinoChannel } from '../../../config/runtime.js';
 import { ALL_IN, CASINO, CASINO_BUTTON_PREFIX, GROUP_GAMES, casinoChannelNotice, isAllInWord, rouletteChoice } from '../../../config/casino.js';
 import { isBetRequest, pickMinesCell, cashOutMines, stepChicken, cashOutChicken, hitBlackjack, standBlackjack, doubleBlackjack } from '../../../services/cc/casinoService.js';
-import { minesBoardPayload, chickenBoardPayload, blackjackBoardPayload, casinoErrorText, casinoFailureText } from '../../../services/cc/casinoUi.js';
+import { minesBoardPayload, chickenBoardPayload, blackjackBoardPayload, blackjackHelpText, casinoErrorText, casinoFailureText } from '../../../services/cc/casinoUi.js';
 import { onCasinoCooldown, withCasinoLock, scheduleIdleCashOut, cancelIdleCashOut, showGameResult } from '../../../services/cc/casinoSessions.js';
 import { rocketCashOut, placeGroupBet, liveRound } from '../../../services/cc/casinoGroupSessions.js';
 import { playerLanguage, roundLanguage } from '../../../services/cc/casinoGroupService.js';
@@ -172,6 +172,8 @@ async function execute(interaction, client, [action, gameId, ...rest]) {
     if (action === 'rocket') return rest.length ? privately(interaction, say(lang).dead) : rocketButton(interaction, client, gameId);
     const ownerId = rest[rest.length - 1];
     if (ownerId !== interaction.user.id) return privately(interaction, say(lang).notYours);
+    // ℹ️ under a blackjack board: a private how-to. It never touches the game, its timer or the lock.
+    if (action === 'bjinfo') return rest.length === 1 && gameId ? privately(interaction, blackjackHelpText(lang)) : privately(interaction, say(lang).dead);
     const known = typeof action === 'string' && Object.hasOwn(GAME_BUTTONS, action);
     const { arg = null, play, board } = known ? GAME_BUTTONS[action] : {};
     const value = arg && rest.length === 2 && arg.test(rest[0]) ? Number(rest[0]) : null;
