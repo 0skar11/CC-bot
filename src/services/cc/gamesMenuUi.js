@@ -2,7 +2,7 @@
 // Arabic or English. ONE embed that is quick to read: a short intro, the solo games and the group games as two
 // blocks (each game is a title line with what it does, then a line with the typed example), and one footer line
 // with every house edge. The intro also says how to go all-in (`كل` / `all` in place of the bet, src/config/casino.js
-// ALL_IN_WORDS). The solo games are mines, coinflip, slots, dice and chicken. The rocket also shows
+// ALL_IN_WORDS). The solo games are mines, coinflip, slots, dice, chicken and blackjack. The rocket also shows
 // `كراش` / `crash`, which is the same game. Every number is read from
 // CASINO and casinoEdges(), so the menu never drifts from what the games really do. Each line starts with an emoji
 // so Discord keeps the Arabic lines in order.
@@ -52,7 +52,7 @@ function menuText(lang) {
                 block('🎡 **Roulette**', `🔴 red or ⚫ black ×${roulette.colorPays}, a number 0-36 ×${roulette.numberPays}; the wheel spins ${wait}s after the first bet`, ['roulette 100 red', 'roulette 50 17']),
                 block('🚀 **Rocket** (same as `crash`)', `everyone rides together: press 💰 Cash out before it crashes (up to ${multiplierText(crash.maxTarget)}), or add a target to cash out by itself`, ['rocket 100', 'rocket 100 2']),
             ],
-            footer: `⚖️ House edge: Mines ${edges.mines}% · Coinflip ${edges.coinflip}% · Slots ${edges.slots}% · Dice ${edges.dice}% · Chicken ${edges.chicken}% · Roulette ${edges.roulette}% · Rocket ${edges.rocket}%  ・  Play for fun  ・  العربية: العاب`,
+            footer: `⚖️ House edge: Mines ${edges.mines}% · Coinflip ${edges.coinflip}% · Slots ${edges.slots}% · Dice ${edges.dice}% · Chicken ${edges.chicken}% · Blackjack ${edges.blackjack}% · Roulette ${edges.roulette}% · Rocket ${edges.rocket}%  ・  Play for fun  ・  العربية: العاب`,
         };
     }
     return {
@@ -76,7 +76,7 @@ function menuText(lang) {
             block('🎡 **روليت**', `🔴 أحمر أو ⚫ أسود ×${roulette.colorPays}، رقم 0-36 ×${roulette.numberPays}؛ العجلة بتلف بعد ${wait} ثانية من أول رهان`, ['روليت 100 احمر', 'روليت 50 17']),
             block('🚀 **صاروخ** (هو نفسه `كراش`)', `الكل بيركب مع بعض: دوس 💰 كاش أوت قبل ما ينفجر (لحد ${multiplierText(crash.maxTarget)}) أو حط هدف يخرّجك لوحده`, ['صاروخ 100', 'صاروخ 100 2']),
         ],
-        footer: `⚖️ نسبة البيت: ماينز ${edges.mines}% · عملة ${edges.coinflip}% · سلوت ${edges.slots}% · نرد ${edges.dice}% · فرخة ${edges.chicken}% · روليت ${edges.roulette}% · صاروخ ${edges.rocket}%  ・  العب بمزاج  ・  English: games`,
+        footer: `⚖️ نسبة البيت: ماينز ${edges.mines}% · عملة ${edges.coinflip}% · سلوت ${edges.slots}% · نرد ${edges.dice}% · فرخة ${edges.chicken}% · بلاك جاك ${edges.blackjack}% · روليت ${edges.roulette}% · صاروخ ${edges.rocket}%  ・  العب بمزاج  ・  English: games`,
     };
 }
 

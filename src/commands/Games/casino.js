@@ -5,11 +5,12 @@ import {
     ALL_IN, CASINO, CASINO_COMMAND, GROUP_GAMES, SOLO_GAMES, betWord, casinoChannelNotice, casinoGuildNotice, coinSide, diceDirection, readGameArgs, rouletteChoice, targetHundredths,
 } from '../../config/casino.js';
 import {
-    isBetRequest, isValidMineCount, isValidCrashTarget, diceChance, startMines, cashOutMines, startChicken, cashOutChicken, attachGameMessage, playCoinflip, playSlots, playDice,
-    chickenMultiplierHundredths,
+    isBetRequest, isValidMineCount, isValidCrashTarget, diceChance, startMines, cashOutMines, startChicken, cashOutChicken,
+    startBlackjack, cancelBlackjack, attachGameMessage, playCoinflip, playSlots, playDice, chickenMultiplierHundredths,
 } from '../../services/cc/casinoService.js';
 import {
-    minesBoardPayload, chickenBoardPayload, coinflipPayload, slotsPayload, dicePayload, casinoFailureText, casinoUsageText, gameUsageText, previousGameNote,
+    minesBoardPayload, chickenBoardPayload, blackjackBoardPayload, blackjackResultPayload, coinflipPayload, slotsPayload, dicePayload,
+    casinoFailureText, casinoUsageText, gameUsageText, previousGameNote,
 } from '../../services/cc/casinoUi.js';
 import { onCasinoCooldown, withCasinoLock, scheduleIdleCashOut, closePreviousBoard } from '../../services/cc/casinoSessions.js';
 import { placeGroupBet } from '../../services/cc/casinoGroupSessions.js';
@@ -33,7 +34,7 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 // src/config/casino.js) asks the game for the bet ALL_IN, and the game's own save turns it into the balance (up to
 // the max bet) as it takes it (casinoService.js betFor). The slash commands keep their whole-number `bet`.
 const SUBCOMMANDS = [...SOLO_GAMES, ...GROUP_GAMES];
-const NEWER_GAMES = ['dice', 'chicken', 'roulette', 'rocket'];
+const NEWER_GAMES = ['dice', 'chicken', 'blackjack', 'roulette', 'rocket'];
 // `!casino crash 100 2` is the rocket, like the typed `crash` / `كراش`.
 const SUB_ALIASES = { crash: 'rocket' };
 const isNumber = (word) => /^\d+$/u.test(String(word));
@@ -89,6 +90,7 @@ const editorFor = (interaction) => (sent) => (interaction._sourceMessage ? (payl
 const BOARDS = {
     mines: { start: startMines, board: minesBoardPayload, cashOut: cashOutMines },
     chicken: { start: startChicken, board: chickenBoardPayload, cashOut: cashOutChicken },
+    blackjack: { start: startBlackjack, board: blackjackBoardPayload, cashOut: cancelBlackjack },
 };
 
 /**
@@ -103,6 +105,7 @@ async function openBoard(interaction, client, reply, sub, settings) {
     const result = await start(client, guildId, user.id, settings);
     closePreviousBoard(client, result.previous, user.id);
     if (!result.ok) return reply(failure(result, lang));
+    if (result.ended) return reply(blackjackResultPayload(result, user.id, lang));
     let sent;
     try {
         sent = await reply(board(result.game, user.id, { note: result.previous ? previousGameNote(result.previous, lang) : '' }));
@@ -189,6 +192,8 @@ export default {
                 .addChoices({ name: 'under (تحت)', value: 'under' }, { name: 'over (فوق)', value: 'over' })))
         .addSubcommand((sub) => sub.setName('chicken').setDescription(`Cross the road lane by lane and cash out before a car hits the chicken (up to x${(chickenMultiplierHundredths(CASINO.chicken.maxSteps) / 100).toFixed(2)})`)
             .addIntegerOption(betOption))
+        .addSubcommand((sub) => sub.setName('blackjack').setDescription('Beat the dealer to 21: hit, stand or double down (natural 21 pays 3:2)')
+            .addIntegerOption(betOption))
         .addSubcommand((sub) => sub.setName('roulette').setDescription('Group roulette: the room bets together, one spin for everybody')
             .addIntegerOption(betOption)
             .addStringOption((option) => option
@@ -253,6 +258,10 @@ export default {
         if (sub === 'chicken') {
             if (onCasinoCooldown(user.id)) return reply(failure({ reason: 'cooldown' }, lang));
             return withCasinoLock(user.id, () => openBoard(interaction, client, reply, 'chicken', { bet, channelId: roomId, lang }));
+        }
+        if (sub === 'blackjack') {
+            if (onCasinoCooldown(user.id)) return reply(failure({ reason: 'cooldown' }, lang));
+            return withCasinoLock(user.id, () => openBoard(interaction, client, reply, 'blackjack', { bet, channelId: roomId, lang }));
         }
         if (sub === 'dice') return playDiceGame(interaction, client, reply, bet, lang);
         if (GROUP_GAMES.includes(sub)) return joinGroupGame(interaction, client, reply, sub, { bet, roomId, lang });

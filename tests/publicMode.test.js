@@ -76,7 +76,7 @@ test('public registration writes exactly addcc, bourse, casino, cc, cctop, daily
         assert.deepEqual(calls[0].payload.body, commands);
         assert.deepEqual(commands.map(c => c.name), ['addcc','bourse','casino','cc','cctop','daily','games','give','help','removecc']);
         assert.deepEqual(commands[1].options.map(c => c.name), ['prices','invest','sell','buymax','sellall','holdings']);
-        assert.deepEqual(commands[2].options.map(c => c.name), ['mines','coinflip','slots','dice','chicken','roulette','rocket']);
+        assert.deepEqual(commands[2].options.map(c => c.name), ['mines','coinflip','slots','dice','chicken','blackjack','roulette','rocket']);
     `);
 });
 

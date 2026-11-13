@@ -61,7 +61,7 @@ export const CASINO_BUTTON_PREFIX = 'casino';
 // `/games` and the typed `العاب`: the menu of every game (src/commands/Games/games.js).
 export const GAMES_COMMAND = 'games';
 // The `/casino` games played by one member against the house, and the ones played by the whole room.
-export const SOLO_GAMES = ['mines', 'coinflip', 'slots', 'dice', 'chicken'];
+export const SOLO_GAMES = ['mines', 'coinflip', 'slots', 'dice', 'chicken', 'blackjack'];
 export const GROUP_GAMES = ['roulette', 'rocket'];
 
 export const CASINO = {
@@ -115,6 +115,12 @@ export const CASINO = {
         // number of equally likely draws a game starts with (5^20), and must stay under crypto.randomInt's 2^48.
         maxSteps: 20,
     },
+    blackjack: {
+        dealerStandsOn: 17,
+        naturalPayout: 250,
+        winPayout: 200,
+        edgePercent: 1.5,
+    },
     roulette: {
         pockets: 37,
         red: [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36],
@@ -156,6 +162,7 @@ export const CASINO_COLORS = {
     slots: 0x9b59b6,
     dice: 0x3498db,
     chicken: 0xe67e22,
+    blackjack: 0x1f8b4c,
     roulette: 0x0b6e4f,
     rocket: 0xc9a227,
     win: 0x2ecc71,
@@ -268,7 +275,7 @@ export function readGameArgs(game, words) {
     const usage = { error: 'usage' };
     if (!rest.length) return usage;
     const bet = betWord(rest[0]);
-    if (game === 'chicken') return rest.length === 1 && bet !== null ? { values: { bet } } : usage;
+    if (game === 'chicken' || game === 'blackjack') return rest.length === 1 && bet !== null ? { values: { bet } } : usage;
     if (game === 'crash' || game === 'rocket') {
         if (rest.length > 2 || bet === null) return usage;
         const target = rest.length === 2 ? multiplierHundredths(rest[1]) : null;

@@ -67,7 +67,7 @@ describe('standalone bourse guild boundary', () => {
         assert.deepEqual(commands[1].options.map((sub) => sub.name), ['prices', 'invest', 'sell', 'buymax', 'sellall', 'holdings']);
         assert.deepEqual(commands[2].options.map((sub) => [sub.name, sub.options.map(({ name, required }) => `${name}${required ? '' : '?'}`)]), [
             ['mines', ['bet', 'mines?']], ['coinflip', ['bet', 'side?']], ['slots', ['bet']],
-            ['dice', ['bet', 'number?', 'direction?']], ['chicken', ['bet']], ['roulette', ['bet', 'choice']], ['rocket', ['bet', 'target?']],
+            ['dice', ['bet', 'number?', 'direction?']], ['chicken', ['bet']], ['blackjack', ['bet']], ['roulette', ['bet', 'choice']], ['rocket', ['bet', 'target?']],
         ]);
         assert.deepEqual(commands[3].options.map(({ name, required }) => ({ name, required })), [{ name: 'user', required: false }]);
         assert.deepEqual(commands[4].options, []); assert.deepEqual(commands[5].options, []); assert.deepEqual(commands[6].options.map(({ name, required }) => ({ name, required })), [{ name: 'language', required: false }]);

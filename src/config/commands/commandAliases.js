@@ -15,6 +15,7 @@ export const commandArgAliases = {
     crash: 'casino rocket', كراش: 'casino rocket',
     dice: 'casino dice', نرد: 'casino dice', زهر: 'casino dice', دايس: 'casino dice',
     chicken: 'casino chicken', فرخة: 'casino chicken', فرخه: 'casino chicken', دجاجة: 'casino chicken', دجاجه: 'casino chicken',
+    blackjack: 'casino blackjack', bj: 'casino blackjack', بلاك: 'casino blackjack', بلاكجاك: 'casino blackjack', 'بلاك جاك': 'casino blackjack',
     roulette: 'casino roulette', روليت: 'casino roulette', الروليت: 'casino roulette',
     rocket: 'casino rocket', صاروخ: 'casino rocket', الصاروخ: 'casino rocket',
     games: 'games', العاب: 'games', ألعاب: 'games', الالعاب: 'games', الألعاب: 'games',
@@ -31,7 +32,7 @@ export const commandArgAliases = {
     'top cc': 'cctop', 'توب cc': 'cctop', 'توب كريدت': 'cctop',
 };
 // The newer games whose words are also everyday chat (`كراش`, `صاروخ`, `فرخة`...): typed without the prefix they need a bet.
-const NEW_CASINO_GAMES = new Set(['casino dice', 'casino chicken', 'casino roulette', 'casino rocket']);
+const NEW_CASINO_GAMES = new Set(['casino dice', 'casino chicken', 'casino roulette', 'casino rocket', 'casino blackjack']);
 export function isBourseNameInvocation(typedCommand, args) {
     const target = commandArgAliases[typedCommand];
     if (target !== 'bourse invest' && target !== 'bourse sell') return false;
@@ -69,7 +70,11 @@ export function isAllInInvocation(typedCommand, args) {
 export function applyWordAliases(typedCommand, args, prefixed) {
     const twoWord = `${typedCommand} ${(args[0] || '').toLowerCase()}`;
     if (Object.hasOwn(commandArgAliases, twoWord)) {
-        return { commandName: commandArgAliases[twoWord], args: args.slice(1) };
+        const alias = commandArgAliases[twoWord];
+        if (!prefixed && !args.slice(1).length && NEW_CASINO_GAMES.has(alias)) return null;
+        if (!prefixed && NEW_CASINO_GAMES.has(alias) && !isGameInvocation(twoWord, args.slice(1))) return null;
+        const [commandName, ...leading] = alias.split(' ');
+        return { commandName, args: [...leading, ...args.slice(1)] };
     }
     if (!Object.hasOwn(commandArgAliases, typedCommand)) return { commandName: typedCommand, args };
     if (!prefixed && !args.length && NEW_CASINO_GAMES.has(commandArgAliases[typedCommand])) return null;

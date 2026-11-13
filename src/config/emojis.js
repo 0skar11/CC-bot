@@ -87,6 +87,11 @@ export const CASINO_EMOJI_DEFAULTS = Object.freeze({
     'chicken.sidewalk': '🟫',
     'chicken.more': '⋯',
     'chicken.food': '🍗',
+    // Blackjack
+    'blackjack.icon': '🃏',
+    'blackjack.hit': '🟢',
+    'blackjack.stand': '🛑',
+    'blackjack.double': '⚡',
     // Roulette
     'roulette.icon': '🎡',
     'roulette.red': '🔴',

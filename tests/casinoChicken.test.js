@@ -652,10 +652,10 @@ describe('chicken: the road, the buttons and the commands', () => {
 
         const [ar] = gamesMenuEmbeds('ar');
         assert.ok(ar.fields[0].value.includes('🐔 **الفرخة**') && ar.fields[0].value.includes('`فرخة 100`'));
-        assert.match(ar.footer.text, /نرد 3% · فرخة 3% · روليت/u);
+        assert.match(ar.footer.text, /نرد 3% · فرخة 3% · بلاك جاك 1.5% · روليت/u);
         const [en] = gamesMenuEmbeds('en');
         assert.ok(en.fields[0].value.includes('🐔 **Chicken**') && en.fields[0].value.includes('`chicken 100`'));
-        assert.match(en.footer.text, /Dice 3% · Chicken 3% · Roulette/u);
+        assert.match(en.footer.text, /Dice 3% · Chicken 3% · Blackjack 1.5% · Roulette/u);
         const casino = guideEmbeds(GUILD).find((embed) => embed.title === '🎰 شرح الكازينو');
         assert.match(casino.description, /🐔 `\/casino chicken` ・ `فرخة 100`/u);
         assert.match(casino.description, /20 حارة[\s\S]*80%[\s\S]*\*\*×84\.13\*\*[\s\S]*`chicken`، `فرخة`، `فرخه`، `دجاجة`، `دجاجه`/u);

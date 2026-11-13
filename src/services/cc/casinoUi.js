@@ -22,7 +22,8 @@ import { CC, ccEmbed, formatCC } from '../../config/cc.js';
 import { CASINO, CASINO_BUTTON_PREFIX, COIN_SIDES, DICE_DIRECTIONS, casinoColor, outcomeOf } from '../../config/casino.js';
 import { SLOT_SYMBOL_KEYS, casinoEmoji as E, plainEmoji as P } from '../../config/emojis.js';
 import {
-    chickenMultiplierHundredths, chickenPayout, chickenSurvivePercent, diceMultiplierHundredths, diceWins, minesPayout, minesMultiplierHundredths,
+    blackjackPayout, chickenMultiplierHundredths, chickenPayout, chickenSurvivePercent, diceMultiplierHundredths, diceWins,
+    handScore, isNaturalBlackjack, isSoftHand, minesPayout, minesMultiplierHundredths,
 } from './casinoService.js';
 import { multiplierText } from './casinoGroupUi.js';
 import { inLang, readLang } from './lang.js';
@@ -101,6 +102,24 @@ const TEXT = {
         chickenOdds: (chance, top, all) => `${P('chicken.alive')} كل حارة فرصة إنها تعدّيها ${chance}% ・ ${P('ui.trophy')} أقصى مضاعف ${top} بعد ${all} حارة`,
         previousChicken: (cc) => `${E('ui.timer')} لعبة الفرخة اللي فاتت كانت واقفة فاتقفلت لوحدها، واتصرفلك منها ${cc}.`,
         chickenActive: (ends) => `⚠️ عندك لعبة فرخة شغالة، كملها أو اعمل كاش أوت الأول${ends}.`,
+        // Blackjack
+        blackjackTitle: () => `${P('blackjack.icon')} بلاك جاك`,
+        blackjackLine: (userId, cc) => `${E('ui.player')} <@${userId}> ・ ${E('ui.bet')} الرهان: ${cc}`,
+        dealerHand: (cards, score) => `🤵 **الموزع (Dealer):**\n${cards} ・ المجموع: **[ ${score} ]**`,
+        playerHand: (cards, score) => `🧑 **يدك أنت (Player):**\n${cards} ・ المجموع: **[ ${score} ]**`,
+        blackjackIdleRule: () => `${P('ui.timer')} لو سبت اللعبة ${idleSeconds} ثانية من غير لعب، بتعمل وقف (Stand) لوحدها والنتيجة بتتحسب عادي.`,
+        hitButton: 'سحب',
+        standButton: 'وقف',
+        doubleButton: 'دبل',
+        blackjackBroken: (cc) => `${E('ui.warning')} لعبة بلاك جاك قديمة كانت بايظة فاتقفلت ورجعلك رهانك ${cc}.`,
+        blackjackNatural: (cc) => `${E('ui.trophy')} **بلاك جاك!** جبت 21 من أول كارتين وخدت ${cc} (×2.50).`,
+        blackjackWon: (cc) => `${E('ui.win')} **كسبت الموزع!** خدت ${cc} (×2.00).`,
+        blackjackPush: (cc) => `${E('ui.push')} **تعادل!** نفس مجموع الموزع، رهانك رجعلك كامل (${cc}).`,
+        blackjackLost: (cc) => `${E('ui.lose')} **خسرت!** الموزع فاز وخسرت ${cc}.`,
+        blackjackBust: (cc) => `${E('ui.lose')} **احترقت يدك!** عديت 21 وخسرت ${cc}.`,
+        blackjackOdds: () => `🃏 البلاك جاك يدفع 3:2 (×2.50) ・ الموزع يقف إجبارياً عند 17 أو أكثر`,
+        previousBlackjack: (cc) => `${E('ui.timer')} لعبة البلاك جاك اللي فاتت كانت واقفة فاتقفلت لوحدها، واتصرفلك منها ${cc}.`,
+        blackjackActive: (ends) => `⚠️ عندك لعبة بلاك جاك شغالة، كملها أو اقف الأول${ends}.`,
         // Usage: one typed example per game. `كراش` is the rocket.
         usage: {
             mines: () => `💣 \`مينز 100 3\` ・ ماينز: افتح خانات من غير ما تلاقي لغم (من ${CASINO.mines.min} لـ ${CASINO.mines.max} ألغام) واعمل كاش أوت وقت ما تحب`,
@@ -110,6 +129,7 @@ const TEXT = {
             chicken: () => `🐔 \`فرخة 100\` ・ الفرخة: كل حارة تعدّيها بتكبّر المضاعف (لحد ${topChicken()} بعد ${lanes()} حارة)، واعمل كاش أوت قبل ما عربية تخبطها`,
             roulette: () => `🎡 \`روليت 100 احمر\` أو \`روليت 100 17\` ・ روليت جماعي: 🔴 / ⚫ ×${CASINO.roulette.colorPays}، رقم من 0 لـ 36 ×${CASINO.roulette.numberPays}`,
             rocket: () => `🚀 \`صاروخ 100\` أو \`صاروخ 100 2\` (أو \`كراش 100 2.5\`) ・ صاروخ (كراش جماعي): اركب مع الروم واعمل كاش أوت قبل ما ينفجر`,
+            blackjack: () => '🃏 `بلاك جاك 100` ・ بلاك جاك: العب ضد الموزع للوصول لـ 21، سحب ووقف ودبل، ومكسب البلاك جاك ×2.50',
         },
         casinoHead: () => `🎰 **الكازينو** ・ الرهان من ${number(CASINO.minBet)} ${CC.short} لحد رصيدك${CASINO.unlimited ? '' : ` (أقصى رهان ${number(CASINO.maxBet)})`}`,
         allInHint: () => `🔥 اكتب \`كل\` مكان الرهان وتدخل بكل فلوسك${CASINO.unlimited ? '' : ` (لحد ${number(CASINO.maxBet)})`}: \`صاروخ كل\` ・ \`مينز كل 3\` ・ \`نرد كل فوق 70\``,
@@ -196,6 +216,24 @@ const TEXT = {
         chickenOdds: (chance, top, all) => `${P('chicken.alive')} Each lane: ${chance}% chance to make it ・ ${P('ui.trophy')} Top multiplier ${top} after ${all} lanes`,
         previousChicken: (cc) => `${E('ui.timer')} Your last chicken game was left idle, so it closed by itself and paid you ${cc}.`,
         chickenActive: (ends) => `⚠️ You have a chicken game running: finish it or cash out first${ends}.`,
+        // Blackjack
+        blackjackTitle: () => `${P('blackjack.icon')} Blackjack`,
+        blackjackLine: (userId, cc) => `${E('ui.player')} <@${userId}> ・ ${E('ui.bet')} Bet: ${cc}`,
+        dealerHand: (cards, score) => `🤵 **Dealer:**\n${cards} ・ Total: **[ ${score} ]**`,
+        playerHand: (cards, score) => `🧑 **Your Hand:**\n${cards} ・ Total: **[ ${score} ]**`,
+        blackjackIdleRule: () => `${P('ui.timer')} If left idle for ${idleSeconds}s, you stand automatically and the hand is settled as usual.`,
+        hitButton: 'Hit',
+        standButton: 'Stand',
+        doubleButton: 'Double',
+        blackjackBroken: (cc) => `${E('ui.warning')} An old broken blackjack game was settled and refunded ${cc}.`,
+        blackjackNatural: (cc) => `${E('ui.trophy')} **Blackjack!** Natural 21, you won ${cc} (×2.50).`,
+        blackjackWon: (cc) => `${E('ui.win')} **You won!** Beat the dealer and took ${cc} (×2.00).`,
+        blackjackPush: (cc) => `${E('ui.push')} **Push!** Tied with dealer, your bet was returned (${cc}).`,
+        blackjackLost: (cc) => `${E('ui.lose')} **You lost!** Dealer won, you lost ${cc}.`,
+        blackjackBust: (cc) => `${E('ui.lose')} **Bust!** Exceeded 21, you lost ${cc}.`,
+        blackjackOdds: () => `🃏 Blackjack pays 3:2 (×2.50) ・ Dealer stands on 17`,
+        previousBlackjack: (cc) => `${E('ui.timer')} Your previous blackjack game was idle, so you stood automatically and it paid ${cc}.`,
+        blackjackActive: (ends) => `⚠️ You have a blackjack game running: finish it or stand first${ends}.`,
         // Usage: one typed example per game. `crash` is the rocket.
         usage: {
             mines: () => `💣 \`mines 100 3\` ・ Mines: open tiles without hitting a mine (${CASINO.mines.min} to ${CASINO.mines.max} mines) and cash out whenever you like`,
@@ -205,6 +243,7 @@ const TEXT = {
             chicken: () => `🐔 \`chicken 100\` ・ Chicken: every lane it crosses raises the multiplier (up to ${topChicken()} after ${lanes()} lanes); cash out before a car hits it`,
             roulette: () => `🎡 \`roulette 100 red\` or \`roulette 100 17\` ・ Group roulette: 🔴 / ⚫ ×${CASINO.roulette.colorPays}, a number from 0 to 36 ×${CASINO.roulette.numberPays}`,
             rocket: () => '🚀 `rocket 100` or `rocket 100 2` (or `crash 100 2.5`) ・ Rocket (group crash): ride with the room and cash out before it blows up',
+            blackjack: () => '🃏 `blackjack 100` ・ Blackjack: beat the dealer to 21, hit, stand or double, pays ×2.50',
         },
         casinoHead: () => `🎰 **Casino** ・ Bets from ${number(CASINO.minBet)} ${CC.short} up to your balance${CASINO.unlimited ? '' : ` (max bet ${number(CASINO.maxBet)})`}`,
         allInHint: () => `🔥 Type \`all\` instead of the bet to go all-in${CASINO.unlimited ? '' : ` (up to ${number(CASINO.maxBet)})`}: \`rocket all\` ・ \`mines all 3\` ・ \`dice all over 70\``,
@@ -490,25 +529,130 @@ export function chickenNoticeText(result, userId, lang = null) {
     return `<@${userId}> ${chickenEndLine(result, resultLanguage(result, lang))}`;
 }
 
+// ---- Blackjack ----
+
+export function formatHandCards(hand, hideSecond = false) {
+    if (!Array.isArray(hand)) return '';
+    return hand.map((card, idx) => {
+        if (hideSecond && idx === 1) return '`[ ❓ ]`';
+        return `\`[ ${card.rank} ${card.suit} ]\``;
+    }).join(' ');
+}
+
+export function blackjackBoardPayload(game, userId, { note = '', lang = game.lang } = {}) {
+    const text = say(lang);
+    const pScore = handScore(game.playerHand);
+    const soft = isSoftHand(game.playerHand) && pScore < 21;
+    const pScoreDisplay = soft ? `${pScore} / ${pScore - 10}` : `${pScore}`;
+    const dFirst = game.dealerHand?.[0];
+    const dScoreDisplay = `${dFirst?.rank === 'A' ? 11 : (['K', 'Q', 'J', '10'].includes(dFirst?.rank) ? 10 : dFirst?.rank)}+`;
+    const betDisplay = formatCC(game.bet);
+    const playerLine = withAllIn(text.blackjackLine(userId, betDisplay), game.allIn, lang);
+
+    const embed = ccEmbed(text.blackjackTitle(), [
+        ...(note ? [note, ''] : []),
+        playerLine,
+        '',
+        text.dealerHand(formatHandCards(game.dealerHand, true), dScoreDisplay),
+        '',
+        text.playerHand(formatHandCards(game.playerHand), pScoreDisplay),
+    ].join('\n'), { color: casinoColor('blackjack'), footer: text.blackjackIdleRule() });
+
+    const buttons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`${CASINO_BUTTON_PREFIX}:bjhit:${game.id}:${game.playerHand.length}:${userId}`)
+            .setLabel(text.hitButton)
+            .setEmoji(E('blackjack.hit'))
+            .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+            .setCustomId(`${CASINO_BUTTON_PREFIX}:bjstand:${game.id}:${userId}`)
+            .setLabel(text.standButton)
+            .setEmoji(E('blackjack.stand'))
+            .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+            .setCustomId(`${CASINO_BUTTON_PREFIX}:bjdouble:${game.id}:${userId}`)
+            .setLabel(text.doubleButton)
+            .setEmoji(E('blackjack.double'))
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(Boolean(game.doubled || game.playerHand?.length !== 2)),
+    );
+    return { content: '', embeds: [embed], components: [buttons], allowedMentions: { parse: [] } };
+}
+
+function blackjackEndLine(result, lang) {
+    const text = say(lang);
+    const { game, payout, outcome } = result;
+    if (!game) return text.blackjackBroken(formatCC(payout));
+    if (outcome === 'natural') return text.blackjackNatural(formatCC(payout));
+    if (outcome === 'win') return text.blackjackWon(formatCC(payout));
+    if (outcome === 'push') return text.blackjackPush(formatCC(payout));
+    const pScore = handScore(game.playerHand);
+    if (pScore > 21) return text.blackjackBust(formatCC(game.bet));
+    return text.blackjackLost(formatCC(game.bet));
+}
+
+export function blackjackResultPayload(result, userId, lang = null) {
+    const shown = resultLanguage(result, lang);
+    if (!result.game) return { content: blackjackNoticeText(result, userId, shown), embeds: [], components: [], allowedMentions: { parse: [] } };
+    const text = say(shown);
+    const { game, payout, outcome } = result;
+    const pScore = handScore(game.playerHand);
+    const dScore = handScore(game.dealerHand);
+    const betDisplay = formatCC(game.bet);
+    const playerLine = withAllIn(text.blackjackLine(userId, betDisplay), game.allIn, shown);
+    const endIcon = outcome === 'natural' || outcome === 'win' ? E('ui.win') : (outcome === 'push' ? E('ui.push') : E('ui.lose'));
+    const multiplierStr = outcome === 'natural' ? '×2.50' : (outcome === 'win' ? '×2.00' : (outcome === 'push' ? '×1.00' : '×0.00'));
+
+    const embed = ccEmbed(text.blackjackTitle(), [
+        playerLine,
+        heroLine(endIcon, multiplierStr),
+        blackjackEndLine(result, shown),
+        '',
+        text.dealerHand(formatHandCards(game.dealerHand), dScore),
+        '',
+        text.playerHand(formatHandCards(game.playerHand), pScore),
+        ...summaryLines(game.bet, payout, result.balance, shown),
+    ].join('\n'), {
+        color: casinoColor('blackjack', outcomeOf(game.bet, payout)),
+        footer: text.blackjackOdds(),
+    });
+    return { content: '', embeds: [embed], components: [], allowedMentions: { parse: [] } };
+}
+
+export function blackjackNoticeText(result, userId, lang = null) {
+    return `<@${userId}> ${blackjackEndLine(result, resultLanguage(result, lang))}`;
+}
+
 // ---- Either saved game ----
 
-/** Which saved game a result, a refusal or a game settled on the way is about: 'chicken', else 'mines'. */
-const kindOf = (result) => ((result?.game?.game ?? result?.kind) === 'chicken' ? 'chicken' : 'mines');
+/** Which saved game a result, a refusal or a game settled on the way is about: 'blackjack', 'chicken', else 'mines'. */
+const kindOf = (result) => {
+    const k = result?.game?.game ?? result?.kind;
+    if (k === 'blackjack') return 'blackjack';
+    if (k === 'chicken') return 'chicken';
+    return 'mines';
+};
 
-/** An ended saved game, with its own embed (a mines board or a chicken). */
+/** An ended saved game, with its own embed (a mines board, a chicken, or blackjack). */
 export function gameResultPayload(result, userId, lang = null) {
-    return kindOf(result) === 'chicken' ? chickenResultPayload(result, userId, lang) : minesResultPayload(result, userId, lang);
+    const k = kindOf(result);
+    if (k === 'blackjack') return blackjackResultPayload(result, userId, lang);
+    return k === 'chicken' ? chickenResultPayload(result, userId, lang) : minesResultPayload(result, userId, lang);
 }
 
 /** The short notice of an ended saved game whose message is gone. */
 export function gameNoticeText(result, userId, lang = null) {
-    return kindOf(result) === 'chicken' ? chickenNoticeText(result, userId, lang) : minesNoticeText(result, userId, lang);
+    const k = kindOf(result);
+    if (k === 'blackjack') return blackjackNoticeText(result, userId, lang);
+    return k === 'chicken' ? chickenNoticeText(result, userId, lang) : minesNoticeText(result, userId, lang);
 }
 
-/** The line shown with a new game when an older board or chicken was settled first (in the new command's language). */
+/** The line shown with a new game when an older board, chicken or blackjack was settled first (in the new command's language). */
 export function previousGameNote(previous, lang) {
     const text = say(lang);
-    return (kindOf(previous) === 'chicken' ? text.previousChicken : text.previousGame)(formatCC(previous.payout));
+    const k = kindOf(previous);
+    if (k === 'blackjack') return text.previousBlackjack(formatCC(previous.payout));
+    return (k === 'chicken' ? text.previousChicken : text.previousGame)(formatCC(previous.payout));
 }
 
 // ---- Coinflip ----
@@ -628,7 +772,9 @@ export function casinoFailureText(result, lang) {
     if (result.reason === 'no_cc') return text.noCC(formatCC(result.balance ?? 0));
     if (result.reason === 'active') {
         const ends = Number.isFinite(result.game?.lastActionAt) ? text.activeEnds(Math.ceil((result.game.lastActionAt + CASINO.idleMs) / 1000)) : '';
-        return kindOf(result) === 'chicken' ? text.chickenActive(ends) : text.active(ends);
+        const k = kindOf(result);
+        if (k === 'blackjack') return text.blackjackActive(ends);
+        return k === 'chicken' ? text.chickenActive(ends) : text.active(ends);
     }
     if (result.reason === 'bad_target') return text.badTarget();
     if (result.reason === 'bad_dice') return text.badDice(CASINO.dice.minChance, CASINO.dice.maxChance);

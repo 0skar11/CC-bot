@@ -1,8 +1,8 @@
 import { MessageFlags } from 'discord.js';
 import { isAllowedGuild, isCasinoChannel } from '../../../config/runtime.js';
 import { ALL_IN, CASINO, CASINO_BUTTON_PREFIX, GROUP_GAMES, casinoChannelNotice, isAllInWord, rouletteChoice } from '../../../config/casino.js';
-import { isBetRequest, pickMinesCell, cashOutMines, stepChicken, cashOutChicken } from '../../../services/cc/casinoService.js';
-import { minesBoardPayload, chickenBoardPayload, casinoErrorText, casinoFailureText } from '../../../services/cc/casinoUi.js';
+import { isBetRequest, pickMinesCell, cashOutMines, stepChicken, cashOutChicken, hitBlackjack, standBlackjack, doubleBlackjack } from '../../../services/cc/casinoService.js';
+import { minesBoardPayload, chickenBoardPayload, blackjackBoardPayload, casinoErrorText, casinoFailureText } from '../../../services/cc/casinoUi.js';
 import { onCasinoCooldown, withCasinoLock, scheduleIdleCashOut, cancelIdleCashOut, showGameResult } from '../../../services/cc/casinoSessions.js';
 import { rocketCashOut, placeGroupBet, liveRound } from '../../../services/cc/casinoGroupSessions.js';
 import { playerLanguage, roundLanguage } from '../../../services/cc/casinoGroupService.js';
@@ -65,6 +65,9 @@ const GAME_BUTTONS = {
     cashout: { play: (client, guildId, userId, gameId) => cashOutMines(client, guildId, userId, gameId), board: minesBoardPayload },
     chick: { arg: /^\d{1,2}$/u, play: (client, guildId, userId, gameId, steps) => stepChicken(client, guildId, userId, gameId, steps), board: chickenBoardPayload },
     chickout: { play: (client, guildId, userId, gameId) => cashOutChicken(client, guildId, userId, gameId), board: chickenBoardPayload },
+    bjhit: { arg: /^\d{1,2}$/u, play: (client, guildId, userId, gameId, cards) => hitBlackjack(client, guildId, userId, gameId, cards), board: blackjackBoardPayload },
+    bjstand: { play: (client, guildId, userId, gameId) => standBlackjack(client, guildId, userId, gameId), board: blackjackBoardPayload },
+    bjdouble: { play: (client, guildId, userId, gameId) => doubleBlackjack(client, guildId, userId, gameId), board: blackjackBoardPayload },
 };
 
 /** The room's open round of `game` when it is round `roundId` and still takes bets, else null. */
@@ -180,11 +183,14 @@ async function execute(interaction, client, [action, gameId, ...rest]) {
     try {
         await withCasinoLock(userId, async () => {
             const result = await play(client, interaction.guildId, userId, gameId, value);
-            if (!result.ok) return followUp(interaction, say(lang).gameOver);
+            if (!result.ok) {
+                if (result.reason === 'no_cc') return followUp(interaction, casinoFailureText(result, lang));
+                return followUp(interaction, say(lang).gameOver);
+            }
             // A step pressed on an outdated board: acknowledged above, nothing moves, the board stays as it is.
             if (result.outcome === 'outdated') return null;
             // The board itself keeps the language it was opened in (its saved `lang`).
-            if (result.outcome === 'safe' || result.outcome === 'duplicate') {
+            if (result.outcome === 'safe' || result.outcome === 'duplicate' || result.outcome === 'continue') {
                 scheduleIdleCashOut(client, result.game, userId, { edit });
                 return edit(board(result.game, userId)).catch(() => {});
             }

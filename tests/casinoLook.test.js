@@ -111,7 +111,7 @@ const linesOf = (payload) => (payload.embeds ?? []).flatMap((embed) => [embed.de
 describe('the emoji registry', () => {
     test('every key has a Unicode default, and the slot symbols of the engine all have one', () => {
         for (const [key, value] of Object.entries(CASINO_EMOJI_DEFAULTS)) {
-            assert.match(key, /^(?:ui|mines|coin|slots|dice|chicken|roulette)\.[a-zA-Z0-9]+$/u, key);
+            assert.match(key, /^(?:ui|mines|coin|slots|dice|chicken|roulette|blackjack)\.[a-zA-Z0-9]+$/u, key);
             // `chicken.more` is the ⋯ of a road that goes on off screen, a sign more than an emoji.
             if (key !== 'chicken.more') assert.ok(isUnicodeEmoji(value), key);
         }
@@ -126,7 +126,7 @@ describe('the emoji registry', () => {
         const keys = new Set();
         for (const file of ['src/services/cc/casinoUi.js', 'src/services/cc/casinoGroupUi.js']) {
             const source = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
-            for (const [, key] of source.matchAll(/'((?:ui|mines|coin|slots|dice|chicken|roulette)\.[a-zA-Z0-9]+)'/gu)) keys.add(key);
+            for (const [, key] of source.matchAll(/'((?:ui|mines|coin|slots|dice|chicken|roulette|blackjack)\.[a-zA-Z0-9]+)'/gu)) keys.add(key);
         }
         assert.ok(keys.size > 40, `${keys.size} keys`);
         for (const key of keys) assert.ok(Object.hasOwn(CASINO_EMOJI_DEFAULTS, key), key);

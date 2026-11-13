@@ -173,6 +173,7 @@ export function readChickenGame(raw) {
 const SAVED_GAMES = {
     mines: { read: readMinesGame, payout: (game) => minesPayout(game.bet, game.mines.length, game.picks.length) },
     chicken: { read: readChickenGame, payout: (game) => chickenPayout(game.bet, game.steps) },
+    blackjack: { read: readBlackjackGame, payout: (game, outcome) => blackjackPayout(game.bet, outcome) },
 };
 
 /** The kind of a saved game ('mines' or 'chicken'), from its `game`; 'mines' when it can't be told (old or damaged). */
@@ -236,7 +237,10 @@ function endGame(state, record, outcome, hit = null) {
         if (bet) payOut(state, record, bet, bet);
         return { outcome: 'broken', game: null, bet, payout: bet, channelId: typeof raw?.channelId === 'string' ? raw.channelId : null, kind: savedGameKind(raw) };
     }
-    const payout = outcome === 'lost' ? 0 : SAVED_GAMES[game.game].payout(game);
+    // An idle (or restart-settled) blackjack hand stands: the dealer plays it out and it wins, pushes or loses like
+    // any other hand. Walking away is never a free refund (the player has seen the cards).
+    if (game.game === 'blackjack' && outcome === 'timeout') outcome = standOutcome(game);
+    const payout = outcome === 'lost' ? 0 : SAVED_GAMES[game.game].payout(game, outcome);
     payOut(state, record, game.bet, payout);
     return { outcome, game: hit === null ? game : { ...game, hit }, bet: game.bet, payout };
 }
@@ -469,6 +473,222 @@ export async function cashOutChicken(client, guildId, userId, gameId, { now = Da
     });
 }
 
+// ---- Blackjack ----
+
+export const CARD_SUITS = ['♠', '♥', '♦', '♣'];
+export const CARD_RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+
+export const isCard = (c) => Boolean(
+    c && typeof c === 'object'
+    && typeof c.rank === 'string' && CARD_RANKS.includes(c.rank)
+    && typeof c.suit === 'string' && CARD_SUITS.includes(c.suit),
+);
+
+export function cardValue(card) {
+    if (!card || typeof card.rank !== 'string') return 0;
+    if (card.rank === 'A') return 11;
+    if (['K', 'Q', 'J', '10'].includes(card.rank)) return 10;
+    return Number(card.rank) || 0;
+}
+
+export function handScore(hand) {
+    if (!Array.isArray(hand)) return 0;
+    let score = 0;
+    let aces = 0;
+    for (const card of hand) {
+        if (!card) continue;
+        if (card.rank === 'A') {
+            aces += 1;
+            score += 11;
+        } else if (['K', 'Q', 'J', '10'].includes(card.rank)) {
+            score += 10;
+        } else {
+            score += Number(card.rank) || 0;
+        }
+    }
+    while (score > 21 && aces > 0) {
+        score -= 10;
+        aces -= 1;
+    }
+    return score;
+}
+
+export function isSoftHand(hand) {
+    if (!Array.isArray(hand)) return false;
+    let score = 0;
+    let aces = 0;
+    for (const card of hand) {
+        if (!card) continue;
+        if (card.rank === 'A') {
+            aces += 1;
+            score += 11;
+        } else if (['K', 'Q', 'J', '10'].includes(card.rank)) {
+            score += 10;
+        } else {
+            score += Number(card.rank) || 0;
+        }
+    }
+    while (score > 21 && aces > 0) {
+        score -= 10;
+        aces -= 1;
+    }
+    return aces > 0 && score <= 21;
+}
+
+export function isNaturalBlackjack(hand) {
+    return Array.isArray(hand) && hand.length === 2 && handScore(hand) === 21;
+}
+
+export function createShuffledDeck(randomInt = secureRandomInt) {
+    const deck = [];
+    for (const suit of CARD_SUITS) {
+        for (const rank of CARD_RANKS) {
+            deck.push({ rank, suit });
+        }
+    }
+    for (let i = deck.length - 1; i > 0; i -= 1) {
+        const j = draw(randomInt, i + 1);
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    return deck;
+}
+
+export function playDealerHand(dealerHand, deck) {
+    const standsOn = CASINO.blackjack?.dealerStandsOn ?? 17;
+    while (handScore(dealerHand) < standsOn && deck.length > 0) {
+        dealerHand.push(deck.pop());
+    }
+    return dealerHand;
+}
+
+/** Plays the dealer's hand out (it stands on `dealerStandsOn`) and says how the player's hand ends: win, push or lost. */
+export function standOutcome(game) {
+    playDealerHand(game.dealerHand, game.deck);
+    const player = handScore(game.playerHand);
+    const dealer = handScore(game.dealerHand);
+    if (player > 21) return 'lost';
+    return dealer > 21 || player > dealer ? 'win' : (player === dealer ? 'push' : 'lost');
+}
+
+export function blackjackPayout(bet, outcome = 'win') {
+    if (outcome === 'natural') return divideDown(bet * (CASINO.blackjack?.naturalPayout ?? 250), 100);
+    if (outcome === 'win') return divideDown(bet * (CASINO.blackjack?.winPayout ?? 200), 100);
+    // 'refund' only gives back a hand whose board was never shown (cancelBlackjack); an idle hand is never refunded:
+    // endGame stands it first, so 'timeout' reaches here only as a loss.
+    if (outcome === 'push' || outcome === 'refund') return bet;
+    return 0;
+}
+
+export function readBlackjackGame(raw) {
+    if (!raw || typeof raw !== 'object' || raw.game !== 'blackjack' || typeof raw.id !== 'string' || !raw.id) return null;
+    if (!Number.isSafeInteger(raw.bet) || raw.bet < 1 || raw.bet > CASINO_BET_LIMITS.ceiling) return null;
+    if (!Array.isArray(raw.playerHand) || raw.playerHand.length < 2 || !raw.playerHand.every(isCard)) return null;
+    if (!Array.isArray(raw.dealerHand) || raw.dealerHand.length < 2 || !raw.dealerHand.every(isCard)) return null;
+    if (!Array.isArray(raw.deck) || !raw.deck.every(isCard)) return null;
+    if (typeof raw.doubled !== 'boolean') return null;
+    if (!Number.isFinite(raw.lastActionAt)) return null;
+    return raw;
+}
+
+export async function startBlackjack(client, guildId, userId, { bet: asked, channelId = null, lang = null } = {}, { now = Date.now(), randomInt = secureRandomInt, idleMs = CASINO.idleMs } = {}) {
+    if (!isBetRequest(asked)) return { ok: false, reason: 'bad_bet' };
+    return updateCCState(client, guildId, userId, (state, record) => {
+        const previous = endIdleGame(state, record, now, idleMs);
+        const bet = betFor(state, asked);
+        const refused = refuseStart(state, record, bet);
+        if (refused) return { ...refused, previous, skipSave: !previous };
+        const before = state.cc;
+        takeBet(state, bet);
+        const deck = createShuffledDeck(randomInt);
+        const playerHand = [deck.pop(), deck.pop()];
+        const dealerHand = [deck.pop(), deck.pop()];
+        const game = {
+            id: randomBytes(6).toString('hex'), game: 'blackjack', bet, playerHand, dealerHand, deck, doubled: false,
+            guildId: guildId ? String(guildId) : null, channelId: channelId ? String(channelId) : null, messageId: null,
+            lang: readLang(lang), startedAt: now, lastActionAt: now, ...allInMark(asked),
+        };
+        const pNatural = isNaturalBlackjack(playerHand);
+        const dNatural = isNaturalBlackjack(dealerHand);
+        if (pNatural || dNatural) {
+            const outcome = (pNatural && dNatural) ? 'push' : (pNatural ? 'natural' : 'lost');
+            const payout = blackjackPayout(bet, outcome);
+            payOut(state, record, bet, payout);
+            return { ok: true, ended: true, outcome, game, before, bet, payout, balance: state.cc, previous };
+        }
+        record.ccCasino = game;
+        return { ok: true, ended: false, game, before, previous };
+    });
+}
+
+/**
+ * Hit: one more card. `cards` is how many cards the player's board showed when the button was made: a press whose
+ * count differs (a double press, an old board) changes nothing (`outcome: 'outdated'`).
+ */
+export async function hitBlackjack(client, guildId, userId, gameId, cards = null, { now = Date.now(), idleMs = CASINO.idleMs } = {}) {
+    return updateCCState(client, guildId, userId, (state, record) => {
+        const game = readBlackjackGame(record.ccCasino);
+        if (!game || game.id !== gameId) return { ok: false, reason: 'stale', skipSave: true };
+        if (now - game.lastActionAt >= idleMs) return { ok: true, ...endGame(state, record, 'timeout') };
+        if (cards !== null && cards !== game.playerHand.length) return { ok: true, outcome: 'outdated', game, skipSave: true };
+        if (!game.deck.length) game.deck = createShuffledDeck();
+        game.playerHand.push(game.deck.pop());
+        game.lastActionAt = now;
+        const score = handScore(game.playerHand);
+        if (score > 21) return { ok: true, ...endGame(state, record, 'lost') };
+        if (score === 21) {
+            playDealerHand(game.dealerHand, game.deck);
+            const dScore = handScore(game.dealerHand);
+            const outcome = dScore > 21 || score > dScore ? 'win' : (score === dScore ? 'push' : 'lost');
+            return { ok: true, ...endGame(state, record, outcome) };
+        }
+        return { ok: true, outcome: 'continue', game };
+    });
+}
+
+export async function standBlackjack(client, guildId, userId, gameId, { now = Date.now(), idleMs = CASINO.idleMs } = {}) {
+    return updateCCState(client, guildId, userId, (state, record) => {
+        const game = readBlackjackGame(record.ccCasino);
+        if (!game || game.id !== gameId) return { ok: false, reason: 'stale', skipSave: true };
+        if (now - game.lastActionAt >= idleMs) return { ok: true, ...endGame(state, record, 'timeout') };
+        playDealerHand(game.dealerHand, game.deck);
+        const pScore = handScore(game.playerHand);
+        const dScore = handScore(game.dealerHand);
+        const outcome = dScore > 21 || pScore > dScore ? 'win' : (pScore === dScore ? 'push' : 'lost');
+        return { ok: true, ...endGame(state, record, outcome) };
+    });
+}
+
+export async function doubleBlackjack(client, guildId, userId, gameId, { now = Date.now(), idleMs = CASINO.idleMs } = {}) {
+    return updateCCState(client, guildId, userId, (state, record) => {
+        const game = readBlackjackGame(record.ccCasino);
+        if (!game || game.id !== gameId) return { ok: false, reason: 'stale', skipSave: true };
+        if (now - game.lastActionAt >= idleMs) return { ok: true, ...endGame(state, record, 'timeout') };
+        if (game.doubled || game.playerHand.length !== 2) return { ok: false, reason: 'bad_double', skipSave: true };
+        if (state.cc < game.bet) return { ok: false, reason: 'no_cc', balance: state.cc, game, skipSave: true };
+        takeBet(state, game.bet);
+        game.bet *= 2;
+        game.doubled = true;
+        if (!game.deck.length) game.deck = createShuffledDeck();
+        game.playerHand.push(game.deck.pop());
+        game.lastActionAt = now;
+        const pScore = handScore(game.playerHand);
+        if (pScore > 21) return { ok: true, ...endGame(state, record, 'lost') };
+        playDealerHand(game.dealerHand, game.deck);
+        const dScore = handScore(game.dealerHand);
+        const outcome = dScore > 21 || pScore > dScore ? 'win' : (pScore === dScore ? 'push' : 'lost');
+        return { ok: true, ...endGame(state, record, outcome) };
+    });
+}
+
+export async function cancelBlackjack(client, guildId, userId, gameId) {
+    return updateCCState(client, guildId, userId, (state, record) => {
+        const game = readBlackjackGame(record.ccCasino);
+        if (!game || game.id !== gameId) return { ok: false, reason: 'stale', skipSave: true };
+        // The board never showed up (nothing was seen): the whole bet goes back.
+        return { ok: true, ...endGame(state, record, 'refund') };
+    });
+}
+
 /**
  * Coinflip on `side` ('heads' or 'tails'), bet and payout in one save. Returns
  * `{ ok: true, bet, side, landed, payout, before, balance, previous }` (with `allIn` for an ALL_IN bet, whose
@@ -532,6 +752,9 @@ export function casinoEdges() {
         dice: CASINO.dice.edgePercent,
         // (survive / outOf)^k of the chickens get k lanes far and are paid (100 − edge)% × (outOf / survive)^k.
         chicken: CASINO.chicken.edgePercent,
+        // An approximation for a typical player (dealer stands on 17, 3:2 naturals, double on any two cards, no split,
+        // insurance or surrender, a fresh deck each hand): perfect basic strategy is nearer 1%.
+        blackjack: CASINO.blackjack.edgePercent,
         roulette: percent(1 - rouletteReturn),
         rocket: CASINO.crash.edgePercent,
     };
