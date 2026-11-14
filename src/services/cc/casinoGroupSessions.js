@@ -279,15 +279,31 @@ export async function rocketCashOut(client, { channelId, userId, roundId, receiv
 }
 
 /**
- * Startup: every group round a restart or a crash left behind is settled from what was saved (see
- * casinoGroupService.js) and its message updated, then every stake whose round is gone is given back.
- * Returns `{ settled, refunded, failed }`: rounds settled, orphan stakes given back, rounds or members that failed.
+ * Startup: a round still open inside its betting window (a restart in the middle of the lobby) goes on: its timer is
+ * set again for the time left and its message keeps updating, so nobody loses the round to a deploy. Every other
+ * group round a restart or a crash left behind is settled from what was saved (see casinoGroupService.js) and its
+ * message updated, then every stake whose round is gone is given back.
+ * Returns `{ settled, refunded, failed }`: rounds settled, orphan stakes given back, rounds or members that failed
+ * (plus `resumed` when a lobby round went on).
  */
 export async function recoverGroupGames(client, { now = Date.now() } = {}) {
     const summary = { settled: 0, refunded: 0, failed: 0 };
     const rounds = getCasinoRoundPrefix(economyScope());
     for (const key of await client.db.list(rounds) || []) {
         try {
+            const open = await withRoundLock(key, async () => {
+                const round = await loadRound(client, key);
+                if (!round || isLive(key, round.id) || round.status !== 'open' || !(round.closesAt > now)) return false;
+                const entry = {
+                    key, game: round.game, roundId: round.id, channelId: String(round.channelId), round, phase: 'open',
+                    edit: null, messageId: round.messageId ? String(round.messageId) : null, randomInt: secureRandomInt, results: [], timer: null, renderTimer: null, chain: Promise.resolve(), drawing: false,
+                };
+                live.set(key, entry);
+                schedule(client, entry, round.closesAt - now, () => closeRound(client, entry));
+                requestRender(client, entry);
+                return true;
+            });
+            if (open) { summary.resumed = (summary.resumed || 0) + 1; continue; }
             const stale = await withRoundLock(key, () => settleStaleRound(client, key, { now, isLive: (round) => isLive(key, round.id) }));
             if (!stale) continue;
             if (stale.failed.length) summary.failed += 1;
