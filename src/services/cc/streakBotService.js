@@ -9,6 +9,21 @@ import { logger } from '../../utils/logger.js';
 export const STREAKBOT_GUILD_ID = '1472405236000751778';
 // StreakBot's room in that server: only its updates posted here pay CC, and the notice is sent here too.
 export const STREAKBOT_CHANNEL_ID = '1486785786480295956';
+
+/**
+ * Zenith's reward: at least 1000 CC, 100 more for every streak day, and 100 more on top for every full week of streak
+ * (day 1 = 1000, day 2 = 1100, day 7 = 1600, day 8 = 1800, day 15 = 2600...). No milestone bonus.
+ */
+export function zenithStreakBonus(count) {
+    const daily = 1000 + 100 * (count - 1) + 100 * Math.floor((count - 1) / 7);
+    return { daily, milestone: 0, total: daily };
+}
+
+/** The rooms where StreakBot's updates pay CC: server id -> { channelId, bonus(count) }. */
+export const STREAKBOT_ROOMS = {
+    [STREAKBOT_GUILD_ID]: { channelId: STREAKBOT_CHANNEL_ID, bonus: streakBonus },
+    '1569932761471524874': { channelId: '1569932762125705323', bonus: zenithStreakBonus },
+};
 // Required: the StreakBot application's user ID (STREAKBOT_ID in .env). Empty = nobody is paid.
 const streakBotId = () => (process.env.STREAKBOT_ID || '').trim();
 const UPDATE_TITLE = /تم تحديث الستريك/u;
@@ -60,7 +75,7 @@ export async function parseStreakUpdate(message) {
 /** Gives the streak CC once per member per day. Returns the result, or null when nothing was paid. */
 export async function payStreakBotUpdate(client, guildId, userId, count, now = Date.now()) {
     const today = utcDay(now);
-    const bonus = streakBonus(count);
+    const bonus = (STREAKBOT_ROOMS[guildId]?.bonus || streakBonus)(count);
     const result = await updateCCState(client, guildId, userId, (state, record) => {
         if (record.ccStreakBotDay === today) return { skipSave: true, duplicate: true };
         state.cc += bonus.total;
@@ -76,7 +91,7 @@ export async function handleStreakBotMessage(message) {
     try {
         const guildId = message.guildId || message.guild?.id;
         const channelId = message.channelId || message.channel?.id;
-        if (guildId !== STREAKBOT_GUILD_ID || channelId !== STREAKBOT_CHANNEL_ID) return false;
+        if (STREAKBOT_ROOMS[guildId]?.channelId !== channelId) return false;
         if (!isAllowedGuild(guildId)) { logger.warn(`[STREAKBOT] Guild ${guildId} is not allowed (BOURSE_GUILD_IDS)`); return false; }
         if (!streakBotId()) { logger.warn('[STREAKBOT] STREAKBOT_ID is not set, so no streak is paid'); return false; }
         if (!isStreakBotMessage(message)) return false;
