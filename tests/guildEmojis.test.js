@@ -33,7 +33,7 @@ describe('server emojis named for the registry keys', () => {
         assert.equal(await refreshGuildEmojis({ guilds: null }), 0);
     });
 
-    test('a server that is not the owner's cannot supply emojis', async () => {
+    test('a server that is not the owners cannot supply emojis', async () => {
         const stranger = { id: '999999999999999999', emojis: { fetch: async () => new Map([['1', { name: 'cc_AS', id: '523456789012345678', animated: false }]]), cache: new Map() } };
         assert.equal(await refreshGuildEmojis({ guilds: { cache: new Map([['x', stranger]]) } }), 0);
         assert.equal(casinoEmoji('blackjack.cardAS'), '♠️');
