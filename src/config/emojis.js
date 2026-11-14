@@ -210,3 +210,49 @@ export function plainEmoji(key) {
 export const casinoEmojis = () => ({ ...CASINO_EMOJI_DEFAULTS, ...active });
 
 applyCasinoEmojis(process.env.CASINO_EMOJIS);
+
+// ---- Emojis uploaded to the servers (names are derived from the registry keys) ----
+// A custom emoji named `cc_<rank><suit>` (`cc_AH`, `cc_10S`), `cc_back` or `cc_<key with the dot as _>` (`cc_chicken_car`)
+// on any server the bot is in replaces that key's default, unless CASINO_EMOJIS sets the key itself. DISbot uploads
+// the card pictures (src/assets/emojis/cc_*.png); this bot only looks them up by name.
+const fromEnv = new Set(Object.keys(readCasinoEmojis(process.env.CASINO_EMOJIS).overrides));
+
+/** The server emoji name for a registry key, or null. */
+export function guildEmojiName(key) {
+    const card = /^blackjack\.card(10|[2-9JQKA])([SHDC])$/u.exec(key);
+    if (card) return `cc_${card[1]}${card[2]}`;
+    if (key === 'blackjack.cardBack') return 'cc_back';
+    return `cc_${key.replace(/\./gu, '_')}`;
+}
+
+/** Uses the server emojis (any iterable of `{ name, id, animated }`) for the keys they are named for. Returns how many. */
+export function applyGuildEmojis(emojis) {
+    const byName = new Map();
+    for (const emoji of emojis) if (emoji?.name && emoji.id && !byName.has(emoji.name)) byName.set(emoji.name, emoji);
+    let used = 0;
+    for (const key of Object.keys(CASINO_EMOJI_DEFAULTS)) {
+        if (fromEnv.has(key)) continue;
+        const emoji = byName.get(guildEmojiName(key));
+        if (!emoji) continue;
+        const tag = `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`;
+        if (!isCustomEmoji(tag)) continue;
+        active[key] = tag;
+        used += 1;
+    }
+    return used;
+}
+
+/** Reads the emojis of every server the bot is in and applies them. Never throws. */
+export async function refreshGuildEmojis(client) {
+    try {
+        const all = [];
+        for (const guild of client.guilds.cache.values()) {
+            const fetched = await guild.emojis.fetch().catch(() => null);
+            all.push(...(fetched ? fetched.values() : guild.emojis.cache.values()));
+        }
+        return applyGuildEmojis(all);
+    } catch (error) {
+        logger.warn(`[CASINO] could not read the server emojis: ${error.message}`);
+        return 0;
+    }
+}

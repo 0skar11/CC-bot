@@ -5,6 +5,7 @@ import { logger } from '../utils/logger.js';
 import { startServersBoard } from '../services/serversBoard.js';
 import { startStreak } from '../services/cc/streakService.js';
 import { startHeartbeat } from '../services/heartbeatService.js';
+import { refreshGuildEmojis } from '../config/emojis.js';
 import { recoverCasinoGames } from '../services/cc/casinoSessions.js';
 import { recoverGroupGames } from '../services/cc/casinoGroupSessions.js';
 export default {
@@ -16,6 +17,9 @@ export default {
         });
         logger.info(`CC bot ready as ${client.user.tag}; ${client.commands.size} stock command`);
         void startServersBoard(client);
+        // Card pictures and other casino emojis uploaded to the servers (named cc_..., config/emojis.js): read now and every 3 minutes.
+        void refreshGuildEmojis(client).then((count) => { if (count) logger.info(`[CASINO] ${count} server emojis in use`); });
+        setInterval(() => { void refreshGuildEmojis(client); }, 3 * 60_000).unref();
         // The CC bot and DISbot watch each other in Zenith's #bot-status room.
         startHeartbeat(client, { selfName: 'CC bot', peer: { id: '1550544520423415928', name: 'DISbot' }, log: logger });
         // Mines boards left by the last run: settled when their timeout passed, otherwise timed again.
