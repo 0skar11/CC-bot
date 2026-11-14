@@ -14,7 +14,10 @@ import { getEconomyPrefix } from '../../utils/database/keys.js';
 import { Mutex } from '../../utils/mutex.js';
 import { logger } from '../../utils/logger.js';
 import { readSavedGame, settleIdleGame } from './casinoService.js';
-import { gameResultPayload, gameNoticeText } from './casinoUi.js';
+import { gameResultPayload, gameNoticeText, blackjackRevealPayload, canFlipCards } from './casinoUi.js';
+
+// How long the flipping card (its edge) stays before a blackjack hand's result.
+export const FLIP_MS = { value: 650 };
 
 // userId → { gameId, edit, timer }: the running game's inactivity timer.
 const timers = new Map();
@@ -56,6 +59,10 @@ async function fetchChannel(client, channelId) {
  * Returns true when something was shown.
  */
 export async function showGameResult(client, result, userId, edit = null) {
+    // A blackjack hand ending with the dealer's hidden card turned over: one frame with the card on its edge first.
+    if (edit && result.game?.game === 'blackjack' && result.game.dealerHand?.length >= 2 && canFlipCards()) {
+        if (await tryEdit(edit, blackjackRevealPayload(result, userId))) await new Promise((resolve) => { setTimeout(resolve, FLIP_MS.value); });
+    }
     const payload = gameResultPayload(result, userId);
     if (edit && await tryEdit(edit, payload)) return true;
     const channelId = result.game?.channelId || result.channelId;

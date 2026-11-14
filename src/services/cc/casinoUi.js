@@ -122,11 +122,11 @@ const TEXT = {
         standButton: 'وقف',
         doubleButton: 'دبل',
         blackjackBroken: (cc) => `${E('ui.warning')} لعبة بلاك جاك قديمة كانت بايظة فاتقفلت ورجعلك رهانك ${cc}.`,
-        blackjackNatural: (cc) => `${E('ui.trophy')} **بلاك جاك!** جبت 21 من أول كارتين وخدت ${cc} (×2.50).`,
-        blackjackWon: (cc) => `${E('ui.win')} **كسبت الموزع!** خدت ${cc} (×2.00).`,
-        blackjackPush: (cc) => `${E('ui.push')} **تعادل!** نفس مجموع الموزع، رهانك رجعلك كامل (${cc}).`,
-        blackjackLost: (cc) => `${E('ui.lose')} **خسرت!** الموزع فاز وخسرت ${cc}.`,
-        blackjackBust: (cc) => `${E('ui.lose')} **احترقت يدك!** عديت 21 وخسرت ${cc}.`,
+        blackjackNatural: (cc) => `${E('ui.trophy')} **بلاك جاك!** كسبت +${cc}`,
+        blackjackWon: (cc) => `${E('ui.win')} **كسبت** +${cc}`,
+        blackjackPush: (cc) => `${E('ui.push')} **تعادل**، رهانك رجعلك (${cc})`,
+        blackjackLost: (cc) => `${E('ui.lose')} **خسرت** -${cc}`,
+        blackjackBust: (cc) => `${E('ui.lose')} **احترقت** -${cc}`,
         blackjackOdds: () => `🃏 البلاك جاك يدفع 3:2 (×2.50) ・ الموزع يقف إجبارياً عند 17 أو أكثر`,
         previousBlackjack: (cc) => `${E('ui.timer')} لعبة البلاك جاك اللي فاتت كانت واقفة فاتقفلت لوحدها، واتصرفلك منها ${cc}.`,
         blackjackActive: (ends) => `⚠️ عندك لعبة بلاك جاك شغالة، كملها أو اقف الأول${ends}.`,
@@ -246,11 +246,11 @@ const TEXT = {
         standButton: 'Stand',
         doubleButton: 'Double',
         blackjackBroken: (cc) => `${E('ui.warning')} An old broken blackjack game was settled and refunded ${cc}.`,
-        blackjackNatural: (cc) => `${E('ui.trophy')} **Blackjack!** Natural 21, you won ${cc} (×2.50).`,
-        blackjackWon: (cc) => `${E('ui.win')} **You won!** Beat the dealer and took ${cc} (×2.00).`,
-        blackjackPush: (cc) => `${E('ui.push')} **Push!** Tied with dealer, your bet was returned (${cc}).`,
-        blackjackLost: (cc) => `${E('ui.lose')} **You lost!** Dealer won, you lost ${cc}.`,
-        blackjackBust: (cc) => `${E('ui.lose')} **Bust!** Exceeded 21, you lost ${cc}.`,
+        blackjackNatural: (cc) => `${E('ui.trophy')} **Blackjack!** You won +${cc}`,
+        blackjackWon: (cc) => `${E('ui.win')} **You won** +${cc}`,
+        blackjackPush: (cc) => `${E('ui.push')} **Push**, your bet is back (${cc})`,
+        blackjackLost: (cc) => `${E('ui.lose')} **You lost** -${cc}`,
+        blackjackBust: (cc) => `${E('ui.lose')} **Bust** -${cc}`,
         blackjackOdds: () => `🃏 Blackjack pays 3:2 (×2.50) ・ Dealer stands on 17`,
         previousBlackjack: (cc) => `${E('ui.timer')} Your previous blackjack game was idle, so you stood automatically and it paid ${cc}.`,
         blackjackActive: (ends) => `⚠️ You have a blackjack game running: finish it or stand first${ends}.`,
@@ -570,7 +570,9 @@ export function cardChip(card, hidden = false) {
 
 export function formatHandCards(hand, hideSecond = false) {
     if (!Array.isArray(hand)) return '';
-    return hand.map((card, idx) => cardChip(card, hideSecond && idx === 1)).join(' ');
+    const chips = hand.map((card, idx) => cardChip(card, hideSecond && idx === 1));
+    // Pictures only: no gaps, so the cards sit together like a hand (any text chip keeps the spaces).
+    return chips.join(chips.every(isCustomTag) ? '' : ' ');
 }
 
 /** `11+` for a dealer showing one card, `19` or `19 / 9` (soft hand) for a player. */
@@ -626,12 +628,31 @@ function blackjackEndLine(result, lang) {
     const text = say(lang);
     const { game, payout, outcome } = result;
     if (!game) return text.blackjackBroken(formatCC(payout));
-    if (outcome === 'natural') return text.blackjackNatural(formatCC(payout));
-    if (outcome === 'win') return text.blackjackWon(formatCC(payout));
+    if (outcome === 'natural') return text.blackjackNatural(formatCC(payout - game.bet));
+    if (outcome === 'win') return text.blackjackWon(formatCC(payout - game.bet));
     if (outcome === 'push') return text.blackjackPush(formatCC(payout));
     const pScore = handScore(game.playerHand);
     if (pScore > 21) return text.blackjackBust(formatCC(game.bet));
     return text.blackjackLost(formatCC(game.bet));
+}
+
+/** Whether the card flip can be shown: the card back and the edge-on frame are both custom emojis (cc_back, cc_edge). */
+export const canFlipCards = () => isCustomTag(E('blackjack.cardBack')) && isCustomTag(E('blackjack.cardEdge'));
+
+/** The frame before a blackjack result: the dealer's hidden card turning (seen edge-on), nothing else said yet. */
+export function blackjackRevealPayload(result, userId, lang = null) {
+    const shown = resultLanguage(result, lang);
+    const text = say(shown);
+    const { game } = result;
+    const dealer = `${formatHandCards(game.dealerHand.slice(0, 1))} ${E('blackjack.cardEdge')}`;
+    const embed = ccEmbed(text.blackjackTitle(), withAllIn(text.blackjackLine(userId, formatCC(game.bet)), game.allIn, shown), {
+        color: casinoColor('blackjack'),
+        fields: [
+            { name: text.dealerName(handTotal(game.dealerHand, { hidden: true })), value: dealer, inline: true },
+            { name: text.playerName(handTotal(game.playerHand)), value: formatHandCards(game.playerHand), inline: true },
+        ],
+    });
+    return { content: '', embeds: [embed], components: [], allowedMentions: { parse: [] } };
 }
 
 export function blackjackResultPayload(result, userId, lang = null) {
@@ -640,18 +661,14 @@ export function blackjackResultPayload(result, userId, lang = null) {
     const text = say(shown);
     const { game, payout, outcome } = result;
     const playerLine = withAllIn(text.blackjackLine(userId, formatCC(game.bet)), game.allIn, shown);
-    const endIcon = outcome === 'natural' || outcome === 'win' ? E('ui.win') : (outcome === 'push' ? E('ui.push') : E('ui.lose'));
-    const multiplierStr = outcome === 'natural' ? '×2.50' : (outcome === 'win' ? '×2.00' : (outcome === 'push' ? '×1.00' : '×0.00'));
-
+    // Simple: who bet how much, won or lost how much, the balance, and both hands.
     const embed = ccEmbed(text.blackjackTitle(), [
         playerLine,
-        heroLine(endIcon, multiplierStr),
         blackjackEndLine(result, shown),
-        ...summaryLines(game.bet, payout, result.balance, shown),
+        `${E('ui.balance')} ${formatCC(result.balance)}`,
     ].join('\n'), {
         color: casinoColor('blackjack', outcomeOf(game.bet, payout)),
         fields: handFields(text, game, { hideDealer: false }),
-        footer: text.blackjackOdds(),
     });
     return { content: '', embeds: [embed], components: [], allowedMentions: { parse: [] } };
 }

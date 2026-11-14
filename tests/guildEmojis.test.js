@@ -49,3 +49,31 @@ describe('the casino shows a picture for a custom card emoji', () => {
         assert.equal(cardChip({ rank: 'K', suit: '♠' }, true), '<:cc_back:223456789012345678>');
     });
 });
+
+describe('the card flip before a blackjack result', () => {
+    const result = {
+        ok: true, outcome: 'lost', payout: 0, balance: 900,
+        game: { game: 'blackjack', id: 'abc', bet: 100, lang: 'en', dealerHand: [{ rank: 'K', suit: '♠' }, { rank: '7', suit: '♥' }], playerHand: [{ rank: '10', suit: '♦' }, { rank: '2', suit: '♣' }] },
+    };
+
+    test('with the custom back and edge emojis the hidden card shows its edge first, then the result', async () => {
+        const { showGameResult, FLIP_MS } = await import('../src/services/cc/casinoSessions.js');
+        const { canFlipCards } = await import('../src/services/cc/casinoUi.js');
+        assert.equal(canFlipCards(), false);
+        applyGuildEmojis([{ name: 'cc_back', id: '223456789012345678', animated: false }, { name: 'cc_edge', id: '323456789012345678', animated: false }]);
+        assert.equal(canFlipCards(), true);
+        FLIP_MS.value = 0;
+        const frames = [];
+        await showGameResult({}, result, '200000000000000001', async (payload) => { frames.push(payload); });
+        assert.equal(frames.length, 2);
+        assert.match(JSON.stringify(frames[0]), /cc_edge:323456789012345678/u);
+        assert.doesNotMatch(JSON.stringify(frames[1]), /cc_edge/u);
+    });
+
+    test('without the custom emojis the result comes at once, as before', async () => {
+        const { showGameResult } = await import('../src/services/cc/casinoSessions.js');
+        const frames = [];
+        await showGameResult({}, result, '200000000000000001', async (payload) => { frames.push(payload); });
+        assert.equal(frames.length, 1);
+    });
+});

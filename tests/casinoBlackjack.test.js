@@ -238,7 +238,8 @@ describe('Blackjack typed aliases and commands', () => {
             balance: 2500,
         }, A, 'ar');
         assert.ok(resPayload.embeds.length === 1);
-        assert.match(resPayload.embeds[0].description, /×2\.00/u);
+        assert.match(resPayload.embeds[0].description, /كسبت.*\+.*500/u);
+        assert.ok(!/×2\.00/u.test(resPayload.embeds[0].description), 'no multiplier lines');
     });
 });
 

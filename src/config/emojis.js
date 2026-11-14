@@ -24,6 +24,8 @@ export const CASINO_EMOJI_DEFAULTS = Object.freeze({
     // custom emoji the casino draws a text chip (`**「A♥️」**`); a custom emoji tag set here shows instead (a picture of the card).
     ...Object.fromEntries(['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'].flatMap((rank) => [['S', '♠️'], ['H', '♥️'], ['D', '♦️'], ['C', '♣️']].map(([suit, emoji]) => [`blackjack.card${rank}${suit}`, emoji]))),
     'blackjack.cardBack': '❓',
+    // The dealer's hidden card seen edge-on: the middle frame of the flip shown before a hand's result (custom emoji `cc_edge` only).
+    'blackjack.cardEdge': '🃏',
     // Shared by every game
     'ui.player': '👤',
     'ui.bet': '💵',
@@ -222,6 +224,7 @@ export function guildEmojiName(key) {
     const card = /^blackjack\.card(10|[2-9JQKA])([SHDC])$/u.exec(key);
     if (card) return `cc_${card[1]}${card[2]}`;
     if (key === 'blackjack.cardBack') return 'cc_back';
+    if (key === 'blackjack.cardEdge') return 'cc_edge';
     return `cc_${key.replace(/\./gu, '_')}`;
 }
 
