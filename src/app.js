@@ -19,6 +19,10 @@ try {
     await client.db.close();
     process.exitCode = 1;
 }
+// A stray rejection (an expired interaction, a deleted message) must not take the whole bot down: log it and keep running.
+process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled rejection:', reason?.code || reason?.message || reason);
+});
 for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => {
     client.destroy();
     await client.db.close();
