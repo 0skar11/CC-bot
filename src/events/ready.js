@@ -4,6 +4,7 @@ import { ensureTraderRole } from '../services/cc/traderRoleService.js';
 import { logger } from '../utils/logger.js';
 import { startServersBoard } from '../services/serversBoard.js';
 import { startStreak } from '../services/cc/streakService.js';
+import { startHeartbeat } from '../services/heartbeatService.js';
 import { recoverCasinoGames } from '../services/cc/casinoSessions.js';
 import { recoverGroupGames } from '../services/cc/casinoGroupSessions.js';
 export default {
