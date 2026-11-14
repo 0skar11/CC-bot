@@ -26,10 +26,16 @@ describe('server emojis named for the registry keys', () => {
     });
 
     test('refresh reads every server and never throws', async () => {
-        const guild = { emojis: { fetch: async () => new Map([['1', { name: 'cc_2D', id: '423456789012345678', animated: false }]]), cache: new Map() } };
+        const guild = { id: '1569932761471524874', emojis: { fetch: async () => new Map([['1', { name: 'cc_2D', id: '423456789012345678', animated: false }]]), cache: new Map() } };
         const client = { guilds: { cache: new Map([['g', guild]]) } };
         assert.equal(await refreshGuildEmojis(client), 1);
         assert.equal(casinoEmoji('blackjack.card2D'), '<:cc_2D:423456789012345678>');
         assert.equal(await refreshGuildEmojis({ guilds: null }), 0);
+    });
+
+    test('a server that is not the owner's cannot supply emojis', async () => {
+        const stranger = { id: '999999999999999999', emojis: { fetch: async () => new Map([['1', { name: 'cc_AS', id: '523456789012345678', animated: false }]]), cache: new Map() } };
+        assert.equal(await refreshGuildEmojis({ guilds: { cache: new Map([['x', stranger]]) } }), 0);
+        assert.equal(casinoEmoji('blackjack.cardAS'), '♠️');
     });
 });

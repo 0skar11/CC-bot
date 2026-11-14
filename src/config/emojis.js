@@ -242,11 +242,16 @@ export function applyGuildEmojis(emojis) {
     return used;
 }
 
-/** Reads the emojis of every server the bot is in and applies them. Never throws. */
+// Only the owner's servers may supply the pictures (a server the bot is added to can't change what players see):
+// CHAOS Club, Zenith and any ids in EMOJI_GUILD_IDS (comma separated).
+const EMOJI_GUILDS = new Set(['1155236281706627173', '1569932761471524874', ...String(process.env.EMOJI_GUILD_IDS || '').split(',').map((id) => id.trim()).filter(Boolean)]);
+
+/** Reads the emojis of the trusted servers the bot is in and applies them. Never throws. */
 export async function refreshGuildEmojis(client) {
     try {
         const all = [];
         for (const guild of client.guilds.cache.values()) {
+            if (!EMOJI_GUILDS.has(guild.id)) continue;
             const fetched = await guild.emojis.fetch().catch(() => null);
             all.push(...(fetched ? fetched.values() : guild.emojis.cache.values()));
         }
