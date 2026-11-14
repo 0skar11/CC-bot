@@ -215,11 +215,39 @@ export function isAllInWord(word) {
     return ALL_IN_WORDS.has(wordOf(word));
 }
 
-/** A typed bet: a whole number, ALL_IN for an all-in word, else null. */
+// Amount shorthand: `500k` / `1.5k` / `2m` / `2 مليون` are whole numbers; `50%`, `نص` (half) and `ربع` (quarter) are a share of the
+// balance, asked as `pct:N` (PERCENT_PREFIX) and worked out by the save that takes the bet, like ALL_IN.
+export const PERCENT_PREFIX = 'pct:';
+const SUFFIX_MULTIPLIERS = { k: 1_000, m: 1_000_000, ك: 1_000, الف: 1_000, ألف: 1_000, مليون: 1_000_000 };
+const SHARE_WORDS = { نص: 50, نصف: 50, half: 50, ربع: 25, quarter: 25 };
+
+/** The whole number a shorthand like `500k` stands for, else null. Plain digits are not shorthand. */
+export function shorthandAmount(word) {
+    const match = /^(\d+(?:[.,]\d+)?)\s*(k|m|ك|الف|ألف|مليون)$/iu.exec(wordOf(word));
+    if (!match) return null;
+    const value = Number(match[1].replace(',', '.')) * SUFFIX_MULTIPLIERS[match[2].toLowerCase()];
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+/** `pct:N` for `50%`, `نص`, `ربع`... (1–100), else null. */
+export function percentAmount(word) {
+    const text = wordOf(word);
+    const percent = SHARE_WORDS[text] ?? (/^(\d{1,3})%$/u.test(text) ? Number(text.slice(0, -1)) : null);
+    return percent >= 1 && percent <= 100 ? `${PERCENT_PREFIX}${percent}` : null;
+}
+
+/** Whether `asked` is a share of the balance (`pct:50`). */
+export const isPercentAsk = (asked) => typeof asked === 'string' && /^pct:\d{1,3}$/u.test(asked);
+
+/** A typed bet: a whole number (digits or shorthand), ALL_IN for an all-in word, `pct:N` for a share, else null. */
 export function betWord(word) {
     if (isWhole(word)) return Number(word);
-    return isAllInWord(word) ? ALL_IN : null;
+    if (isAllInWord(word)) return ALL_IN;
+    return shorthandAmount(word) ?? percentAmount(word);
 }
+
+/** Whether `word` is an amount that is not plain digits (shorthand, share or all-in): it can only be a bet. */
+export const isBetOnlyWord = (word) => !isWhole(word) && betWord(word) !== null;
 
 /** `heads` or `tails` for a typed side (`ملك`, `كتابة`, `h`, `tails`...), else null. */
 export function coinSide(word) {
@@ -295,8 +323,8 @@ export function readGameArgs(game, words) {
     }
     if (game === 'roulette') {
         if (rest.length > 2) return usage;
-        // The bet is the all-in word wherever it is; else the number first, or the colour first and then the number.
-        const allIn = rest.findIndex(isAllInWord);
+        // The bet is the all-in word, a shorthand or a share wherever it is; else the number first, or the colour first and then the number.
+        const allIn = rest.findIndex(isBetOnlyWord);
         const at = allIn >= 0 ? allIn : (isWhole(rest[0]) ? 0 : (rest.length === 2 && isWhole(rest[1]) ? 1 : -1));
         if (at < 0) return usage;
         if (rest.length === 1) return { values: { bet: betWord(rest[0]), choice: null } };

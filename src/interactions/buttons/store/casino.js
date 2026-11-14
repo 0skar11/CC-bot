@@ -1,6 +1,6 @@
 import { MessageFlags } from 'discord.js';
 import { isAllowedGuild, isCasinoChannel } from '../../../config/runtime.js';
-import { ALL_IN, CASINO, CASINO_BUTTON_PREFIX, GROUP_GAMES, casinoChannelNotice, isAllInWord, rouletteChoice } from '../../../config/casino.js';
+import { ALL_IN, CASINO, CASINO_BUTTON_PREFIX, GROUP_GAMES, betWord, casinoChannelNotice, isAllInWord, rouletteChoice } from '../../../config/casino.js';
 import { isBetRequest, pickMinesCell, cashOutMines, stepChicken, cashOutChicken, hitBlackjack, standBlackjack, doubleBlackjack } from '../../../services/cc/casinoService.js';
 import { minesBoardPayload, chickenBoardPayload, blackjackBoardPayload, blackjackHelpText, casinoErrorText, casinoFailureText } from '../../../services/cc/casinoUi.js';
 import { onCasinoCooldown, withCasinoLock, scheduleIdleCashOut, cancelIdleCashOut, showGameResult } from '../../../services/cc/casinoSessions.js';
@@ -131,7 +131,7 @@ async function joinSubmit(interaction, client, game, roundId) {
     const lang = roundAnswerLanguage(interaction, open?.round);
     if (!open) return privately(interaction, say(lang).roundClosed);
     const amount = interaction.fields.getTextInputValue('amount');
-    const bet = isAllInWord(amount) ? ALL_IN : parseFormAmount(amount);
+    const bet = isAllInWord(amount) ? ALL_IN : (betWord(amount) ?? parseFormAmount(amount));
     if (!isBetRequest(bet)) return privately(interaction, casinoFailureText({ reason: 'bad_bet' }, lang));
     let pick = null;
     if (game === 'roulette') {

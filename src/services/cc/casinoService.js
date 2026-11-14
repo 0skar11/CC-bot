@@ -31,7 +31,7 @@
 //   ccCasinoStats: { played, won, lost, wagered, paidOut } (a payout equal to the bet is neither won nor lost).
 
 import { randomBytes, randomInt as cryptoRandomInt } from 'node:crypto';
-import { ALL_IN, CASINO, COIN_SIDES } from '../../config/casino.js';
+import { ALL_IN, CASINO, COIN_SIDES, isPercentAsk } from '../../config/casino.js';
 import { CASINO_BET_LIMITS } from '../../config/runtime.js';
 import { updateCCState } from './ccService.js';
 import { readLang } from './lang.js';
@@ -53,7 +53,7 @@ export function isValidBet(bet, settings = CASINO) {
 
 /** Whether a game may be asked for `bet`: a valid bet, or ALL_IN (whose amount only the save that takes it knows). */
 export function isBetRequest(bet, settings = CASINO) {
-    return bet === ALL_IN || isValidBet(bet, settings);
+    return bet === ALL_IN || isPercentAsk(bet) || isValidBet(bet, settings);
 }
 
 /**
@@ -69,7 +69,14 @@ export function allInBet(cc, settings = CASINO) {
  * The bet a save takes when `asked` was asked for: `asked` itself, or for ALL_IN allInBet of the balance this save
  * holds (`state`, read under the member's lock). Only ever called inside that save. null: an all-in that can't play.
  */
+/** A share of the balance as a bet: that percent of `cc` (rounded down), up to CASINO.maxBet, or null when under CASINO.minBet. */
+export function shareBet(cc, percent) {
+    const bet = Math.min(Math.floor((Number(cc) * percent) / 100), CASINO.maxBet || Infinity);
+    return Number.isSafeInteger(bet) && bet >= CASINO.minBet ? bet : null;
+}
+
 export function betFor(state, asked) {
+    if (isPercentAsk(asked)) return shareBet(state.cc, Number(asked.slice(4)));
     return asked === ALL_IN ? allInBet(state.cc) : asked;
 }
 

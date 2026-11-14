@@ -2,7 +2,7 @@ import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { CC } from '../../config/cc.js';
 import { isAllowedGuild, isCasinoChannel } from '../../config/runtime.js';
 import {
-    ALL_IN, CASINO, CASINO_COMMAND, GROUP_GAMES, SOLO_GAMES, betWord, casinoChannelNotice, casinoGuildNotice, coinSide, diceDirection, readGameArgs, rouletteChoice, targetHundredths,
+    ALL_IN, CASINO, CASINO_COMMAND, isPercentAsk, GROUP_GAMES, SOLO_GAMES, betWord, casinoChannelNotice, casinoGuildNotice, coinSide, diceDirection, readGameArgs, rouletteChoice, targetHundredths,
 } from '../../config/casino.js';
 import {
     isBetRequest, isValidMineCount, isValidCrashTarget, diceChance, startMines, cashOutMines, startChicken, cashOutChicken,
@@ -63,10 +63,12 @@ const targetOption = (description) => (option) => option
  */
 function typedOptions(sub, { bet, ...integers }, strings = {}, target = null) {
     const allIn = bet === ALL_IN;
-    const numbers = { ...integers, bet: allIn ? null : bet };
+    const share = isPercentAsk(bet);
+    const numbers = { ...integers, bet: allIn || share ? null : bet };
     const read = (values, name) => (Object.hasOwn(values, name) ? values[name] ?? null : null);
     return {
         allIn,
+        share: share ? bet : null,
         getSubcommand: () => sub,
         getInteger: (name) => read(numbers, name),
         getNumber: (name) => (name === 'target' && target !== null ? target / 100 : null),
@@ -76,7 +78,7 @@ function typedOptions(sub, { bet, ...integers }, strings = {}, target = null) {
 }
 
 /** The bet asked for: ALL_IN for a typed all-in word, else the whole number of the slash or typed command. */
-const betOf = (options) => (options.allIn === true ? ALL_IN : options.getInteger('bet'));
+const betOf = (options) => (options.allIn === true ? ALL_IN : options.share ?? options.getInteger('bet'));
 
 /** The answer when a game didn't start, with the note about an older board that was settled on the way. */
 function failure(result, lang) {
