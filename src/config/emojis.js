@@ -252,8 +252,10 @@ export async function refreshGuildEmojis(client) {
         const all = [];
         for (const guild of client.guilds.cache.values()) {
             if (!EMOJI_GUILDS.has(guild.id)) continue;
-            const fetched = await guild.emojis.fetch().catch(() => null);
-            all.push(...(fetched ? fetched.values() : guild.emojis.cache.values()));
+            const fetched = await guild.emojis.fetch().catch((error) => { logger.warn(`[CASINO] could not fetch the emojis of ${guild.name}: ${error.message}`); return null; });
+            const list = [...(fetched ? fetched.values() : guild.emojis.cache.values())];
+            logger.info(`[CASINO] ${guild.name}: ${list.length} emojis, ${list.filter((emoji) => /^cc_/u.test(emoji.name)).length} named cc_`);
+            all.push(...list);
         }
         return applyGuildEmojis(all);
     } catch (error) {
