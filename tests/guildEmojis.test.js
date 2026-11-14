@@ -39,3 +39,13 @@ describe('server emojis named for the registry keys', () => {
         assert.equal(casinoEmoji('blackjack.cardAS'), '♠️');
     });
 });
+
+describe('the casino shows a picture for a custom card emoji', () => {
+    test('cardChip uses the server emoji tag, the back too, and falls back to the text chip', async () => {
+        const { cardChip } = await import('../src/services/cc/casinoUi.js');
+        applyGuildEmojis([{ name: 'cc_AH', id: '123456789012345678', animated: false }, { name: 'cc_back', id: '223456789012345678', animated: false }]);
+        assert.equal(cardChip({ rank: 'A', suit: '♥' }), '<:cc_AH:123456789012345678>');
+        assert.equal(cardChip({ rank: 'K', suit: '♠' }, false).includes('K'), true);
+        assert.equal(cardChip({ rank: 'K', suit: '♠' }, true), '<:cc_back:223456789012345678>');
+    });
+});

@@ -552,7 +552,7 @@ export function chickenNoticeText(result, userId, lang = null) {
 // ---- Blackjack ----
 
 const CARD_SUIT_EMOJI = { '♠': '♠️', '♥': '♥️', '♦': '♦️', '♣': '♣️' };
-const isCustomTag = (value) => /^<a?:w{2,32}:d{17,20}>$/u.test(String(value));
+const isCustomTag = (value) => /^<a?:\w{2,32}:\d{17,20}>$/u.test(String(value));
 const CARD_SUIT_KEY = { '♠': 'S', '♥': 'H', '♦': 'D', '♣': 'C' };
 
 /**

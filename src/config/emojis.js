@@ -246,6 +246,8 @@ export function applyGuildEmojis(emojis) {
 // CHAOS Club, Zenith and any ids in EMOJI_GUILD_IDS (comma separated).
 const EMOJI_GUILDS = new Set(['1155236281706627173', '1569932761471524874', ...String(process.env.EMOJI_GUILD_IDS || '').split(',').map((id) => id.trim()).filter(Boolean)]);
 
+const loggedCards = new Map();
+
 /** Reads the emojis of the trusted servers the bot is in and applies them. Never throws. */
 export async function refreshGuildEmojis(client) {
     try {
@@ -254,7 +256,9 @@ export async function refreshGuildEmojis(client) {
             if (!EMOJI_GUILDS.has(guild.id)) continue;
             const fetched = await guild.emojis.fetch().catch((error) => { logger.warn(`[CASINO] could not fetch the emojis of ${guild.name}: ${error.message}`); return null; });
             const list = [...(fetched ? fetched.values() : guild.emojis.cache.values())];
-            logger.info(`[CASINO] ${guild.name}: ${list.length} emojis, ${list.filter((emoji) => /^cc_/u.test(emoji.name)).length} named cc_`);
+            const cards = list.filter((emoji) => /^cc_/u.test(emoji.name)).length;
+            if (loggedCards.get(guild.id) !== cards) logger.info(`[CASINO] ${guild.name}: ${list.length} emojis, ${cards} named cc_`);
+            loggedCards.set(guild.id, cards);
             all.push(...list);
         }
         return applyGuildEmojis(all);
