@@ -16,6 +16,8 @@ export default {
         });
         logger.info(`CC bot ready as ${client.user.tag}; ${client.commands.size} stock command`);
         void startServersBoard(client);
+        // The CC bot and DISbot watch each other in Zenith's #bot-status room.
+        startHeartbeat(client, { selfName: 'CC bot', peer: { id: '1550544520423415928', name: 'DISbot' }, log: logger });
         // Mines boards left by the last run: settled when their timeout passed, otherwise timed again.
         try {
             const casino = await recoverCasinoGames(client);
