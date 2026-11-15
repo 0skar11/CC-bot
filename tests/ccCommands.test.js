@@ -232,7 +232,7 @@ test('the real StreakBot embed (markdown headings, animated emoji, bold day) is 
     assert.deepEqual(await parseStreakUpdate(ninetyFive), { userId: SELF.id, count: 95 });
 });
 
-test('Clover wins pay CC (2500 group, 500 answer), once per message, up to 50000 a day', async () => {
+test('Clover wins pay CC (2000 group with no limit, 500 answer up to 20000 a day), once per message', async () => {
     const { parseWin, payGamesBotWin, handleGamesBotWin } = await import('../src/services/cc/gamesBotService.js');
     const client = await setup();
     const answer = { author: { bot: true, id: '1006332825571692544' }, content: '', embeds: [{ description: `✅ | قام <@${SELF.id}> بكتابة الاجابة الصحيحة خلال **__14.62__** ثانية` }] };
@@ -241,11 +241,24 @@ test('Clover wins pay CC (2500 group, 500 answer), once per message, up to 50000
     assert.equal(parseWin({ ...answer, embeds: [{ description: 'hello <@1> قام' }] }), null);
     const now = Date.parse('2026-11-07T10:00:00Z');
     const before = (await client.db.get(getEconomyKey(economyScopeId, SELF.id))).cc;
-    assert.equal((await payGamesBotWin(client, GUILD, SELF.id, 'answer', now)).amount, 500);
-    for (let i = 0; i < 19; i += 1) assert.equal((await payGamesBotWin(client, GUILD, SELF.id, 'group', now)).amount, 2500);
-    assert.equal((await payGamesBotWin(client, GUILD, SELF.id, 'group', now)).amount, 2000);
-    assert.equal((await payGamesBotWin(client, GUILD, SELF.id, 'group', now)).amount, 0);
-    assert.equal((await client.db.get(getEconomyKey(economyScopeId, SELF.id))).cc, before + 50000);
-    assert.equal((await payGamesBotWin(client, GUILD, SELF.id, 'answer', now + 86_400_000)).amount, 500);
+    for (let i = 0; i < 40; i += 1) assert.equal((await payGamesBotWin(client, GUILD, SELF.id, 'answer', now)).amount, 500);
+    assert.equal((await payGamesBotWin(client, GUILD, SELF.id, 'answer', now)).amount, 0);
+    // Group wins are never trimmed and never counted: they pay at and after the cap.
+    for (let i = 0; i < 12; i += 1) assert.equal((await payGamesBotWin(client, GUILD, SELF.id, 'group', now)).amount, 2000);
+    assert.equal((await client.db.get(getEconomyKey(economyScopeId, SELF.id))).cc, before + 20000 + 24000);
+    assert.equal((await client.db.get(getEconomyKey(economyScopeId, SELF.id))).ccGamesBot.earned, 20000);
     assert.equal(await handleGamesBotWin({ ...answer, author: { bot: true, id: '5' }, guildId: GUILD }), false);
+    // The notices through the hook: an answer at the cap names the new cap, a group win still pays.
+    const replies = [];
+    const notice = (id, description) => ({ ...answer, id, guildId: GUILD, client, embeds: [{ description }], reply: async (payload) => { replies.push(payload.content); } });
+    const originalNow = Date.now;
+    Date.now = () => now;
+    try {
+        assert.equal(await handleGamesBotWin(notice('700000000000000001', answer.embeds[0].description)), true);
+        assert.equal(await handleGamesBotWin(notice('700000000000000002', `👑 | <@${SELF.id}>`)), true);
+    } finally { Date.now = originalNow; }
+    assert.match(replies[0], /وصلت لحد الـ CC من الألعاب النهارده \(20,000 CC\)/u);
+    assert.match(replies[1], /كسب \+\*\*2,000\*\*/u);
+    // The next UTC day pays answers again.
+    assert.equal((await payGamesBotWin(client, GUILD, SELF.id, 'answer', now + 86_400_000)).amount, 500);
 });

@@ -7,7 +7,8 @@ import { logger } from '../../utils/logger.js';
 // Pays CC for wins announced by the games bot (Clover): `👑 | @winner` (group game) and
 // `✅ | قام @member بكتابة الاجابة الصحيحة ...` (first to type the answer). Moved here from DISbot.
 // Only the games bot application IDs count (GAMES_BOT_IDS in .env, default = Clover), each message pays once,
-// and a member gets at most CC.gamesBot.dailyCap per UTC day, shared with the native chat games (gamesPayout.js).
+// a group win (`👑`) always pays CC.gamesBot.win (no limit, not counted), and the answer wins pay at most
+// CC.gamesBot.dailyCap a member per UTC day, shared with the native chat games (gamesPayout.js).
 export const CLOVER_BOT_ID = '1006332825571692544';
 const WIN_MESSAGE = /^\s*👑️?\s*\|?\s*<@!?(\d{17,20})>\s*$/mu;
 const ANSWER_MESSAGE = /^\s*(?:✅️?|<a?:\w+:\d+>)?\s*\|?\s*قام\s+<@!?(\d{17,20})>\s+بكتابة\s+ال[اإأ]جابة\s+الصحيحة/mu;
@@ -28,7 +29,7 @@ export function parseWin(message) {
     return answer ? { userId: answer, kind: 'answer' } : null;
 }
 
-/** Pays one win. Returns `{ amount, balance }` (amount 0 once today's cap is reached). The shared capped payout. */
+/** Pays one win. Returns `{ amount, balance }` (an answer win: amount 0 once today's cap is reached). The shared payout. */
 export function payGamesBotWin(client, guildId, userId, kind, now = Date.now()) {
     return payGamesWin(client, guildId, userId, kind, now);
 }

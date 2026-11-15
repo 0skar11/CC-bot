@@ -2,7 +2,7 @@ import { MessageFlags } from 'discord.js';
 import { isAllowedGuild, isCasinoChannel, isCommandChannel } from '../config/runtime.js';
 import { isBourseGuildCommand, BOURSE_GUILD_BUTTONS, BOURSE_GUILD_NOTICE } from '../config/bourseGuild.js';
 import { CASINO_COMMAND, CASINO_BUTTON_PREFIX, casinoChannelNotice } from '../config/casino.js';
-import { GAMES_BUTTON_PREFIX, isGamesChannel } from '../config/games.js';
+import { GAMES_BUTTON_PREFIX } from '../config/games.js';
 import { casinoErrorText } from '../services/cc/casinoUi.js';
 import { interactionLanguage } from '../services/cc/lang.js';
 import { logger } from '../utils/logger.js';
@@ -15,8 +15,10 @@ function isCasinoInteraction(interaction) {
     if (interaction.isChatInputCommand?.()) return interaction.commandName === CASINO_COMMAND;
     return Boolean(interaction.isButton?.() || interaction.isModalSubmit?.()) && String(interaction.customId || '').split(':')[0] === CASINO_BUTTON_PREFIX;
 }
-// The chat games' lobby buttons work in the games rooms (GAMES_CHANNEL_IDS, or the bot's channels).
+// The chat games' lobby buttons work in any text channel of an allowed guild: a game can be started in any channel
+// (by a trusted member, src/games/router.js), and any member there may join it.
 const isGamesButton = (interaction) => Boolean(interaction.isButton?.()) && String(interaction.customId || '').split(':')[0] === GAMES_BUTTON_PREFIX;
+const isTextChannel = (interaction) => Boolean(interaction.channelId) && (typeof interaction.channel?.isTextBased !== 'function' || interaction.channel.isTextBased());
 export default {
     name: 'interactionCreate',
     async execute(interaction, client) {
@@ -26,7 +28,7 @@ export default {
         if (casino) {
             if (!isCasinoChannel(interaction.channel, interaction.channelId)) return refused(interaction, casinoChannelNotice(interactionLanguage(interaction)));
         } else if (isGamesButton(interaction)) {
-            if (!isGamesChannel(interaction.channel, interaction.channelId)) return refused(interaction);
+            if (!isTextChannel(interaction)) return refused(interaction);
         } else if (!isCommandChannel(interaction.isChatInputCommand?.() ? interaction.commandName : '', interaction.channel, interaction.channelId)) return refused(interaction);
         try {
             if (interaction.isChatInputCommand()) {

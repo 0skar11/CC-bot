@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { GAMES, gamesChannelIds } from '../src/config/games.js';
+import { DEFAULT_OPEN_GAMES_CHANNEL_ID, GAMES, gamesChannelIds, openGamesChannelIds, trustedRoleIds, trustedUserIds } from '../src/config/games.js';
 import { economyScopeId, prefix } from '../src/config/runtime.js';
+import interactionCreate from '../src/events/interactionCreate.js';
 import messageCreate from '../src/events/messageCreate.js';
+import loadInteractions from '../src/handlers/loaders/interactions.js';
 import { default as bourse } from '../src/commands/Games/bourse.js';
 import { handleLobbyButton } from '../src/games/engine/lobby.js';
 import { addPoints, getPoints } from '../src/games/engine/points.js';
@@ -51,16 +53,22 @@ registerGame({ id: 'stuck', kind: 'single', names: { ar: ['معلق'], en: ['stu
 afterEach(() => {
     abortAll('test');
     gamesChannelIds.clear();
+    trustedUserIds.clear();
+    trustedRoleIds.clear();
+    openGamesChannelIds.clear();
+    openGamesChannelIds.add(DEFAULT_OPEN_GAMES_CHANNEL_ID);
 });
 
 test('a games command needs the PREFIX or a dot and then a game word; plain chat never starts a game', async () => {
     assert.deepEqual(parseGamesCommand('.تجربة'), { word: 'تجربة', args: [] });
     assert.deepEqual(parseGamesCommand(`${prefix}نقاط <@1>`), { word: 'نقاط', args: ['<@1>'] });
-    assert.deepEqual(parseGamesCommand(`${prefix} test`), { word: 'test', args: [] });
+    // A space after the PREFIX or the dot is not a command (`. top`, `! test`).
+    for (const content of [`${prefix} test`, '. top', '.  توب', `${prefix}\ttest`]) assert.equal(parseGamesCommand(content), null, content);
+    assert.deepEqual(parseGamesCommand(`  .top  `), { word: 'top', args: [] });
     for (const content of ['تجربة', 'test', '', '.', 'hello .test']) assert.equal(parseGamesCommand(content)?.word === 'test' || parseGamesCommand(content)?.word === 'تجربة', false, content);
     const { client, ran } = setup();
     const room = newRoom();
-    for (const content of ['تجربة', 'test', 'توب', 'top', 'نقاط', 'اوامر', 'commands', 'convert 10', 'تجربة يا جماعة', '..تجربة', `${prefix}تجربة يا جماعة`, '. hello', '.hello', '.تجربةة']) {
+    for (const content of ['تجربة', 'test', 'توب', 'top', 'نقاط', 'اوامر', 'commands', 'convert 10', 'تجربة يا جماعة', '..تجربة', `${prefix}تجربة يا جماعة`, '. hello', '.hello', '.تجربةة', '. تجربة', `${prefix} تجربة`, '. top', `${prefix} test`]) {
         await say(client, room, content, ALICE, { admin: true });
     }
     assert.equal(room.sent.length, 0);
@@ -119,18 +127,119 @@ test('an English word answers in English, and abortAll ends a running game witho
     assert.equal(isBusy(room.id), false);
 });
 
-test('a member who is not an event admin cannot start an admin or group game (one notice per few seconds)', async () => {
+test('a member who is not trusted gets no reply at all for a game word in a normal channel', async () => {
+    const { client, ran } = setup();
+    const room = newRoom();
+    for (const content of ['.تجربة', `${prefix}test`, `${prefix}جماعي`, '.grouptest', '.انفجار', '.boom']) {
+        assert.equal(await handleGamesMessage(typed(room, content, BOB), client), true, `${content} is consumed`);
+        await say(client, room, content, BOB);
+    }
+    await flush();
+    assert.deepEqual([room.sent.length, room.replies.length, isBusy(room.id)], [0, 0, false]);
+    assert.deepEqual(ran, [], 'and nothing else in the bot answers it');
+});
+
+test('a trusted member starts any game in a normal channel: Manage Server, TRUSTED_USER_IDS or TRUSTED_ROLE_IDS', async () => {
     const { client } = setup();
     const room = newRoom();
-    for (const content of ['.تجربة', '.تجربة', `${prefix}جماعي`, '.grouptest']) await say(client, room, content, BOB);
-    assert.equal(room.replies.length, 1, 'the same notice is not repeated at once');
-    assert.match(replyText(room.replies[0]), /للأدمن ومنظمين الفعاليات بس/u);
-    assert.equal(isBusy(room.id), false);
-    assert.equal(room.sent.length, 0);
+    await say(client, room, '.انفجار', ALICE, { admin: true });
+    await getSession(room.id)?.running;
+    assert.match(textOf(room.sent.at(-1)), /حصل خطأ في اللعبة واتقفلت/u, 'the game ran');
+    trustedUserIds.add(BOB.id);
+    await say(client, room, '.تجربة', BOB);
+    assert.equal(getSession(room.id)?.gameId, 'test', 'a trusted user starts even the sample game');
+    abortAll('test');
+    trustedUserIds.clear();
+    const TRUSTED_ROLE = '300000000000000088';
+    trustedRoleIds.add(TRUSTED_ROLE);
+    const member = { id: CAROL.id, user: CAROL, permissions: { has: () => false }, roles: { cache: new Map([[TRUSTED_ROLE, { id: TRUSTED_ROLE }]]) } };
+    const other = newRoom();
+    await say(client, other, '.جماعي', CAROL, { extra: { member } });
+    assert.equal(getSession(other.id)?.gameId, 'grouptest');
+    assert.equal(other.replies.length, 0);
+});
+
+test('in the open channel anyone may start a game (default ID, or OPEN_GAMES_CHANNEL_IDS); the sample game stays trusted-only', async () => {
+    const { client } = setup();
+    assert.ok(openGamesChannelIds.has(DEFAULT_OPEN_GAMES_CHANNEL_ID), 'the default when OPEN_GAMES_CHANNEL_IDS is empty');
+    const open = fakeChannel(DEFAULT_OPEN_GAMES_CHANNEL_ID);
+    await say(client, open, '.انفجار', BOB);
+    await getSession(open.id)?.running;
+    assert.match(textOf(open.sent.at(-1)), /حصل خطأ في اللعبة واتقفلت/u, 'a member started a game');
+    // A channel in an open category is open too.
+    const inCategory = fakeChannel('400000000000000901', { parentId: DEFAULT_OPEN_GAMES_CHANNEL_ID });
+    await say(client, inCategory, '.boom', BOB);
+    await getSession(inCategory.id)?.running;
+    assert.match(textOf(inCategory.sent.at(-1)), /Something went wrong, the game was closed/u);
+    // The sample game: one short notice per few seconds, even here.
+    const before = open.sent.length;
+    for (const content of ['.تجربة', '.تجربة', `${prefix}test`]) await say(client, open, content, BOB);
+    assert.equal(open.replies.length, 1, 'the same notice is not repeated at once');
+    assert.match(replyText(open.replies[0]), /للأدمن ومنظمين الفعاليات بس/u);
     const clock = fakeClock(Date.now() + GAMES.noticeGapMs + 1);
-    await handleGamesMessage(typed(room, '.grouptest', BOB), client, { clock });
-    assert.equal(room.replies.length, 2);
-    assert.match(replyText(room.replies[1]), /for admins and event hosts only/u);
+    await handleGamesMessage(typed(open, '.test', BOB), client, { clock });
+    assert.match(replyText(open.replies[1]), /for admins and event hosts only/u);
+    assert.deepEqual([open.sent.length, isBusy(open.id)], [before, false]);
+    // OPEN_GAMES_CHANNEL_IDS replaces the default.
+    const custom = newRoom();
+    openGamesChannelIds.clear();
+    openGamesChannelIds.add(custom.id);
+    await say(client, open, '.انفجار', BOB);
+    assert.equal(open.sent.length, before, 'the default channel is no longer open');
+    await say(client, custom, '.انفجار', BOB);
+    await getSession(custom.id)?.running;
+    assert.match(textOf(custom.sent.at(-1)), /حصل خطأ في اللعبة واتقفلت/u);
+});
+
+test('a group game in the open channel follows the lobby minimum, and any member there can join', async () => {
+    const { client } = setup();
+    const open = fakeChannel(DEFAULT_OPEN_GAMES_CHANNEL_ID);
+    const clock = fakeClock();
+    await handleGamesMessage(typed(open, '.جماعي', BOB), client, { clock });
+    await flush();
+    const session = getSession(open.id);
+    await clock.advance(5000);
+    await session.running;
+    assert.deepEqual(session.data.lobby, { cancelled: true, reason: 'players', players: [BOB.id] });
+    await handleGamesMessage(typed(open, '.جماعي', BOB), client, { clock });
+    await flush();
+    const second = getSession(open.id);
+    const [, , lobbyId] = open.sent.at(-1).payload.components[0].toJSON().components[0].custom_id.split(':');
+    await handleLobbyButton(press(`g:join:${lobbyId}`, CAROL), ['join', lobbyId]);
+    await clock.advance(5000);
+    await second.running;
+    assert.deepEqual(second.data.lobby, { players: [BOB.id, CAROL.id], reason: 'time' });
+    assert.equal(second.data.reward.amount, 2000);
+});
+
+test('the general commands answer every member in a normal channel, trusted or not', async () => {
+    const { client } = setup();
+    const room = newRoom();
+    for (const content of ['.توب', '.نقاط', '.اوامر', '.convert 10']) await say(client, room, content, BOB);
+    assert.equal(room.sent.length, 4);
+});
+
+test('a lobby button works through interactionCreate in a channel outside GAMES_CHANNEL_IDS, for a member who is not trusted', async () => {
+    const { client } = setup();
+    await loadInteractions(client);
+    const room = newRoom();
+    gamesChannelIds.add('400000000000000999');
+    const clock = fakeClock();
+    await handleGamesMessage(typed(room, '.جماعي', ALICE, { admin: true }), client, { clock });
+    await flush();
+    const session = getSession(room.id);
+    const lobbyMessage = room.sent.at(-1);
+    const [, , lobbyId] = lobbyMessage.payload.components[0].toJSON().components[0].custom_id.split(':');
+    const interaction = {
+        ...press(`g:join:${lobbyId}`, BOB, lobbyMessage), guildId: GUILD, channelId: room.id, channel: { id: room.id, isTextBased: () => true },
+        isChatInputCommand: () => false, isButton: () => true, isModalSubmit: () => false, isRepliable: () => true,
+    };
+    interaction.reply = async (payload) => { interaction.replies.push(payload); };
+    interaction.update = async (payload) => { interaction.updates.push(payload); };
+    await interactionCreate.execute(interaction, client);
+    await clock.advance(5000);
+    await session.running;
+    assert.deepEqual(session.data.lobby, { players: [ALICE.id, BOB.id], reason: 'time' });
 });
 
 test('a group game opens a lobby: too few players cancels it, enough players get a group win', async () => {
@@ -156,24 +265,24 @@ test('a group game opens a lobby: too few players cancels it, enough players get
     await clock.advance(5000);
     await second.running;
     assert.deepEqual(second.data.lobby, { players: [ALICE.id, CAROL.id], reason: 'time' });
-    assert.deepEqual([second.data.reward.amount, second.data.reward.points], [2500, 5]);
+    assert.deepEqual([second.data.reward.amount, second.data.reward.points], [2000, 5]);
     assert.equal((await getPoints(client, '100000000000000002', CAROL.id)).server.byGame.grouptest, 1);
 });
 
 test('a game that throws gets a short error line and frees the room; a stuck game is closed by the lifetime', async () => {
     const { client } = setup();
     const room = newRoom();
-    await say(client, room, '.انفجار', ALICE);
+    await say(client, room, '.انفجار', ALICE, { admin: true });
     await getSession(room.id)?.running;
     await flush();
     assert.match(textOf(room.sent.at(-1)), /حصل خطأ في اللعبة واتقفلت/u);
     assert.equal(isBusy(room.id), false);
-    await say(client, room, '.boom', ALICE);
+    await say(client, room, '.boom', ALICE, { admin: true });
     await flush();
     assert.match(textOf(room.sent.at(-1)), /Something went wrong, the game was closed/u);
     assert.equal(isBusy(room.id), false);
     const clock = fakeClock();
-    await handleGamesMessage(typed(room, '.معلق', ALICE), client, { clock });
+    await handleGamesMessage(typed(room, '.معلق', ALICE, { admin: true }), client, { clock });
     assert.equal(isBusy(room.id), true);
     await clock.advance(GAMES.maxLifetimeMs);
     assert.equal(isBusy(room.id), false);
@@ -191,7 +300,8 @@ test('the general commands: commands list, server and global tops, points and co
     assert.match(all, /`\.تجربة` `\.test` — تجربة للأدمن/u);
     assert.match(all, /`\.توب` `\.top`/u);
     assert.match(all, /`\.تحويل_نقاط` `\.convert`/u);
-    assert.match(all, /👥 `\.جماعي` `\.grouptest` ・ 👥 2-4 ・ 🛡️ للأدمن/u);
+    assert.match(all, /👥 `\.جماعي` `\.grouptest` ・ 👥 2-4(?! ・ 🛡️)/u, 'group games are no longer admin-only');
+    assert.match(all, /`\.تجربة` `\.test` — [^\n]* ・ 🛡️ للأدمن/u, 'the sample game still is');
     assert.match(list.footer.text, /إجابة صح: \*\*500\*\* CC/u);
     assert.ok(list.fields.every((field) => field.value.length <= 1024));
     await say(client, room, `${prefix}commands`);
@@ -260,16 +370,19 @@ test('a picture captioned with a game word is not a games command', async () => 
     assert.equal(isBusy(room.id), false);
 });
 
-test('with GAMES_CHANNEL_IDS the games run only there; the general commands also answer in the bot channels', async () => {
+test('GAMES_CHANNEL_IDS no longer limits a trusted member; the general commands answer there and in the bot channels', async () => {
     const { client } = setup();
     const lobby = newRoom();
     const games = newRoom();
     gamesChannelIds.add(games.id);
     await say(client, lobby, '.تجربة', ALICE, { admin: true });
-    assert.equal(isBusy(lobby.id), false);
-    assert.equal(lobby.sent.length + lobby.replies.length, 0);
-    await say(client, lobby, '.توب', ALICE);
-    assert.equal(lobby.sent.length, 1);
-    await say(client, games, '.تجربة', ALICE, { admin: true });
-    assert.equal(isBusy(games.id), true);
+    assert.equal(isBusy(lobby.id), true, 'a trusted member starts a game outside GAMES_CHANNEL_IDS');
+    abortAll('test');
+    await say(client, lobby, '.توب', BOB);
+    assert.equal(lobby.sent.at(-1).payload.embeds[0].title.includes('توب'), true);
+    await say(client, games, '.توب', BOB);
+    assert.equal(games.sent.length, 1);
+    // A member who is not trusted cannot start a game in a GAMES_CHANNEL_IDS room that is not open.
+    await say(client, games, '.انفجار', BOB);
+    assert.deepEqual([games.sent.length, games.replies.length, isBusy(games.id)], [1, 0, false]);
 });

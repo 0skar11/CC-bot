@@ -3,21 +3,25 @@
 // after normalize()), is a games command, so plain chat never starts a game; the words that may follow are the
 // game's acceptArgs (none by default), anything else goes on to the rest of the bot unchanged (`!توب cc` is still
 // cctop, `!توب ستريك` the streak top). A picture or sticker post is never a command (it may count for the streak).
-// - General commands (`اوامر`, `توب`, `نقاط`...) answer at once, in the games rooms or the bot's channels.
-// - Games run in the games rooms (GAMES_CHANNEL_IDS, or the bot's channels), one per room. Group games and the
-//   games marked eventAdminOnly need an event admin (engine/admin.js). A game word in a busy room gets one short
-//   "a game is running" reply per member for that game; a non-admin gets the admin notice at most every
-//   GAMES.noticeGapMs.
+// - General commands (`اوامر`, `توب`, `نقاط`...) answer at once for everyone, in the games rooms
+//   (GAMES_CHANNEL_IDS, or the bot's channels) or the bot's channels.
+// - Games (any kind) are started by a trusted member (engine/admin.js isTrustedMember) in any channel of an allowed
+//   guild, and by anyone in the open channels (OPEN_GAMES_CHANNEL_IDS, src/config/games.js), one game per room.
+//   A member who is not trusted typing a game word anywhere else gets no reply at all (the message is consumed),
+//   so the room stays clean. The games marked eventAdminOnly (the sample game `test`) need a trusted member even in
+//   an open channel: there a member who is not trusted gets the admin notice at most every GAMES.noticeGapMs.
+//   Group games keep their lobby minimum (minPlayers). A game word in a busy room gets one short "a game is
+//   running" reply per member for that game.
 // - The game runs detached from the message handler: its session holds the room until run() returns (or the safety
 //   lifetime ends it), and any error is logged with a short line in the room, never thrown.
 
 import { ccEmbed } from '../config/cc.js';
 import { commandArgAliases } from '../config/commands/commandAliases.js';
-import { GAMES, isGamesChannel } from '../config/games.js';
-import { isAllowedChannel } from '../config/runtime.js';
+import { GAMES, isGamesChannel, isOpenGamesChannel } from '../config/games.js';
+import { isAllowedChannel, isAllowedGuild } from '../config/runtime.js';
 import { inLang, wordLanguage } from '../services/cc/lang.js';
 import { logger } from '../utils/logger.js';
-import { isEventAdmin } from './engine/admin.js';
+import { isTrustedMember } from './engine/admin.js';
 import { openLobby } from './engine/lobby.js';
 import { postIn, replyTo } from './engine/payload.js';
 import { rewardWin } from './engine/rewards.js';
@@ -54,10 +58,13 @@ function noticeDue(key, now) {
     return true;
 }
 
-/** `{ word, args }` when `content` starts with the PREFIX or a dot and a word, else null (nothing is looked up). */
+/**
+ * `{ word, args }` when `content` starts with the PREFIX or a dot directly followed by a word (`.top`, not `. top`),
+ * else null (nothing is looked up).
+ */
 export function parseGamesCommand(content) {
     const text = String(content ?? '').trim();
-    const start = GAMES.prefixes.find((word) => text.startsWith(word));
+    const start = GAMES.prefixes.find((word) => text.startsWith(word) && /^\S/u.test(text.slice(word.length)));
     if (!start) return null;
     const [word = '', ...args] = text.slice(start.length).trim().split(/\s+/u);
     return word ? { word, args } : null;
@@ -110,16 +117,22 @@ export async function handleGamesMessage(message, client, { clock = realClock, r
         const channelId = message.channelId || message.channel?.id;
         if (!channelId || typeof message.channel?.send !== 'function') return false;
         const general = game.kind === 'general';
-        if (!isGamesChannel(message.channel, channelId) && !(general && isAllowedChannel(message.channel, channelId))) return false;
+        if (general) {
+            if (!isGamesChannel(message.channel, channelId) && !isAllowedChannel(message.channel, channelId)) return false;
+            claimed = true;
+            lang = wordLanguage(command.word);
+            await game.run(buildContext({ client, message, game, args: command.args, lang, random }));
+            return true;
+        }
+        if (!isAllowedGuild(message.guildId || message.guild?.id)) return false;
+        const trusted = isTrustedMember(message.member);
+        // Not trusted outside an open channel: no reply at all, and the message goes nowhere else.
+        if (!trusted && !isOpenGamesChannel(message.channel, channelId)) return true;
         claimed = true;
         lang = wordLanguage(command.word);
         const ctx = buildContext({ client, message, game, args: command.args, lang, random });
-        if (general) {
-            await game.run(ctx);
-            return true;
-        }
         const userId = message.author.id;
-        if (game.eventAdminOnly && !isEventAdmin(message.member)) {
+        if (game.eventAdminOnly && !trusted) {
             if (noticeDue(`${userId}:admin`, clock.now())) await replyTo(message, say(lang).admin);
             return true;
         }

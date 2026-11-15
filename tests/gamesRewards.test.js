@@ -8,43 +8,73 @@ import { getEconomyKey, getGamesGlobalKey, getGamesPointsKey } from '../src/util
 import { PostgreSQLDatabase } from '../src/utils/postgresDatabase.js';
 import { payGamesBotWin } from '../src/services/cc/gamesBotService.js';
 import { addPoints, getPoints, readScore, topGlobal, topServer } from '../src/games/engine/points.js';
-import { convertPoints, rewardWin, winPayload } from '../src/games/engine/rewards.js';
+import { convertLimitNotice, convertPoints, rewardWin, winPayload } from '../src/games/engine/rewards.js';
 import { createSnapshot } from '../scripts/lib/bourseBackup.js';
 import { ALICE, BOB, CAROL, GUILD, OTHER_GUILD, fakeClient, fakeDb } from './gamesFakes.js';
 
 const NOW = Date.parse('2026-11-15T10:00:00Z');
 const balance = async (client, userId) => (await client.db.get(getEconomyKey(economyScopeId, userId), {})).cc ?? 0;
 
-test('a win pays the Clover amounts (500 answer, 2500 group) and adds points (1, 5) and a win for the game', async () => {
+test('the rewards: 500 an answer within 20,000 a day, 2,000 a group win with no limit', () => {
+    assert.deepEqual(CC.gamesBot, { win: 2000, answer: 500, dailyCap: 20000 });
+});
+
+test('a win pays the Clover amounts (500 answer, 2000 group) and adds points (1, 5) and a win for the game', async () => {
     const client = fakeClient();
     const answer = await rewardWin(client, GUILD, ALICE.id, 'answer', 'test', { now: NOW });
     assert.deepEqual(answer, { ok: true, amount: 500, balance: 500, points: 1, totalPoints: 1, wins: 1, capped: false });
     const group = await rewardWin(client, GUILD, ALICE.id, 'group', 'race', { now: NOW });
-    assert.deepEqual(group, { ok: true, amount: 2500, balance: 3000, points: 5, totalPoints: 6, wins: 2, capped: false });
+    assert.deepEqual(group, { ok: true, amount: 2000, balance: 2500, points: 5, totalPoints: 6, wins: 2, capped: false });
     const { server, global } = await getPoints(client, GUILD, ALICE.id);
     assert.deepEqual(server, { points: 6, wins: 2, byGame: { test: 1, race: 1 }, converted: 0 });
     assert.deepEqual(global, server);
-    assert.equal(await balance(client, ALICE.id), 3000);
+    assert.equal(await balance(client, ALICE.id), 2500);
+    // Only the answer counts toward the daily cap.
+    assert.deepEqual((await client.db.get(getEconomyKey(economyScopeId, ALICE.id))).ccGamesBot, { day: '2026-11-15', earned: 500 });
     await assert.rejects(rewardWin(client, GUILD, ALICE.id, 'jackpot'), /Unknown win kind/u);
+});
+
+test('group wins are not counted in the daily cap: any number of them still leaves the whole cap for answers', async () => {
+    const client = fakeClient();
+    for (let i = 0; i < 15; i += 1) assert.equal((await rewardWin(client, GUILD, BOB.id, 'group', 'race', { now: NOW })).amount, 2000);
+    assert.equal(await balance(client, BOB.id), 30_000, 'more than the daily cap, from group games alone');
+    assert.equal((await client.db.get(getEconomyKey(economyScopeId, BOB.id))).ccGamesBot, undefined, 'nothing counted');
+    for (let i = 0; i < 40; i += 1) assert.equal((await rewardWin(client, GUILD, BOB.id, 'answer', 'test', { now: NOW })).amount, 500);
+    assert.equal(await balance(client, BOB.id), 30_000 + CC.gamesBot.dailyCap);
+    assert.equal((await rewardWin(client, GUILD, BOB.id, 'answer', 'test', { now: NOW })).amount, 0);
+});
+
+test('a group win pays 2000 even at and after the daily cap, and is not trimmed', async () => {
+    const client = fakeClient();
+    await client.db.set(getEconomyKey(economyScopeId, ALICE.id), { cc: 0, ccGamesBot: { day: '2026-11-15', earned: CC.gamesBot.dailyCap - 100 } });
+    const near = await rewardWin(client, GUILD, ALICE.id, 'group', 'race', { now: NOW });
+    assert.deepEqual([near.amount, near.capped], [2000, false]);
+    assert.equal((await rewardWin(client, GUILD, ALICE.id, 'answer', 'test', { now: NOW })).amount, 100, 'the answer is trimmed to 20,000');
+    const after = await rewardWin(client, GUILD, ALICE.id, 'group', 'race', { now: NOW });
+    assert.deepEqual([after.amount, after.capped], [2000, false]);
+    assert.equal((await payGamesBotWin(client, GUILD, ALICE.id, 'group', NOW)).amount, 2000, 'Clover group wins too');
+    assert.equal(await balance(client, ALICE.id), 6100);
+    assert.deepEqual((await client.db.get(getEconomyKey(economyScopeId, ALICE.id))).ccGamesBot, { day: '2026-11-15', earned: CC.gamesBot.dailyCap });
+    assert.match(winPayload('ar', ALICE.id, after, 'group').content, /كسب اللعبة! \+\*\*2,000\*\* 🌀 CC/u);
 });
 
 test('the daily cap is shared with the Clover payout, and points still come once the CC cap is reached', async () => {
     const client = fakeClient();
-    // Clover already paid 49,800 CC today.
-    for (let i = 0; i < 19; i += 1) await payGamesBotWin(client, GUILD, BOB.id, 'group', NOW);
-    for (let i = 0; i < 3; i += 1) await payGamesBotWin(client, GUILD, BOB.id, 'answer', NOW);
-    assert.equal(await balance(client, BOB.id), 49_000);
+    // Clover already paid 19,000 CC of answers today (and group wins, which do not count).
+    for (let i = 0; i < 5; i += 1) await payGamesBotWin(client, GUILD, BOB.id, 'group', NOW);
+    for (let i = 0; i < 38; i += 1) await payGamesBotWin(client, GUILD, BOB.id, 'answer', NOW);
+    assert.equal(await balance(client, BOB.id), 10_000 + 19_000);
     assert.equal((await rewardWin(client, GUILD, BOB.id, 'answer', 'test', { now: NOW })).amount, 500);
     const last = await rewardWin(client, GUILD, BOB.id, 'answer', 'test', { now: NOW });
     assert.equal(last.amount, 500);
-    const capped = await rewardWin(client, GUILD, BOB.id, 'group', 'race', { now: NOW });
-    assert.deepEqual([capped.amount, capped.capped, capped.points, capped.totalPoints], [0, true, 5, 7]);
-    assert.equal(await balance(client, BOB.id), CC.gamesBot.dailyCap);
+    const capped = await rewardWin(client, GUILD, BOB.id, 'answer', 'test', { now: NOW });
+    assert.deepEqual([capped.amount, capped.capped, capped.points, capped.totalPoints], [0, true, 1, 3]);
+    assert.equal(await balance(client, BOB.id), 10_000 + CC.gamesBot.dailyCap);
     // ...and Clover is capped too, since the native wins counted.
     assert.equal((await payGamesBotWin(client, GUILD, BOB.id, 'answer', NOW)).amount, 0);
     // The next UTC day pays again.
     assert.equal((await rewardWin(client, GUILD, BOB.id, 'answer', 'test', { now: NOW + 86_400_000 })).amount, 500);
-    assert.match(winPayload('ar', BOB.id, capped, 'group').content, /كسب اللعبة.*وصلت لحد الـ CC من الألعاب النهارده \(50,000 CC\)/u);
+    assert.match(winPayload('ar', BOB.id, capped).content, /جاوب صح!.*وصلت لحد الـ CC من الألعاب النهارده \(20,000 CC\)/u);
     assert.match(winPayload('ar', BOB.id, last).content, /جاوب صح! \+\*\*500\*\* 🌀 CC ・ \+\*\*1\*\* نقطة ・ رصيدك/u);
     assert.match(winPayload('en', BOB.id, last).content, /got it right!/u);
     assert.deepEqual(winPayload('ar', BOB.id, last).allowedMentions, { parse: [] });
@@ -114,14 +144,73 @@ test('convert turns the server points into CC (100 each, at least 5) and takes t
     assert.deepEqual(await convertPoints(client, GUILD, ALICE.id, 4), { ok: false, reason: 'min', min: 5 });
     assert.deepEqual(await convertPoints(client, GUILD, ALICE.id, 13), { ok: false, reason: 'not_enough', have: 12, min: 5 });
     assert.deepEqual(await convertPoints(client, OTHER_GUILD, ALICE.id, 5), { ok: false, reason: 'not_enough', have: 4, min: 5 });
-    const done = await convertPoints(client, GUILD, ALICE.id, 10);
-    assert.deepEqual(done, { ok: true, points: 10, amount: 10 * GAMES.convert.ccPerPoint, balance: 1000, left: 2 });
+    const done = await convertPoints(client, GUILD, ALICE.id, 10, { now: NOW });
+    assert.deepEqual(done, { ok: true, points: 10, requested: 10, amount: 10 * GAMES.convert.ccPerPoint, balance: 1000, left: 2, trimmed: false });
     const { server, global } = await getPoints(client, GUILD, ALICE.id);
     assert.deepEqual([server.points, server.wins, server.converted], [2, 1, 10]);
     assert.deepEqual([global.points, global.wins, global.converted], [6, 2, 10]);
     assert.equal(await balance(client, ALICE.id), 1000);
-    // A conversion does not count toward the games' daily cap.
+    // The conversion counts toward the games' daily cap, like a win.
+    assert.deepEqual((await client.db.get(getEconomyKey(economyScopeId, ALICE.id))).ccGamesBot, { day: '2026-11-15', earned: 1000 });
     assert.equal((await rewardWin(client, GUILD, ALICE.id, 'answer', 'test', { now: NOW })).amount, 500);
+});
+
+test('a conversion is paid from the same daily cap as the wins: trimmed to whole points, nothing at the cap', async () => {
+    const client = fakeClient();
+    const cap = CC.gamesBot.dailyCap;
+    const rate = GAMES.convert.ccPerPoint;
+    // 19,750 CC of games CC already paid today: 250 CC of cap left = 2 whole points.
+    await client.db.set(getEconomyKey(economyScopeId, ALICE.id), { cc: 0, ccGamesBot: { day: '2026-11-15', earned: cap - 250 } });
+    await addPoints(client, GUILD, ALICE.id, 20);
+    const trimmed = await convertPoints(client, GUILD, ALICE.id, 10, { now: NOW });
+    assert.deepEqual(trimmed, { ok: true, points: 2, requested: 10, amount: 2 * rate, balance: 2 * rate, left: 18, trimmed: true });
+    assert.equal((await getPoints(client, GUILD, ALICE.id)).server.points, 18);
+    assert.equal((await getPoints(client, GUILD, ALICE.id)).global.points, 18);
+    assert.equal((await getPoints(client, GUILD, ALICE.id)).server.converted, 2);
+    assert.match(convertLimitNotice('en', trimmed), /Only \*\*2\*\* of \*\*10\*\*/u);
+    assert.match(convertLimitNotice('ar', trimmed), /2/u);
+    // 50 CC left: not one whole point, so nothing is paid and no point is taken.
+    const capped = await convertPoints(client, GUILD, ALICE.id, 5, { now: NOW });
+    assert.deepEqual(capped, { ok: false, reason: 'capped', min: GAMES.convert.minPoints, cap });
+    assert.deepEqual(await getPoints(client, GUILD, ALICE.id).then(({ server }) => [server.points, server.converted]), [18, 2]);
+    assert.equal(await balance(client, ALICE.id), 2 * rate);
+    assert.equal((await client.db.get(getEconomyKey(economyScopeId, ALICE.id))).ccGamesBot.earned, cap - 50);
+    assert.match(convertLimitNotice('en', capped), /today's games CC limit/u);
+    assert.match(convertLimitNotice('ar', capped), /وصلت لحد/u);
+    assert.equal(convertLimitNotice('en', { ok: true, trimmed: false }), null);
+    assert.equal(convertLimitNotice('en', { ok: false, reason: 'min' }), null);
+    // The wins of the same day are capped by the conversion too, and a new UTC day starts again.
+    assert.equal((await rewardWin(client, GUILD, ALICE.id, 'answer', 'test', { now: NOW })).amount, 50);
+    const tomorrow = await convertPoints(client, GUILD, ALICE.id, 5, { now: NOW + 86_400_000 });
+    assert.equal(tomorrow.amount, 5 * rate);
+    assert.equal(tomorrow.trimmed, false);
+});
+
+test('points cannot bypass the cap: wins plus conversions never pay more than the daily cap', async () => {
+    const client = fakeClient();
+    for (let i = 0; i < 120; i += 1) await rewardWin(client, GUILD, BOB.id, 'answer', 'test', { now: NOW });
+    assert.equal(await balance(client, BOB.id), CC.gamesBot.dailyCap);
+    const result = await convertPoints(client, GUILD, BOB.id, 120, { now: NOW });
+    assert.equal(result.reason, 'capped');
+    assert.equal(await balance(client, BOB.id), CC.gamesBot.dailyCap);
+    assert.equal((await getPoints(client, GUILD, BOB.id)).server.points, 120);
+});
+
+test('without transactions the points are taken before the CC: a failed points save never leaves free CC', async () => {
+    const client = fakeClient();
+    await addPoints(client, GUILD, ALICE.id, 8);
+    const set = client.db.set;
+    const order = [];
+    client.db.set = async (key, value) => {
+        order.push(key.includes(':economy:') ? 'cc' : 'points');
+        return key.includes(':games:') ? false : set(key, value);
+    };
+    await assert.rejects(convertPoints(client, GUILD, ALICE.id, 5, { now: NOW }), /Failed to save game points/u);
+    assert.equal(order[0], 'points', 'the points are written first');
+    assert.equal(order.includes('cc'), false, 'no CC is written when the points could not be taken');
+    client.db.set = set;
+    assert.equal(await balance(client, ALICE.id), 0);
+    assert.equal((await getPoints(client, GUILD, ALICE.id)).server.points, 8);
 });
 
 test('a conversion whose CC cannot be saved takes no points', async () => {
@@ -129,8 +218,9 @@ test('a conversion whose CC cannot be saved takes no points', async () => {
     await addPoints(client, GUILD, ALICE.id, 8);
     const set = client.db.set;
     client.db.set = async (key, value) => (key.includes(':economy:') ? false : set(key, value));
-    await assert.rejects(convertPoints(client, GUILD, ALICE.id, 5), /Failed to save CC/u);
-    assert.equal((await getPoints(client, GUILD, ALICE.id)).server.points, 8);
+    await assert.rejects(convertPoints(client, GUILD, ALICE.id, 5, { now: NOW }), /Failed to save CC/u);
+    // The points were taken first, then put back when the CC credit threw.
+    assert.deepEqual(await getPoints(client, GUILD, ALICE.id).then(({ server, global }) => [server.points, server.converted, global.points, global.converted]), [8, 0, 8, 0]);
 });
 
 test('two wins at the same time never overwrite each other', async () => {

@@ -156,7 +156,7 @@ test('deleting the question, ending the session or losing the room cancels the r
     const mute = setup();
     mute.channel.failSend = true;
     assert.deepEqual(await askRound(mute.ctx, { prompt: 'q', validate: () => true }), { cancelled: true, reason: 'send' });
-    assert.equal(mute.channel.collectors.length, 0);
+    assert.equal(mute.channel.live(), 0, 'the collector started before the post is stopped');
     await assert.rejects(askRound(mute.ctx, {}), /needs validate/u);
 });
 
@@ -171,4 +171,59 @@ test('many rounds in a row leave no listener behind', async () => {
     }
     assertClean(room);
     assert.equal(room.channel.collectors.length, 25);
+});
+
+test('an answer typed while the question is being posted still counts; one typed before the question never does', async () => {
+    const room = setup();
+    let release;
+    const posted = new Promise((resolve) => { release = resolve; });
+    const send = room.channel.send.bind(room.channel);
+    room.channel.send = async (payload) => {
+        await posted;
+        const message = await send(payload);
+        message.createdTimestamp = 2_000;
+        return message;
+    };
+    const round = askRound(room.ctx, { prompt: 'q', validate: (content) => content === 'a', timeMs: 10_000 });
+    await flush();
+    assert.equal(room.channel.live(), 1, 'the collector runs before the question is posted');
+    room.channel.emit(answer(ALICE, 'a', { createdTimestamp: 1_999 }));
+    room.channel.emit(answer(BOB, 'a', { createdTimestamp: 2_000 }));
+    release();
+    const result = await round;
+    assert.equal(result.winner.id, BOB.id);
+    assert.equal(result.elapsedMs, 0);
+    assertClean(room);
+});
+
+test('a room lost or a session ended while the question is being posted cancels the round and cleans up', async () => {
+    for (const end of ['room', 'session']) {
+        const room = setup();
+        let release;
+        const posted = new Promise((resolve) => { release = resolve; });
+        const send = room.channel.send.bind(room.channel);
+        room.channel.send = async (payload) => { await posted; return send(payload); };
+        const round = askRound(room.ctx, { prompt: 'q', validate: () => true, timeMs: 10_000 });
+        await flush();
+        if (end === 'room') room.channel.collectors[0].stop('channelDelete');
+        else room.session.end('shutdown');
+        release();
+        assert.deepEqual(await round, { cancelled: true, reason: end === 'room' ? 'channelDelete' : 'shutdown' });
+        assertClean(room);
+    }
+});
+
+test('a prompt payload with files (an image question, rendered while the round listens) is posted as is', async () => {
+    const room = setup();
+    const file = { name: 'q.png', attachment: Buffer.from('89504e470d0a1a0a', 'hex') };
+    const prompt = async () => ({ embeds: [{ title: 'سؤال', image: { url: 'attachment://q.png' } }], files: [file] });
+    const round = askRound(room.ctx, { prompt, validate: (content) => matches(content, 'القاهرة'), timeMs: 10_000 });
+    await flush();
+    const { payload } = room.channel.sent[0];
+    assert.deepEqual(payload.files, [file]);
+    assert.equal(payload.embeds[0].image.url, 'attachment://q.png');
+    assert.deepEqual(payload.allowedMentions, { parse: [] });
+    room.channel.emit(answer(BOB, 'القاهرة'));
+    assert.equal((await round).winner.id, BOB.id);
+    assertClean(room);
 });

@@ -1,5 +1,5 @@
-// round.js — the "first right answer wins" round every question game uses. askRound() posts the question, then
-// reads the room through a message collector: messages from bots, webhooks and system messages are ignored, one
+// round.js — the "first right answer wins" round every question game uses. askRound() starts a message collector, then
+// posts the question (answers typed while it is being posted count, those typed before it never do): messages from bots, webhooks and system messages are ignored, one
 // member's answers count at most once per GAMES.answerCooldownMs (faster ones are dropped), the answers are checked
 // one at a time in the order they arrived, and the first one validate() accepts wins. When the time runs out the
 // answer is shown (`reveal`). The collector, the timer and the delete listeners are always removed, whatever ends
@@ -45,21 +45,46 @@ async function revealPayload(reveal, lang) {
     return toPayload(reveal);
 }
 
+/** True when `message` was typed before `question` was posted (both timestamps known): it cannot be an answer. */
+const typedBefore = (message, question) => Number.isFinite(question?.createdTimestamp)
+    && Number.isFinite(message?.createdTimestamp) && message.createdTimestamp < question.createdTimestamp;
+
 export async function askRound(ctx, { prompt = null, validate, timeMs = GAMES.roundMs, reveal, cooldownMs = GAMES.answerCooldownMs } = {}) {
     if (typeof validate !== 'function') throw new TypeError('askRound needs validate(content, message)');
     const { session, channel, client } = ctx;
     if (!session || session.ended) return { cancelled: true, reason: session?.endReason || 'ended' };
     if (typeof channel?.createMessageCollector !== 'function') return { cancelled: true, reason: 'channel' };
+    const clock = session.clock;
+    const lang = ctx.lang;
+    // The collector starts BEFORE the question is posted, so an answer typed the moment it appears is never lost:
+    // until the post resolves the messages wait in `early` (with the time they came), then the ones typed before
+    // the question (createdTimestamp) are dropped and the rest are checked in order.
+    const collector = channel.createMessageCollector({ filter: (message) => isPlayerMessage(message) });
+    let early = [];
+    let endedEarly = null;
+    const collectEarly = (message) => early?.push({ message, at: clock.now() });
+    const endEarly = (_collected, reason) => { endedEarly = reason || 'channel'; };
+    collector.on('collect', collectEarly);
+    collector.on('end', endEarly);
+    const abandon = (result) => {
+        early = null;
+        try { collector.stop(result.reason); } catch { /* already stopped */ }
+        return result;
+    };
+
     let question = null;
     if (prompt !== null && prompt !== undefined) {
         try { question = await postIn(channel, prompt); } catch (error) {
             logger.warn(`[GAMES] Could not post a question: ${error.code || error.message}`);
-            return { cancelled: true, reason: 'send' };
+            return abandon({ cancelled: true, reason: 'send' });
         }
     }
-    if (session.ended) return { cancelled: true, reason: session.endReason };
-    const clock = session.clock;
-    const lang = ctx.lang;
+    if (session.ended) return abandon({ cancelled: true, reason: session.endReason });
+    if (endedEarly) return abandon({ cancelled: true, reason: endedEarly });
+    collector.off('collect', collectEarly);
+    collector.off('end', endEarly);
+    const waiting = early;
+    early = null;
 
     return new Promise((resolve) => {
         const startedAt = clock.now();
@@ -68,7 +93,6 @@ export async function askRound(ctx, { prompt = null, validate, timeMs = GAMES.ro
         let queue = Promise.resolve();
         let timer = null;
         let offEnd = () => {};
-        const collector = channel.createMessageCollector({ filter: (message) => isPlayerMessage(message) });
         const onDelete = (message) => { if (question && message?.id === question.id) finish({ cancelled: true, reason: 'deleted' }); };
         const onBulkDelete = (messages) => { if (question && messages?.has?.(question.id)) finish({ cancelled: true, reason: 'deleted' }); };
         const listening = Boolean(question) && typeof client?.on === 'function';
@@ -94,10 +118,9 @@ export async function askRound(ctx, { prompt = null, validate, timeMs = GAMES.ro
             if (stop(result.reason || (result.winner ? 'winner' : 'timeout'))) resolve(result);
         }
 
-        collector.on('collect', (message) => {
-            if (done) return;
+        function take(message, now) {
+            if (done || typedBefore(message, question)) return;
             const userId = message.author.id;
-            const now = clock.now();
             const last = lastTry.get(userId);
             if (last !== undefined && now - last < cooldownMs) return;
             lastTry.set(userId, now);
@@ -111,10 +134,12 @@ export async function askRound(ctx, { prompt = null, validate, timeMs = GAMES.ro
                 if (!accepted(verdict) || done) return;
                 finish({
                     winner: message.author, member: message.member ?? null, message,
-                    result: typeof verdict === 'object' ? verdict : null, elapsedMs: clock.now() - startedAt, prompt: question,
+                    result: typeof verdict === 'object' ? verdict : null, elapsedMs: Math.max(0, clock.now() - startedAt), prompt: question,
                 });
             });
-        });
+        }
+
+        collector.on('collect', (message) => take(message, clock.now()));
         // Ended from outside (the room or the server deleted): the round is cancelled.
         collector.on('end', (_collected, reason) => finish({ cancelled: true, reason: reason || 'channel' }));
         offEnd = session.onEnd((reason) => finish({ cancelled: true, reason }));
@@ -126,5 +151,7 @@ export async function askRound(ctx, { prompt = null, validate, timeMs = GAMES.ro
             } catch (error) { logger.warn(`[GAMES] Could not post the answer: ${error.code || error.message}`); }
             resolve({ timeout: true, prompt: question });
         }, timeMs);
+        // The answers typed while the question was being posted, in the order they came.
+        for (const { message, at } of waiting) take(message, at);
     });
 }

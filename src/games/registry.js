@@ -11,13 +11,14 @@
 //     names: { ar: ['اسرع'], en: ['fast'] },        typed after the PREFIX or a dot: `.اسرع`, `!fast`; one word each
 //     description: { ar: '...', en: '...' },        optional: the `اوامر` line
 //     minPlayers, maxPlayers,                       whole numbers; defaults single 1/1, dual 2/2, group GAMES.lobby
-//     eventAdminOnly: false,                        true: event admins only (always true for group games)
+//     eventAdminOnly: false,                        true: trusted members only, even in the open channels
 //     acceptArgs: (args) => args.length === 0,      optional: which words may follow the game word (default none);
 //                                                   anything else is left to the rest of the bot (`توب cc` stays cctop)
 //     async run(ctx) { ... },                       the game; the room is held until it returns (or 30 min)
 // };
-// The router (src/games/router.js) has already checked the room (GAMES_CHANNEL_IDS or the bot's channels), the event
-// admin rule and that the room is free, and started the session. ctx:
+// The router (src/games/router.js) has already checked who may start it where (a trusted member anywhere in an
+// allowed guild, anyone in the open channels OPEN_GAMES_CHANNEL_IDS; eventAdminOnly: trusted only) and that the room
+// is free, and started the session. ctx:
 //     client, message (the typed command), channel, guild, guildId, channelId,
 //     starter (the User who typed it), member (their GuildMember or null), args (words after the game word),
 //     lang ('ar' | 'en', from the script of the typed word), game (this definition),
@@ -93,7 +94,7 @@ export function validateGame(input) {
     return Object.freeze({
         ...input, id, kind: input.kind, names: Object.freeze({ ar: Object.freeze(names.ar), en: Object.freeze(names.en) }),
         description: Object.freeze(description), minPlayers, maxPlayers,
-        eventAdminOnly: input.kind === 'group' || input.eventAdminOnly === true,
+        eventAdminOnly: input.eventAdminOnly === true,
         acceptArgs: input.acceptArgs || ((args) => args.length === 0),
         run: input.run,
     });

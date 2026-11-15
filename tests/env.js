@@ -8,3 +8,7 @@ process.env.LOG_LEVEL = 'silent';
 // The chat games: every channel, no event roles (tests add them where they need them).
 process.env.GAMES_CHANNEL_IDS = '';
 process.env.EVENT_ROLE_IDS = '';
+// Nobody trusted by list, and the default open games channel (src/config/games.js DEFAULT_OPEN_GAMES_CHANNEL_ID).
+process.env.TRUSTED_USER_IDS = '';
+process.env.TRUSTED_ROLE_IDS = '';
+process.env.OPEN_GAMES_CHANNEL_IDS = '';

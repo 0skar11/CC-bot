@@ -58,25 +58,34 @@ export async function addPoints(client, guildId, userId, points, { gameId = null
 }
 
 /**
- * Takes `points` from the member's points in this server (and the global ones). `pay()` runs inside the same lock and
- * transaction before anything is saved: when it throws, no point is taken. Returns { ok: true, left, paid } (paid =
+ * Takes up to `points` from the member's points in this server (and the global ones), for what `pay(points)` pays.
+ * Runs in the member's lock and transaction. The points are taken and saved FIRST, then `pay` runs, so a database
+ * without transactions can never be left with CC paid and the points still there: when `pay` throws, the points
+ * are put back and the error is thrown again. `pay` returns { points: n, ... } with n (0..points) the points it
+ * actually paid; the rest are put back (n = 0: nothing is taken). Returns { ok: true, spent, left, paid } (paid =
  * what pay() returned) or { ok: false, reason: 'not_enough', have }.
  */
-export async function spendPoints(client, guildId, userId, points, pay = async () => null) {
+export async function spendPoints(client, guildId, userId, points, pay = async (wanted) => ({ points: wanted })) {
     if (!Number.isSafeInteger(points) || points < 1) throw new Error('Invalid game points');
     return withMemberLock(client, userId, async () => {
         const keys = keysOf(guildId, userId);
         const server = readScore(await client.db.get(keys.server, null));
         if (server.points < points) return { ok: false, reason: 'not_enough', have: server.points };
         const global = readScore(await client.db.get(keys.global, null));
-        const paid = await pay();
-        server.points -= points;
-        server.converted += points;
-        global.points = Math.max(0, global.points - points);
-        global.converted += points;
-        await save(client.db, keys.server, server);
-        await save(client.db, keys.global, global);
-        return { ok: true, left: server.points, paid };
+        // Saves the two records with `spent` points taken from what they held before this call.
+        const take = async (spent) => {
+            await save(client.db, keys.server, { ...server, points: server.points - spent, converted: server.converted + spent });
+            await save(client.db, keys.global, { ...global, points: Math.max(0, global.points - spent), converted: global.converted + spent });
+        };
+        await take(points);
+        let paid;
+        try { paid = await pay(points); } catch (error) {
+            await take(0);
+            throw error;
+        }
+        const spent = Number.isSafeInteger(paid?.points) ? Math.min(points, Math.max(0, paid.points)) : points;
+        if (spent !== points) await take(spent);
+        return { ok: true, spent, left: server.points - spent, paid };
     });
 }
 

@@ -7,7 +7,7 @@ import { CC, formatCC } from '../config/cc.js';
 import { GAMES, gamesChannelIds } from '../config/games.js';
 import { ALL_IN_WORDS } from '../config/casino.js';
 import { inLang } from '../services/cc/lang.js';
-import { convertPoints } from './engine/rewards.js';
+import { convertLimitNotice, convertPoints } from './engine/rewards.js';
 import { normalize } from './engine/text.js';
 import { getPoints, globalBoard, serverBoard } from './engine/points.js';
 import { describeGame, listGames } from './registry.js';
@@ -22,8 +22,8 @@ const TEXT = {
         title: '🎮 ألعاب الشات',
         how: (prefixes) => `⌨️ اكتب اسم اللعبة بعد ${prefixes.join(' أو ')} (مثال: \`.توب\`). لعبة واحدة بس في الروم في نفس الوقت.`,
         rooms: (rooms) => `🚪 الألعاب شغالة في ${rooms}`,
-        rewards: () => `🌀 إجابة صح: **${number(CC.gamesBot.answer)}** ${CC.short} + ${GAMES.points.answer} نقطة ・ فوز في لعبة جماعية: **${number(CC.gamesBot.win)}** ${CC.short} + ${GAMES.points.group} نقاط ・ أقصى **${number(CC.gamesBot.dailyCap)}** ${CC.short} في اليوم من الألعاب.`,
-        kinds: { single: '🎯 فردية — أول واحد يجاوب صح يكسب', dual: '⚔️ لاتنين', group: '👥 جماعية — للأدمن ومنظمين الفعاليات', general: '📋 عامة' },
+        rewards: () => `🌀 إجابة صح: **${number(CC.gamesBot.answer)}** ${CC.short} + ${GAMES.points.answer} نقطة ・ فوز في لعبة جماعية: **${number(CC.gamesBot.win)}** ${CC.short} + ${GAMES.points.group} نقاط (من غير حد) ・ أقصى **${number(CC.gamesBot.dailyCap)}** ${CC.short} في اليوم من الإجابات والتحويل.`,
+        kinds: { single: '🎯 فردية — أول واحد يجاوب صح يكسب', dual: '⚔️ لاتنين', group: '👥 جماعية — للروم كله، أقل عدد لاعبين قبل البداية', general: '📋 عامة' },
         none: 'لسه مفيش ألعاب هنا.',
         topTitle: '🏆 توب نقاط السيرفر',
         globalTitle: '🌍 توب نقاط كل السيرفرات',
@@ -42,8 +42,8 @@ const TEXT = {
         title: '🎮 Chat games',
         how: (prefixes) => `⌨️ Type the game word after ${prefixes.join(' or ')} (for example \`.top\`). One game at a time per room.`,
         rooms: (rooms) => `🚪 Games run in ${rooms}`,
-        rewards: () => `🌀 Right answer: **${number(CC.gamesBot.answer)}** ${CC.short} + ${GAMES.points.answer} point ・ group game win: **${number(CC.gamesBot.win)}** ${CC.short} + ${GAMES.points.group} points ・ at most **${number(CC.gamesBot.dailyCap)}** ${CC.short} a day from games.`,
-        kinds: { single: '🎯 Solo — first right answer wins', dual: '⚔️ Two players', group: '👥 Group — admins and event hosts', general: '📋 General' },
+        rewards: () => `🌀 Right answer: **${number(CC.gamesBot.answer)}** ${CC.short} + ${GAMES.points.answer} point ・ group game win: **${number(CC.gamesBot.win)}** ${CC.short} + ${GAMES.points.group} points (no limit) ・ at most **${number(CC.gamesBot.dailyCap)}** ${CC.short} a day from answers and conversions.`,
+        kinds: { single: '🎯 Solo — first right answer wins', dual: '⚔️ Two players', group: '👥 Group — the whole room, a minimum of players to start', general: '📋 General' },
         none: 'No games here yet.',
         topTitle: '🏆 Server points top',
         globalTitle: '🌍 Points top, all servers',
@@ -154,7 +154,9 @@ const convert = {
         else if (/^\d{1,9}$/u.test(word)) amount = Number(word);
         else return ctx.send(text.usage);
         const result = await convertPoints(ctx.client, ctx.guildId, ctx.starter.id, amount);
-        if (result.ok) return ctx.send(text.converted(result));
+        const notice = convertLimitNotice(ctx.lang, result);
+        if (result.ok) return ctx.send(notice ? `${text.converted(result)}\n${notice}` : text.converted(result));
+        if (notice) return ctx.send(notice);
         return ctx.send(result.reason === 'not_enough' ? text.notEnough(result.have) : text.min(result.min));
     },
 };

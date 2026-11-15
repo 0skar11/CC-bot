@@ -64,15 +64,18 @@ test('game definitions are checked and get their defaults', () => {
     const dual = validateGame(game({ kind: 'dual' }));
     assert.deepEqual([dual.minPlayers, dual.maxPlayers], [2, 2]);
     const group = validateGame(game({ kind: 'group', eventAdminOnly: false }));
-    assert.equal(group.eventAdminOnly, true, 'group games are always for event admins');
+    assert.equal(group.eventAdminOnly, false, 'group games follow the trusted / open channel rule like the others');
+    assert.equal(validateGame(game({ kind: 'group', eventAdminOnly: true })).eventAdminOnly, true);
     assert.ok(group.minPlayers >= 2 && group.maxPlayers >= group.minPlayers);
     assert.ok(Object.isFrozen(single) && Object.isFrozen(single.names.ar));
 });
 
 test('describeGame shows the words in both languages, what the game does, the players and the admin rule', () => {
     const group = validateGame(game({ id: 'race', kind: 'group', names: { ar: ['سباق'], en: ['race'] }, minPlayers: 3, maxPlayers: 10, description: { ar: 'سباق للروم', en: 'a room race' } }));
-    assert.equal(describeGame(group, 'ar'), '👥 `.سباق` `.race` — سباق للروم ・ 👥 3-10 ・ 🛡️ للأدمن');
-    assert.equal(describeGame(group, 'en'), '👥 `.race` `.سباق` — a room race ・ 👥 3-10 ・ 🛡️ admins');
+    assert.equal(describeGame(group, 'ar'), '👥 `.سباق` `.race` — سباق للروم ・ 👥 3-10');
+    const adminOnly = validateGame(game({ id: 'race', kind: 'group', names: { ar: ['سباق'], en: ['race'] }, minPlayers: 3, maxPlayers: 10, eventAdminOnly: true, description: { ar: 'سباق للروم', en: 'a room race' } }));
+    assert.equal(describeGame(adminOnly, 'ar'), '👥 `.سباق` `.race` — سباق للروم ・ 👥 3-10 ・ 🛡️ للأدمن');
+    assert.equal(describeGame(adminOnly, 'en'), '👥 `.race` `.سباق` — a room race ・ 👥 3-10 ・ 🛡️ admins');
     assert.equal(describeGame(validateGame(game()), 'ar'), '🎯 `.سؤال` `.quiz`');
     assert.equal(describeGame(null), '');
 });

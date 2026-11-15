@@ -6,12 +6,12 @@ Goal: CC-bot runs every game itself (Arabic and English words), pays CC from its
 
 | Topic | Decision |
 |---|---|
-| Rewards | Same as today: first correct answer 500 CC, group win 2,500 CC, 50,000 CC per member per UTC day (one shared cap, in `CC.gamesBot`). |
+| Rewards | First correct answer (single and dual games) 500 CC, at most 20,000 CC per member per UTC day from answers and points conversions together (one cap shared with Clover, in `CC.gamesBot`). Group win 2,000 CC with no limit: never trimmed by the cap and not counted in it. |
 | Points (نقاط) | Every win adds points (answer 1, group win 5) kept per server and per member. `توب` = this server, `عالمي` = all servers CC-bot serves. `convert` turns points into CC. |
 | Coins | Coins are CC. `transfer` is the existing `تحويل`. |
 | Premium | No premium tier: the games marked premium are free for everyone. |
-| Event admins | Members with Manage Server, or a role in `EVENT_ROLE_IDS`. Group games and `فعالية` need one of them. |
-| Rooms | Games run in the bot's rooms (`BOURSE_CHANNEL_IDS`) or in `GAMES_CHANNEL_IDS` when set. One game at a time per room. |
+| Trusted members | Owners, Manage Server, a role in `EVENT_ROLE_IDS`, a user in `TRUSTED_USER_IDS` or a role in `TRUSTED_ROLE_IDS`. They may start any game in any channel of an allowed server. |
+| Rooms | Anyone may start games in the open channels (`OPEN_GAMES_CHANNEL_IDS`, default `1570728118182744145`); elsewhere only trusted members, and anyone else gets no reply. The general commands (`اوامر`, `توب`, `نقاط`, `convert`) answer everyone in `GAMES_CHANNEL_IDS` and the bot's rooms. One game at a time per room. |
 | Clover | Its payout reader stays. While Clover is still in the server both bots answer the same words: remove Clover (or its permissions in the room) when the native games go live. |
 | Content | Words, riddles and questions are written into `src/games/data/` (no outside service at runtime, so nothing breaks when a site is down). Pictures are made by the bot (sharp) from bundled data. |
 
@@ -53,13 +53,13 @@ export default {
     names: { ar: ['اسرع'], en: ['fast'] },     // one word each, typed after the PREFIX or a dot: `.اسرع`, `!fast`
     description: { ar: '...', en: '...' },     // optional: the line in `اوامر`
     minPlayers: 1, maxPlayers: 1,              // defaults: single 1/1, dual 2/2, group GAMES.lobby (2/25)
-    eventAdminOnly: false,                     // always true for group games
+    eventAdminOnly: false,                     // true: trusted members only, even in the open channels (the sample `test`)
     acceptArgs: (args) => args.length === 0,   // optional: words allowed after the game word (default: none)
     async run(ctx) { /* the game */ },
 };
 ```
 
-Before `run(ctx)` the router (src/games/router.js) has checked: the message starts with the PREFIX or `.` and a game word, the words after it pass `acceptArgs` (otherwise the message goes on to the rest of the bot untouched, so `!توب cc` is still cctop), the room is a games room (`GAMES_CHANNEL_IDS`, else the bot's channels), the event-admin rule (group games and `eventAdminOnly`), and that the room is free (a busy room answers each member once "في لعبة شغالة" in the language of the typed word). The session holds the room until `run` returns, an error is thrown (logged, one short line in the room) or 30 minutes pass (`GAMES.maxLifetimeMs`).
+Before `run(ctx)` the router (src/games/router.js) has checked: the message starts with the PREFIX or `.` and a game word, the words after it pass `acceptArgs` (otherwise the message goes on to the rest of the bot untouched, so `!توب cc` is still cctop), who may start it where (a trusted member, `isTrustedMember` in engine/admin.js, in any channel of an allowed server; anyone else only in an open channel, `isOpenGamesChannel` in src/config/games.js: `OPEN_GAMES_CHANNEL_IDS`, channels or categories, default `1570728118182744145`; a member who is not trusted gets no reply at all outside the open channels; `eventAdminOnly` games need a trusted member even in an open channel, where anyone else gets one short notice at most every `GAMES.noticeGapMs`), and that the room is free (a busy room answers each member once "في لعبة شغالة" in the language of the typed word). The session holds the room until `run` returns, an error is thrown (logged, one short line in the room) or 30 minutes pass (`GAMES.maxLifetimeMs`).
 
 `ctx`:
 
@@ -72,8 +72,8 @@ Before `run(ctx)` the router (src/games/router.js) has checked: the message star
 | `game` | This definition (with defaults filled in). |
 | `session` | The room's GameSession: `setTimeout` / `clearTimeout` (cleared at the end), `onEnd(fn)`, `ended`, `endReason`, `data` (free space), `clock`. |
 | `askRound({ prompt, validate, timeMs, reveal, cooldownMs })` | First right answer wins. Resolves `{ winner, member, message, result, elapsedMs, prompt }`, `{ timeout: true, prompt }` (the answer was shown) or `{ cancelled: true, reason }`. `validate(content, message)` returns true/false or `{ ok, ... }` (may be async). Bots and webhooks never answer; one try per member per 700 ms. |
-| `openLobby({ min, max, joinSeconds, title, description, hostPlays })` | Join / Leave / Start (host) buttons `g:<action>:<lobbyId>`. Resolves `{ players, reason }` (`start`, `full`, `time`) or `{ cancelled: true, reason, players }` (`players` = fewer than min). |
-| `rewardWin(userId, kind)` | `kind` `'answer'` (500 CC + 1 point) or `'group'` (2,500 CC + 5 points), within the 50,000 CC a day shared with Clover. Resolves `{ ok, amount, balance, points, totalPoints, wins, capped }`; show it with `winPayload(lang, userId, reward, kind)` from engine/rewards.js. Never throws. |
+| `openLobby({ min, max, joinSeconds, title, description, hostPlays })` | Join / Leave / Start (host) buttons `g:<action>:<lobbyId>`; they work for any member in any text channel of an allowed server (src/events/interactionCreate.js), so anyone can join a game a trusted member started anywhere. Resolves `{ players, reason }` (`start`, `full`, `time`) or `{ cancelled: true, reason, players }` (`players` = fewer than min). |
+| `rewardWin(userId, kind)` | `kind` `'answer'` (500 CC + 1 point, within the 20,000 CC a day shared with Clover and the points conversion) or `'group'` (2,000 CC + 5 points, no limit and not counted in the cap). Resolves `{ ok, amount, balance, points, totalPoints, wins, capped }`; show it with `winPayload(lang, userId, reward, kind)` from engine/rewards.js. Never throws. |
 | `embed(title, description, options)` | A `ccEmbed` in the games colour. |
 | `send(input)` | Posts a text, an embed, a payload or a function's result in the room, without pings. |
 | `random()` | A number in [0, 1) (tests replace it). |

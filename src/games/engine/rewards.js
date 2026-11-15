@@ -1,14 +1,15 @@
-// rewards.js — what a chat game win pays: CC through the one capped payout shared with Clover's wins
-// (src/services/cc/gamesPayout.js: CC.gamesBot.answer / .win, at most CC.gamesBot.dailyCap a member a UTC day),
+// rewards.js — what a chat game win pays: CC through the payout shared with Clover's wins
+// (src/services/cc/gamesPayout.js: CC.gamesBot.answer within CC.gamesBot.dailyCap a member a UTC day, and
+// CC.gamesBot.win for a group win with no limit),
 // plus points (GAMES.points: answer 1, group 5) and one more win for the game, in the server and globally
 // (points.js). The points are given even once today's CC cap is reached. `convert` turns a member's points of the
-// server into CC at GAMES.convert.ccPerPoint (at least GAMES.convert.minPoints at once); it does not count toward
-// the daily cap, since the points themselves only come from wins.
+// server into CC at GAMES.convert.ccPerPoint (at least GAMES.convert.minPoints asked at once), paid from the SAME
+// daily cap as the wins (payGamesConvert): past it a conversion is trimmed to whole points, and only the points
+// actually paid are taken.
 
 import { CC, formatCC } from '../../config/cc.js';
 import { GAMES } from '../../config/games.js';
-import { updateCCState } from '../../services/cc/ccService.js';
-import { payGamesWin } from '../../services/cc/gamesPayout.js';
+import { payGamesConvert, payGamesWin } from '../../services/cc/gamesPayout.js';
 import { inLang } from '../../services/cc/lang.js';
 import { logger } from '../../utils/logger.js';
 import { addPoints, spendPoints } from './points.js';
@@ -42,22 +43,23 @@ export async function rewardWin(client, guildId, userId, kind = 'answer', gameId
 }
 
 /**
- * Turns `points` of the member's points in this server into CC. Returns { ok: true, points, amount, balance, left }
- * or { ok: false, reason: 'min' | 'not_enough', min, have }.
+ * Turns up to `points` of the member's points in this server into CC, within today's games CC cap (shared with the
+ * wins). Returns { ok: true, points, requested, amount, balance, left, trimmed } (points = the points actually paid,
+ * fewer than requested when the cap was near: trimmed = true), or { ok: false, reason: 'min' | 'not_enough' |
+ * 'capped', min, have?, cap? } ('capped': nothing could be paid today, no point was taken).
  */
-export async function convertPoints(client, guildId, userId, points) {
+export async function convertPoints(client, guildId, userId, points, { now = Date.now() } = {}) {
     const { ccPerPoint, minPoints } = GAMES.convert;
     if (!Number.isSafeInteger(points) || points < minPoints) return { ok: false, reason: 'min', min: minPoints };
-    const amount = points * ccPerPoint;
-    if (!Number.isSafeInteger(amount)) return { ok: false, reason: 'min', min: minPoints };
-    const spent = await spendPoints(client, guildId, userId, points, () => updateCCState(client, guildId, userId, (state) => {
-        state.cc += amount;
-        state.stats.earned += amount;
-        return { amount };
-    }));
+    if (!Number.isSafeInteger(points * ccPerPoint)) return { ok: false, reason: 'min', min: minPoints };
+    const spent = await spendPoints(client, guildId, userId, points, (wanted) => payGamesConvert(client, guildId, userId, wanted, ccPerPoint, now));
     if (!spent.ok) return { ...spent, min: minPoints };
-    logger.info(`[GAMES] ${userId} converted ${points} points to ${amount} CC`);
-    return { ok: true, points, amount, balance: spent.paid.balance, left: spent.left };
+    if (spent.spent === 0) return { ok: false, reason: 'capped', min: minPoints, cap: CC.gamesBot.dailyCap };
+    logger.info(`[GAMES] ${userId} converted ${spent.spent} points (of ${points}) to ${spent.paid.amount} CC`);
+    return {
+        ok: true, points: spent.spent, requested: points, amount: spent.paid.amount, balance: spent.paid.balance,
+        left: spent.left, trimmed: spent.spent < points,
+    };
 }
 
 const TEXT = {
@@ -67,6 +69,8 @@ const TEXT = {
         paid: (reward) => `+${formatCC(reward.amount)} ・ +**${reward.points}** نقطة ・ رصيدك: ${formatCC(reward.balance)}`,
         capped: (reward) => `+**${reward.points}** نقطة ・ وصلت لحد الـ CC من الألعاب النهارده (${number(CC.gamesBot.dailyCap)} ${CC.short}).`,
         failed: '⚠️ حصلت مشكلة في الجايزة، كلّم الإدارة.',
+        convertCapped: (cap) => `❌ وصلت لحد الـ CC من الألعاب النهارده (${number(cap)} ${CC.short})، والتحويل بيتحسب منه. نقاطك زي ما هي، جرّب بكرة.`,
+        convertTrimmed: (result) => `ℹ️ اتحوّل **${number(result.points)}** نقطة بس من **${number(result.requested)}** عشان حد الـ CC من الألعاب النهارده (${number(CC.gamesBot.dailyCap)} ${CC.short})، والباقي لسه معاك.`,
     },
     en: {
         answer: (id) => `🎉 <@${id}> got it right!`,
@@ -74,6 +78,8 @@ const TEXT = {
         paid: (reward) => `+${formatCC(reward.amount)} ・ +**${reward.points}** point(s) ・ balance: ${formatCC(reward.balance)}`,
         capped: (reward) => `+**${reward.points}** point(s) ・ you reached today's games CC limit (${number(CC.gamesBot.dailyCap)} ${CC.short}).`,
         failed: '⚠️ Something went wrong with the reward, tell the staff.',
+        convertCapped: (cap) => `❌ You reached today's games CC limit (${number(cap)} ${CC.short}), and conversions count toward it. Your points are untouched, try again tomorrow.`,
+        convertTrimmed: (result) => `ℹ️ Only **${number(result.points)}** of **${number(result.requested)}** points were converted because of today's games CC limit (${number(CC.gamesBot.dailyCap)} ${CC.short}); you keep the rest.`,
     },
 };
 
@@ -83,4 +89,15 @@ export function winPayload(lang, userId, reward, kind = 'answer') {
     const head = kind === 'group' ? text.group(userId) : text.answer(userId);
     const tail = !reward?.ok ? text.failed : reward.amount > 0 ? text.paid(reward) : text.capped(reward);
     return { content: `${head} ${tail}`, allowedMentions: { parse: [] } };
+}
+
+/**
+ * The daily-limit line of a convertPoints() result, in `lang`: the whole answer for reason 'capped', an extra line
+ * for a trimmed conversion, else null (the usual converted / min / not-enough lines apply).
+ */
+export function convertLimitNotice(lang, result) {
+    const text = inLang(lang, TEXT);
+    if (result?.ok === false && result.reason === 'capped') return text.convertCapped(result.cap ?? CC.gamesBot.dailyCap);
+    if (result?.ok && result.trimmed) return text.convertTrimmed(result);
+    return null;
 }
