@@ -40,9 +40,11 @@ For public installation, turn **Public Bot on**, enable Guild Install and config
 | `CASINO_EMOJIS` | Optional JSON object that swaps the casino's emojis for the server's custom ones, keyed by meaning: `{"slots.cherry":"<:cherry:123456789012345678>","mines.safe":"<a:gem:123456789012345678>"}` (every key and its Unicode default is in `src/config/emojis.js`). A value is a Unicode emoji or a custom emoji tag `<:name:id>` / `<a:name:id>`; a custom emoji only shows when it lives in a server the bot is in. Invalid entries and unknown keys are skipped with a warning in the log. Empty (default) uses the Unicode emojis. Titles, footers, button labels and the join form keep the Unicode emoji, since Discord prints a custom emoji tag there as text; the rocket's messages keep their own emojis. |
 | `TRADER_ROLE_ANCHORS` | Optional `guildId:roleId,guildId:roleId` pairs. New trader roles are placed above these roles. Without an anchor, Discord's normal below-bot position is used. No leveling system is required. |
 | `OWNER_IDS` | Comma-separated Discord user IDs allowed to use `addcc` (default: the original owner). Owner list lives in `src/config/owners.js`. |
+| `GAMES_CHANNEL_IDS` | Optional comma-separated channel/category IDs where the chat games (`src/games/`, typed as `.اوامر`, `!توب`...) run, one game per room. Empty uses the bot's channels. The general games commands (`اوامر`, `توب`, `عالمي`, `نقاط`, `تحويل_نقاط`) also answer in the bot's channels. Plan and game contract: `docs/GAMES_PLAN.md`; knobs: `src/config/games.js`. |
+| `EVENT_ROLE_IDS` | Optional comma-separated role IDs whose members may start group games, besides members with Manage Server and the owners. |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` or `silent`; default `info`. Logs go to the console. |
 
-The migration creates only `bourse_records` and its prefix index; rerunning it is safe. Its rows contain the shared market, per-user CC, holdings and streaks, and per-guild configuration. Back up this dedicated database before changing the shared scope.
+The migration creates only `bourse_records` and its prefix index; rerunning it is safe. Its rows contain the shared market, per-user CC, holdings and streaks, per-guild configuration, and the chat games points (per server and global). Back up this dedicated database before changing the shared scope.
 
 ## Commands
 

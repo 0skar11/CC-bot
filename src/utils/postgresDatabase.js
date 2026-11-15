@@ -29,6 +29,13 @@ export class PostgreSQLDatabase {
         const { rows } = await this.query('SELECT key FROM bourse_records WHERE starts_with(key, $1) ORDER BY key', [prefix]);
         return rows.map((row) => row.key);
     }
+    // Every record under `prefix` with its value in one query (leaderboards), instead of list() and one get() per key.
+    // `LIKE 'prefix%'` (wildcards in the prefix escaped) uses the bourse_records_prefix text_pattern_ops index.
+    async entries(prefix) {
+        const pattern = `${String(prefix).replace(/[\\%_]/gu, (char) => `\\${char}`)}%`;
+        const { rows } = await this.query('SELECT key, value FROM bourse_records WHERE key LIKE $1 ORDER BY key', [pattern]);
+        return rows.map((row) => ({ key: row.key, value: row.value }));
+    }
     async transaction(task) {
         if (this.context.getStore()) return task();
         const connection = await this.pool.connect();

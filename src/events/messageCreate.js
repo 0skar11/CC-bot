@@ -9,6 +9,7 @@ import { handleGuideCommand } from '../services/cc/guideUi.js';
 import { blackjackHelpPayload } from '../services/cc/casinoUi.js';
 import { casinoErrorText } from '../services/cc/casinoUi.js';
 import { wordLanguage } from '../services/cc/lang.js';
+import { handleGamesMessage } from '../games/router.js';
 import { logger } from '../utils/logger.js';
 
 const userArgument = /^(?:<@!?(\d{17,20})>|(\d{17,20}))$/u;
@@ -22,6 +23,9 @@ export default {
         // StreakBot's "تم تحديث الستريك" post pays the member CC by streak day (other bots are ignored).
         if (message.author?.bot) { if (!(await handleGamesBotWin(message))) await handleStreakBotMessage(message); return; }
         if (!isAllowedGuild(guildId)) return;
+        // The chat games (src/games/router.js): only the PREFIX or a dot followed by a game word (`.اسرع`, `!توب`);
+        // anything else, and every casino, bourse, CC and streak word, goes on below exactly as before.
+        if (await handleGamesMessage(message, client)) return;
         const text = String(message.content || '').trim();
         const prefixed = text.startsWith(prefix);
         const [typed = '', ...words] = (prefixed ? text.slice(prefix.length) : text).trim().split(/\s+/u);

@@ -1,19 +1,18 @@
 import { isAllowedGuild } from '../../config/runtime.js';
 import { CC, formatCC } from '../../config/cc.js';
-import { updateCCState } from './ccService.js';
+import { payGamesWin } from './gamesPayout.js';
 import { messageText } from './streakBotService.js';
 import { logger } from '../../utils/logger.js';
 
 // Pays CC for wins announced by the games bot (Clover): `👑 | @winner` (group game) and
 // `✅ | قام @member بكتابة الاجابة الصحيحة ...` (first to type the answer). Moved here from DISbot.
 // Only the games bot application IDs count (GAMES_BOT_IDS in .env, default = Clover), each message pays once,
-// and a member gets at most CC.gamesBot.dailyCap per UTC day.
+// and a member gets at most CC.gamesBot.dailyCap per UTC day, shared with the native chat games (gamesPayout.js).
 export const CLOVER_BOT_ID = '1006332825571692544';
 const WIN_MESSAGE = /^\s*👑️?\s*\|?\s*<@!?(\d{17,20})>\s*$/mu;
 const ANSWER_MESSAGE = /^\s*(?:✅️?|<a?:\w+:\d+>)?\s*\|?\s*قام\s+<@!?(\d{17,20})>\s+بكتابة\s+ال[اإأ]جابة\s+الصحيحة/mu;
 const PAID_MEMORY = 500;
 const paidMessages = new Set();
-const utcDay = (now) => new Date(now).toISOString().slice(0, 10);
 
 export function gamesBotIds() {
     const ids = String(process.env.GAMES_BOT_IDS || '').split(',').map((id) => id.trim()).filter((id) => /^\d{17,20}$/u.test(id));
@@ -29,18 +28,9 @@ export function parseWin(message) {
     return answer ? { userId: answer, kind: 'answer' } : null;
 }
 
-/** Pays one win. Returns `{ amount, balance }` (amount 0 once today's cap is reached). */
-export async function payGamesBotWin(client, guildId, userId, kind, now = Date.now()) {
-    const base = kind === 'answer' ? CC.gamesBot.answer : CC.gamesBot.win;
-    return updateCCState(client, guildId, userId, (state, record) => {
-        const today = utcDay(now);
-        const earned = record.ccGamesBot?.day === today ? record.ccGamesBot.earned : 0;
-        const amount = Math.max(0, Math.min(base, CC.gamesBot.dailyCap - earned));
-        state.cc += amount;
-        state.stats.earned += amount;
-        record.ccGamesBot = { day: today, earned: earned + amount };
-        return { amount };
-    });
+/** Pays one win. Returns `{ amount, balance }` (amount 0 once today's cap is reached). The shared capped payout. */
+export function payGamesBotWin(client, guildId, userId, kind, now = Date.now()) {
+    return payGamesWin(client, guildId, userId, kind, now);
 }
 
 /** messageCreate / messageUpdate hook. Returns true when the message was a games bot win. Never throws. */

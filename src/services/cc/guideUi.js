@@ -35,6 +35,8 @@ function ccGuideEmbed({ streak }) {
         ...(streak ? ['🔥 **الستريك**: صورة أو GIF كل يوم في روم الستريك تجيبلك CC (التفاصيل تحت).'] : []),
         `🎰 **الكازينو**: تكسب (أو تخسر) CC في ${SOLO_GAMES.length + GROUP_GAMES.length} ألعاب، فردية وجماعية (اكتب \`العاب\` تشوفهم).`,
         '📈 **البورصة**: اشتري رخيص وبيع غالي، والفرق مكسبك.',
+        // The chat games (src/games/): their own list is `.اوامر` (src/games/general.js).
+        `🎲 **ألعاب الشات**: اكتب \`.اوامر\` تشوف الألعاب، و\`.نقاط\` نقاطك و\`.توب\` الترتيب (إجابة صح = **${number(CC.gamesBot.answer)}** ${CC.short}).`,
     ];
     return ccEmbed(`${CC.emoji} شرح CC bot`, [
         `${CC.emoji} **${CC.name}** (${CC.short}) هي فلوس البوت، رصيد واحد ليك في كل السيرفرات اللي البوت شغال فيها.`,

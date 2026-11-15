@@ -73,7 +73,8 @@ describe('standalone bourse guild boundary', () => {
         assert.deepEqual(commands[4].options, []); assert.deepEqual(commands[5].options, []); assert.deepEqual(commands[6].options.map(({ name, required }) => ({ name, required })), [{ name: 'language', required: false }]);
         assert.deepEqual(commands[0].options.map(({ name }) => name), ['amount', 'user']);
         assert.deepEqual(commands[7].options.map(({ name }) => name), ['user', 'amount']);
-        assert.deepEqual([...client.buttons.keys()].sort(), ['bourse', 'bourseperk', 'casino']);
+        // `g`: the chat games' lobby buttons (src/games/engine/lobby.js).
+        assert.deepEqual([...client.buttons.keys()].sort(), ['bourse', 'bourseperk', 'casino', 'g']);
     });
     test('stock prefix aliases route without a prefix and accept multiword names', async () => {
         const calls = [];
