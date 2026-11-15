@@ -232,7 +232,7 @@ test('the real StreakBot embed (markdown headings, animated emoji, bold day) is 
     assert.deepEqual(await parseStreakUpdate(ninetyFive), { userId: SELF.id, count: 95 });
 });
 
-test('Clover wins pay CC (500 group, 50 answer), once per message, up to 2000 a day', async () => {
+test('Clover wins pay CC (2500 group, 500 answer), once per message, up to 50000 a day', async () => {
     const { parseWin, payGamesBotWin, handleGamesBotWin } = await import('../src/services/cc/gamesBotService.js');
     const client = await setup();
     const answer = { author: { bot: true, id: '1006332825571692544' }, content: '', embeds: [{ description: `✅ | قام <@${SELF.id}> بكتابة الاجابة الصحيحة خلال **__14.62__** ثانية` }] };
@@ -241,11 +241,11 @@ test('Clover wins pay CC (500 group, 50 answer), once per message, up to 2000 a 
     assert.equal(parseWin({ ...answer, embeds: [{ description: 'hello <@1> قام' }] }), null);
     const now = Date.parse('2026-11-07T10:00:00Z');
     const before = (await client.db.get(getEconomyKey(economyScopeId, SELF.id))).cc;
-    assert.equal((await payGamesBotWin(client, GUILD, SELF.id, 'answer', now)).amount, 50);
-    for (let i = 0; i < 3; i += 1) await payGamesBotWin(client, GUILD, SELF.id, 'group', now);
-    assert.equal((await payGamesBotWin(client, GUILD, SELF.id, 'group', now)).amount, 450);
+    assert.equal((await payGamesBotWin(client, GUILD, SELF.id, 'answer', now)).amount, 500);
+    for (let i = 0; i < 19; i += 1) assert.equal((await payGamesBotWin(client, GUILD, SELF.id, 'group', now)).amount, 2500);
+    assert.equal((await payGamesBotWin(client, GUILD, SELF.id, 'group', now)).amount, 2000);
     assert.equal((await payGamesBotWin(client, GUILD, SELF.id, 'group', now)).amount, 0);
-    assert.equal((await client.db.get(getEconomyKey(economyScopeId, SELF.id))).cc, before + 2000);
-    assert.equal((await payGamesBotWin(client, GUILD, SELF.id, 'answer', now + 86_400_000)).amount, 50);
+    assert.equal((await client.db.get(getEconomyKey(economyScopeId, SELF.id))).cc, before + 50000);
+    assert.equal((await payGamesBotWin(client, GUILD, SELF.id, 'answer', now + 86_400_000)).amount, 500);
     assert.equal(await handleGamesBotWin({ ...answer, author: { bot: true, id: '5' }, guildId: GUILD }), false);
 });

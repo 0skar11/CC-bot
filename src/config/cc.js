@@ -5,7 +5,7 @@ export const CC = {
     daily: { amount: 500 },
     // Wins announced by the games bot (Clover): `win` = group game, `answer` = first to type the answer.
     // `dailyCap` = most CC one member can get from them per UTC day.
-    gamesBot: { win: 500, answer: 50, dailyCap: 2000 },
+    gamesBot: { win: 2500, answer: 500, dailyCap: 50000 },
     transfer: { minServerDays: 0, minAmount: 10, taxPercent: 5, cheapPerWeek: 3, extraPercentPerTransfer: 5, maxTaxPercent: 50 },
 };
 // The bot's gold, the colour of every embed that doesn't choose its own (the casino's games have theirs: CASINO_COLORS).
