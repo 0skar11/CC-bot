@@ -146,6 +146,17 @@ test('a StreakBot update pays CC by streak day, once per day, only for StreakBot
     assert.equal((await payStreakBotUpdate(client, GUILD, SELF.id, 7, now + 86_400_000)).bonus.total, 1250);
 });
 
+test('a new StreakBot day is paid even when it falls inside the same UTC day as the last one', async () => {
+    const { payStreakBotUpdate } = await import('../src/services/cc/streakBotService.js');
+    const client = await setup();
+    // Day 2 at 17:00 UTC, then StreakBot starts day 3 at 23:40 UTC (1:40 AM Cairo): both are the same UTC day.
+    const first = await payStreakBotUpdate(client, GUILD, SELF.id, 2, Date.parse('2026-11-15T17:00:00Z'));
+    assert.ok(first, 'day 2 is paid');
+    const second = await payStreakBotUpdate(client, GUILD, SELF.id, 3, Date.parse('2026-11-15T23:40:00Z'));
+    assert.ok(second, 'day 3 is paid although it is the same UTC day');
+    assert.equal(await payStreakBotUpdate(client, GUILD, SELF.id, 3, Date.parse('2026-11-15T23:50:00Z')), null, 'the same streak day is never paid twice');
+});
+
 test('addcc, give, daily and cc also work in the casino rooms', async () => {
     const { isCommandChannel } = await import('../src/config/runtime.js');
     assert.equal(isCommandChannel('addcc', { id: 'x' }, 'x'), true); // test env: no channel restriction

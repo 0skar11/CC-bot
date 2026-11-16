@@ -72,15 +72,25 @@ export async function parseStreakUpdate(message) {
     return userId ? { userId, count } : null;
 }
 
-/** Gives the streak CC once per member per day. Returns the result, or null when nothing was paid. */
+// StreakBot starts a new streak day on its own clock (not UTC midnight), so a member can get two different
+// days' updates inside one UTC day (e.g. 1:40 AM Cairo = 23:40 UTC). A repeat of the SAME streak day within
+// this window is a duplicate; a new streak day (a different count) is always paid.
+const SAME_DAY_WINDOW_MS = 20 * 60 * 60 * 1000;
+
+/** Gives the streak CC once per streak day per member. Returns the result, or null when nothing was paid. */
 export async function payStreakBotUpdate(client, guildId, userId, count, now = Date.now()) {
     const today = utcDay(now);
     const bonus = (STREAKBOT_ROOMS[guildId]?.bonus || streakBonus)(count);
     const result = await updateCCState(client, guildId, userId, (state, record) => {
-        if (record.ccStreakBotDay === today) return { skipSave: true, duplicate: true };
+        const last = record.ccStreakBotLast;
+        const repeated = last && last.count === count && Number.isFinite(last.at) && now - last.at < SAME_DAY_WINDOW_MS;
+        // Records written before `ccStreakBotLast` existed: the old once-per-UTC-day rule still stops an immediate repeat.
+        const legacyRepeat = !last && record.ccStreakBotDay === today && count === 1;
+        if (repeated || legacyRepeat) return { skipSave: true, duplicate: true };
         state.cc += bonus.total;
         state.stats.earned += bonus.total;
         record.ccStreakBotDay = today;
+        record.ccStreakBotLast = { count, at: now };
         return { paid: true };
     });
     return result?.duplicate ? null : { ...result, count, bonus };
