@@ -15,7 +15,7 @@ function isCasinoInteraction(interaction) {
     if (interaction.isChatInputCommand?.()) return interaction.commandName === CASINO_COMMAND;
     return Boolean(interaction.isButton?.() || interaction.isModalSubmit?.()) && String(interaction.customId || '').split(':')[0] === CASINO_BUTTON_PREFIX;
 }
-// The chat games' buttons (lobby, play again `g:again:<gameId>`) and the games menu's select (`g:menu:...`) work in
+// The chat games' buttons (lobby, play again `g:again:<gameId>`) and the menus' selects (`g:help:...`, `g:menu:...`) work in
 // any text channel of an allowed guild: a game can be started in any channel (by a trusted member, anyone in the
 // open channels: src/games/router.js decides and answers privately when it may not), and any member may join it.
 const isGamesSelect = (interaction) => Boolean(interaction.isStringSelectMenu?.()) && String(interaction.customId || '').split(':')[0] === GAMES_BUTTON_PREFIX;
@@ -49,7 +49,7 @@ export default {
                 else await refused(interaction);
                 return;
             }
-            // The games menu's select (`g:menu:...`) is the only select menu.
+            // The help menu's selects (`g:help:...`) and the old games menu's (`g:menu:...`) are the only select menus.
             if (isGamesSelect(interaction)) {
                 const [name, ...args] = interaction.customId.split(':');
                 const handler = client.buttons.get(name);

@@ -1,6 +1,6 @@
 // The play-again button (src/games/engine/again.js, src/games/router.js handleAgainButton), the win as a reply to
 // the winner (engine/rewards.js announceWin, engine/payload.js replyWin) and the one games menu (`العاب` / `games`,
-// src/games/general.js gamesMenu, router handleMenuSelect), with the doubles of tests/gamesFakes.js.
+// src/games/helpMenu.js; the old menu select: router handleMenuSelect), with the doubles of tests/gamesFakes.js.
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { DEFAULT_OPEN_GAMES_CHANNEL_ID, openGamesChannelIds, trustedUserIds } from '../src/config/games.js';
@@ -9,7 +9,7 @@ import loadInteractions from '../src/handlers/loaders/interactions.js';
 import { AGAIN_COOLDOWN_MS, AGAIN_LIFETIME_MS, againRow, armedAgain, forgetAgain } from '../src/games/engine/again.js';
 import { replyWin } from '../src/games/engine/payload.js';
 import { abortAll, getSession, isBusy, startSession } from '../src/games/engine/session.js';
-import { gamesMenu, menuGames } from '../src/games/general.js';
+import { forgetHelpMenus } from '../src/games/helpMenu.js';
 import { loadGames, registerGame } from '../src/games/registry.js';
 import { handleAgainButton, handleGamesMessage, handleMenuSelect } from '../src/games/router.js';
 import { ALICE, BOB, CAROL, GUILD, fakeChannel, fakeClient, fakeClock, flush, press, typed } from './gamesFakes.js';
@@ -52,6 +52,7 @@ async function playAndWin(room, client, clock, starter = ALICE, admin = true) {
 afterEach(() => {
     abortAll('test');
     forgetAgain();
+    forgetHelpMenus();
     trustedUserIds.clear();
     openGamesChannelIds.clear();
     openGamesChannelIds.add(DEFAULT_OPEN_GAMES_CHANNEL_ID);
@@ -283,48 +284,29 @@ test('interactionCreate routes `g:again:<gameId>` and the menu select to the gam
     assert.deepEqual([select.deferred, select.replies.length], [1, 0]);
 });
 
-test('`العاب` / `games` / `menu` with the prefix or a dot: one menu of the chat and casino games', async () => {
+test('`العاب` / `games` / `menu` / `help-menu` with the prefix or a dot: the one help menu (src/games/helpMenu.js)', async () => {
     const client = fakeClient();
     const room = newRoom();
     for (const content of ['.العاب', '.ألعاب', '.الألعاب', '!العاب']) {
         assert.equal(await handleGamesMessage(typed(room, content, BOB), client), true, content);
         const { payload } = room.sent.at(-1);
-        assert.deepEqual(payload.embeds.map((embed) => embed.title), ['🎮 كل الألعاب', '🎮 ألعاب CC bot'], content);
+        assert.deepEqual(payload.embeds.map((embed) => embed.title), ['قائمة اوامر CC bot'], content);
+        assert.match(payload.components[0].toJSON().components[0].custom_id, /^g:help:[0-9a-f]+:cat$/u, content);
     }
-    for (const content of ['.games', '.menu', '!GAMES']) {
-        await handleGamesMessage(typed(room, content, BOB), client);
-        assert.deepEqual(room.sent.at(-1).payload.embeds.map((embed) => embed.title), ['🎮 All games', '🎮 CC bot games'], content);
+    for (const content of ['.games', '.menu', '!GAMES', '.help-menu']) {
+        assert.equal(await handleGamesMessage(typed(room, content, BOB), client), true, content);
+        assert.deepEqual(room.sent.at(-1).payload.embeds.map((embed) => embed.title), ['CC bot commands menu'], content);
     }
     // Extra words are not the menu (they stay chat or go to the rest of the bot).
     assert.equal(await handleGamesMessage(typed(room, '.العاب حلوة', BOB), client), false);
-
-    const menu = gamesMenu('ar');
-    const [chat, casino] = menu.embeds;
-    const all = [chat.description, ...chat.fields.flatMap((field) => [field.name, field.value])].join('\n');
-    assert.match(chat.description, /كل إجابة صح: \*\*500\*\* CC ・ الفوز في لعبة جماعية: \*\*2,000\*\* CC ・ أقصى \*\*20,000\*\* CC في اليوم من الألعاب الفردية/u);
-    assert.match(all, /🎯 فردية — 500 CC لكل إجابة صح/u);
-    assert.match(all, /`\.سؤال` `\.quiz`/u, 'each game with its Arabic and English words');
-    assert.match(all, /`\.تجربة` `\.test` — [^\n]* ・ 🛡️ للأدمن/u);
-    assert.match(all, /📋 أوامر[\s\S]*`\.توب`/u, 'the general commands too');
-    assert.ok(casino.fields.some((field) => field.value.includes('`مينز 100')), 'the casino games');
-    const size = menu.embeds.reduce((sum, embed) => sum + [embed.title, embed.description, embed.footer?.text, ...(embed.fields || []).flatMap((field) => [field.name, field.value])].join('').length, 0);
-    assert.ok(size <= 6000, `${size} characters`);
-    assert.ok(chat.fields.length <= 25 && chat.fields.every((field) => field.value.length <= 1024));
-    // The select: every game a member may start (not the general commands, not the admin-only sample game).
-    const options = menu.components.flatMap((row) => row.toJSON().components).flatMap((select) => select.options);
-    assert.ok(menu.components.every((row) => row.toJSON().components[0].custom_id.startsWith('g:menu:ar:')));
-    assert.deepEqual(options.map((option) => option.value), menuGames().map((game) => game.id));
-    assert.ok(options.some((option) => option.value === 'quiz' && option.label === 'سؤال · quiz'));
-    assert.ok(!options.some((option) => ['test', 'top', 'menu'].includes(option.value)));
-    assert.ok(options.every((option) => option.label.length <= 100 && (option.description ?? '').length <= 100));
 });
 
-test('the menu answers in the open channel and for trusted members; starting from it follows the same rule', async () => {
+test('the menu answers in the open channel; the old menu select (`g:menu:`, menus posted before) follows the same rule', async () => {
     const client = fakeClient();
     const clock = fakeClock();
     const open = openRoom();
     await handleGamesMessage(typed(open, '.العاب', CAROL), client);
-    assert.equal(open.sent.at(-1).payload.embeds.length, 2);
+    assert.equal(open.sent.at(-1).payload.embeds.length, 1);
     const pick = (room, user, gameId, { admin = false, lang = 'ar' } = {}) => {
         const interaction = { customId: `g:menu:${lang}:0`, values: [gameId], user, member: member(user, admin), guildId: GUILD, channelId: room.id, channel: room, replies: [], deferred: 0,
             async reply(payload) { this.replies.push(payload); }, async deferUpdate() { this.deferred += 1; } };

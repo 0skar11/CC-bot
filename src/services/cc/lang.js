@@ -25,9 +25,9 @@ export const readLang = (value) => (isLang(value) ? value : DEFAULT_LANG);
 /** `table[lang]`, the Arabic one for anything else. */
 export const inLang = (lang, table) => table[readLang(lang)];
 
-/** 'en' for a command word written in Latin letters (`rocket`, `Games`, `cf`), 'ar' for anything else. */
+/** 'en' for a command word written in Latin letters (`rocket`, `Games`, `cf`, `help-menu`), 'ar' for anything else. */
 export function wordLanguage(word) {
-    return /^[a-z]+$/iu.test(String(word ?? '')) ? 'en' : 'ar';
+    return /^[a-z]+(?:-[a-z]+)*$/iu.test(String(word ?? '')) ? 'en' : 'ar';
 }
 
 /** The language of a typed message: its first word after the optional PREFIX (like messageCreate reads it). */

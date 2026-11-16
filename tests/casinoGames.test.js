@@ -406,17 +406,16 @@ describe('the games menu', () => {
         const typed = (content) => messageCreate.execute({ guildId: GUILD, content, author: { id: A, bot: false }, channel: { id: ROOM, send: async (payload) => { sent.push(payload); } }, channelId: ROOM }, client);
         for (const word of ['العاب', 'ألعاب', 'الالعاب', 'الألعاب', '!العاب']) {
             await typed(word);
-            // One menu: the chat games, then the casino games, with the select that starts a chat game.
-            assert.deepEqual(sent.at(-1).embeds.map((embed) => embed.title), ['🎮 كل الألعاب', '🎮 ألعاب CC bot'], word);
-            assert.equal(sent.at(-1).components[0].toJSON().components[0].custom_id, 'g:menu:ar:0', word);
+            // One help menu: one embed with the banner, the category select, the requester in the footer.
+            assert.deepEqual(sent.at(-1).embeds.map((embed) => embed.title), ['قائمة اوامر CC bot'], word);
+            assert.match(sent.at(-1).components[0].toJSON().components[0].custom_id, /^g:help:[0-9a-f]+:cat$/u, word);
+            assert.equal(sent.at(-1).files?.[0]?.name, 'help-banner.png', word);
             assert.deepEqual(sent.at(-1).allowedMentions, { parse: [] });
         }
         // The English word shows the English menu.
         for (const word of ['games', '!games', 'Games']) {
             await typed(word);
-            assert.deepEqual(sent.at(-1).embeds.map((embed) => embed.title), ['🎮 All games', '🎮 CC bot games'], word);
-            assert.deepEqual(sent.at(-1).embeds[1].fields.map((field) => field.name), ['🎯 Solo — you against the house', '👥 Group — one round for the whole room']);
-            assert.ok(sent.at(-1).embeds[1].fields[1].value.includes('`rocket 100`'));
+            assert.deepEqual(sent.at(-1).embeds.map((embed) => embed.title), ['CC bot commands menu'], word);
         }
         assert.equal(sent.length, 8);
         for (const chat of ['العاب حلوة', 'العاب 100', '!العاب كتير', 'العاب الفيديو', 'games are fun']) await typed(chat);
@@ -428,8 +427,8 @@ describe('the games menu', () => {
             commandName: 'games', guildId: GUILD, channelId: ROOM, user: { id: A }, isChatInputCommand: () => true,
             async deferReply() { this.deferred = true; }, async editReply(payload) { replies.push(payload); }, reply: async () => assert.fail('deferred'),
         }, client);
-        assert.deepEqual(replies[0].embeds[1], gamesMenuEmbeds()[0]);
-        assert.equal(replies[0].embeds[0].title, '🎮 كل الألعاب');
+        assert.deepEqual(replies[0].embeds.map((embed) => embed.title), ['قائمة اوامر CC bot']);
+        assert.equal(replies[0].embeds[0].footer.text, `Requested by ${A}`);
         assert.equal(gamesCommand.data.toJSON().name, 'games');
         assert.equal(await gamesCommand.execute({ guildId: '900000000000000001', user: { id: A }, reply: async (payload) => payload }).then((payload) => payload.flags), 64);
     });
@@ -463,7 +462,9 @@ describe('the games menu', () => {
             await typed('العاب', '${BOURSE_ROOM}');
             await typed('العاب', '400000000000000009');
             assert.deepEqual(sent.map(([id]) => id), ['${CASINO_ROOM}', '${BOURSE_ROOM}']);
-            assert.match(sent[0][1].embeds[1].description, /<#${CASINO_ROOM}>/u);
+            assert.deepEqual(sent.map(([, payload]) => payload.embeds.length), [1, 1]);
+            const { helpMenuPayload } = await import(${url('../src/games/helpMenu.js')});
+            assert.match(helpMenuPayload({ token: 't', lang: 'ar', category: 'casino' }).embeds[0].description, /<#${CASINO_ROOM}>/u);
             await typed('كراش 100 2', '${BOURSE_ROOM}');
             assert.deepEqual(ran, []);
             await typed('كراش 100 2', '${CASINO_ROOM}');
@@ -473,7 +474,7 @@ describe('the games menu', () => {
             await interactionCreate.execute(slash('${CASINO_ROOM}'), client);
             await interactionCreate.execute(slash('400000000000000009'), client);
             assert.equal(replies[0][0], 'edit');
-            assert.equal(replies[0][1].embeds.length, 2);
+            assert.equal(replies[0][1].embeds.length, 1);
             assert.match(replies[1][1].content, /مش متاح/u);
         `;
         const result = spawnSync(process.execPath, ['--input-type=module', '-e', code], {

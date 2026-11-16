@@ -1,7 +1,7 @@
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { isAllowedGuild } from '../../config/runtime.js';
 import { GAMES_COMMAND, casinoGuildNotice } from '../../config/casino.js';
-import { gamesMenu } from '../../games/general.js';
+import { sendHelpMenu } from '../../games/helpMenu.js';
 import { loadGames } from '../../games/registry.js';
 import { commandLanguage, isLang } from '../../services/cc/lang.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
@@ -14,8 +14,8 @@ function menuLanguage(interaction) {
 }
 
 // `/games` and the typed `العاب` / `ألعاب` / `الالعاب` / `الألعاب` / `games` without the prefix
-// (src/config/commands/commandAliases.js): the one games menu (src/games/general.js gamesMenu: the chat games, the
-// casino games of src/services/cc/gamesMenuUi.js, and a select menu to start a chat game). With the PREFIX or a dot
+// (src/config/commands/commandAliases.js): the one help menu (src/games/helpMenu.js: an embed with the banner, a select
+// of categories that edits the message, a select to start a chat game, the support and invite links). With the PREFIX or a dot
 // the same menu is the games router's general command `menu` (every games room). Here it answers in the bot's
 // channels and in the casino rooms (CASINO_ROOM_COMMANDS); the casino games themselves stay in the casino rooms.
 export default {
@@ -33,6 +33,6 @@ export default {
         const reply = (payload) => InteractionHelper.safeReply(interaction, { allowedMentions: { parse: [] }, ...payload });
         if (!isAllowedGuild(interaction.guildId)) return reply({ content: casinoGuildNotice(lang), flags: MessageFlags.Ephemeral });
         await loadGames();
-        return reply(gamesMenu(lang));
+        return sendHelpMenu({ user: interaction.user, lang, guildId: interaction.guildId, channelId: interaction.channelId || interaction.channel?.id, send: reply });
     },
 };

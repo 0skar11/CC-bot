@@ -14,7 +14,8 @@
 //   an open channel: there a member who is not trusted gets the admin notice at most every GAMES.noticeGapMs.
 //   Group games keep their lobby minimum (minPlayers). A game word in a busy room gets one short "a game is
 //   running" reply per member for that game.
-// - `g:again:<gameId>` (engine/again.js) and the games menu's select start a round exactly like the typed command
+// - `g:again:<gameId>` (engine/again.js), the help menu's game select (`g:help:<token>:play:<n>`, helpMenu.js) and
+//   the old games menu's select (`g:menu:...`, on menus posted before the help menu) start a round exactly like the typed command
 //   (same ctx, rewards and daily cap); a press that cannot start one gets a short private reply.
 // - The game runs detached from the message handler: its session holds the room until run() returns (or the safety
 //   lifetime ends it), and any error is logged with a short line in the room, never thrown.
@@ -34,6 +35,7 @@ import { postIn, replyTo } from './engine/payload.js';
 import { announceWin, rewardWin } from './engine/rewards.js';
 import { askRound } from './engine/round.js';
 import { getSession, isBusy, realClock, startSession } from './engine/session.js';
+import { HELP_CATEGORIES, helpMenuPayload, helpMenuState, helpNotice } from './helpMenu.js';
 import { findGame, getGame, loadGames } from './registry.js';
 
 const TEXT = {
@@ -88,12 +90,12 @@ export function parseGamesCommand(content) {
 }
 
 /** The ctx a game's run() gets (the contract is at the top of src/games/registry.js). */
-export function buildContext({ client, message, game, session = null, args = [], lang = 'ar', random = Math.random }) {
+export function buildContext({ client, message, game, session = null, args = [], lang = 'ar', random = Math.random, clock = realClock }) {
     const channel = message.channel;
     const guildId = message.guildId || message.guild?.id || null;
     const ctx = {
         client, message, channel, guild: message.guild ?? null, guildId, channelId: message.channelId || channel?.id || null,
-        starter: message.author, member: message.member ?? null, args, lang, game, session, random,
+        starter: message.author, member: message.member ?? null, args, lang, game, session, random, clock,
         embed: (title, description = '', options = {}) => ccEmbed(title, description, { color: GAMES.color, ...options }),
         send: (input) => postIn(channel, input),
     };
@@ -142,7 +144,7 @@ function generalRoom(game, { member, channel, channelId }) {
  */
 export function launchGame({ client, message, game, args = [], lang = 'ar', random = Math.random, clock = realClock }) {
     const channelId = message.channelId || message.channel?.id;
-    const ctx = buildContext({ client, message, game, args, lang, random });
+    const ctx = buildContext({ client, message, game, args, lang, random, clock });
     const userId = message.author.id;
     const session = startSession({ channelId, guildId: ctx.guildId, gameId: game.id, starterId: userId, clock });
     if (!session) return { busy: getSession(channelId) };
@@ -180,7 +182,7 @@ export async function handleGamesMessage(message, client, { clock = realClock, r
             if (!generalRoom(game, room)) return false;
             claimed = true;
             lang = wordLanguage(command.word);
-            await game.run(buildContext({ client, message, game, args: command.args, lang, random }));
+            await game.run(buildContext({ client, message, game, args: command.args, lang, random, clock }));
             return true;
         }
         const rule = startRule(game, room);
@@ -285,6 +287,44 @@ export async function handleMenuSelect(interaction, client, [menuLang] = [], { c
         await Promise.resolve().then(() => interaction.deferUpdate()).catch(() => {});
     } catch (error) {
         logger.warn(`[GAMES] A games menu pick failed: ${error?.message || error}`);
+        await privately(interaction, say(lang).commandFailed);
+    }
+    return undefined;
+}
+
+/**
+ * A pick in the help menu (`g:help:<token>:cat` a category, `g:help:<token>:play:<n>` a game; src/games/helpMenu.js).
+ * Only the member who opened it, in its room, while it lives. A category edits the same message; a game starts
+ * like the typed command (startRule). Never throws.
+ */
+export async function handleHelpSelect(interaction, client, [token, action] = [], { clock = realClock, random = Math.random } = {}) {
+    const state = helpMenuState(token, clock.now());
+    const lang = state?.lang ?? buttonLanguage(interaction);
+    try {
+        if (!state) return await privately(interaction, helpNotice(lang).expired);
+        if (String(interaction.user?.id || '') !== state.requesterId) return await privately(interaction, helpNotice(lang).notYours(state.requesterId));
+        if (state.channelId && state.channelId !== String(interaction.channelId || interaction.channel?.id || '')) return await privately(interaction, say(lang).foreign);
+        await loadGames();
+        const value = String(interaction.values?.[0] || '');
+        if (action === 'cat') {
+            if (!HELP_CATEGORIES.includes(value)) return await privately(interaction, say(lang).unknown);
+            state.category = value;
+            if (typeof interaction.message?.edit === 'function') state.target = interaction.message;
+            // No files: the banner already on the message stays (an edit keeps its attachments).
+            await interaction.update(helpMenuPayload(state));
+            return undefined;
+        }
+        if (action === 'play') {
+            const game = getGame(value);
+            if (!game || game.kind === 'general' || game.eventAdminOnly) return await privately(interaction, say(lang).unknown);
+            const notice = startFromPress(interaction, client, game, lang, { clock, random });
+            if (notice) return await privately(interaction, notice);
+            await Promise.resolve().then(() => interaction.deferUpdate()).catch(() => {});
+            return undefined;
+        }
+        await privately(interaction, say(lang).unknown);
+    } catch (error) {
+        logger.warn(`[GAMES] A help menu pick failed: ${error?.message || error}`);
         await privately(interaction, say(lang).commandFailed);
     }
     return undefined;
