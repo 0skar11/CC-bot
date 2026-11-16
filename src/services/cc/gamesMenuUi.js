@@ -30,6 +30,7 @@ function menuText(lang) {
     const board = `${mines.columns}×${mines.cells / mines.columns}`;
     const coin = (coinflip.payoutPercent / 100).toFixed(2);
     const chicken = { lanes: CASINO.chicken.maxSteps, chance: chickenSurvivePercent(), top: multiplierText(chickenMultiplierHundredths(CASINO.chicken.maxSteps)) };
+    const blackjack = { win: multiplierText(CASINO.blackjack.winPayout), natural: multiplierText(CASINO.blackjack.naturalPayout), stands: CASINO.blackjack.dealerStandsOn };
     if (lang === 'en') {
         return {
             title: '🎮 CC bot games',
@@ -46,6 +47,7 @@ function menuText(lang) {
                 block('🎰 **Slots**', `three of a kind pays up to ×${slots}, a pair gives your bet back`, ['slots 100']),
                 block('🎲 **Dice**', 'it rolls 0.00-99.99: call over or under a number', ['dice 100 over 70', 'dice 100 under 30']),
                 block('🐔 **Chicken**', `press 🐔 Step to cross a lane (${chicken.chance}% chance each): the multiplier grows up to ${chicken.top} after ${chicken.lanes} lanes, cash out before a car hits it`, ['chicken 100']),
+                block('🃏 **Blackjack**', `beat the dealer to 21 without going over: a win pays ${blackjack.win}, a blackjack ${blackjack.natural}; hit, stand or double, the dealer stands on ${blackjack.stands}`, ['blackjack 100']),
             ],
             groupTitle: '👥 Group — one round for the whole room',
             group: [
@@ -70,6 +72,7 @@ function menuText(lang) {
             block('🎰 **سلوت**', `٣ زي بعض لحد ×${slots}، واتنين زي بعض رهانك يرجعلك`, ['سلوت 100']),
             block('🎲 **نرد**', 'رقم من 0.00 لـ 99.99: قول فوق أو تحت رقم', ['نرد 100 فوق 70', 'نرد 100 تحت 30']),
             block('🐔 **الفرخة**', `كل دوسة على 🐔 تقدّم بتعدّي حارة (فرصتها ${chicken.chance}%): المضاعف بيكبر لحد ${chicken.top} بعد ${chicken.lanes} حارة، واعمل كاش أوت قبل ما عربية تخبطها`, ['فرخة 100']),
+            block('🃏 **بلاك جاك**', `قرّب من 21 أكتر من الموزع من غير ما تعدّيها: الكسب ${blackjack.win} والبلاك جاك ${blackjack.natural}؛ اسحب أو وقف أو دبل، والموزع بيقف عند ${blackjack.stands}`, ['بلاك جاك 100']),
         ],
         groupTitle: '👥 جماعية — جولة واحدة للروم كله',
         group: [

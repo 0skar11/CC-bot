@@ -151,6 +151,8 @@ const TEXT = {
         noCC: (cc) => `❌ رصيدك ${cc} مش كفاية للرهان ده.`,
         active: (ends) => `⚠️ عندك لعبة ماينز شغالة، كملها أو اعمل كاش أوت الأول${ends}.`,
         activeEnds: (at) => ` (هتقفل لوحدها <t:${at}:R> لو مالعبتش)`,
+        // The live countdown on a running board (mines, chicken, blackjack): Discord counts it down, every move resets it.
+        idleEnds: (at) => `${E('ui.timer')} هتقفل لوحدها <t:${at}:R> لو مالعبتش`,
         badTarget: () => `❌ المضاعف لازم يكون من **${multiplierText(CASINO.crash.minTarget)}** لـ **${multiplierText(CASINO.crash.maxTarget)}** (مثلًا \`2.5\`).`,
         badDice: (minChance, maxChance) => `❌ اختار \`تحت\` رقم من ${minChance} لـ ${maxChance} أو \`فوق\` رقم من ${100 - maxChance} لـ ${100 - minChance} (مثلًا \`نرد 100 فوق 70\`).`,
         tooMany: () => `❌ أقصى حاجة ${CASINO.roulette.maxBetsPerMember} رهانات ليك في الجولة الواحدة.`,
@@ -275,6 +277,7 @@ const TEXT = {
         noCC: (cc) => `❌ Your balance ${cc} is not enough for this bet.`,
         active: (ends) => `⚠️ You have a mines game running: finish it or cash out first${ends}.`,
         activeEnds: (at) => ` (it closes by itself <t:${at}:R> if you don't play)`,
+        idleEnds: (at) => `${E('ui.timer')} Closes by itself <t:${at}:R> if you don't play`,
         badTarget: () => `❌ The multiplier must be from **${multiplierText(CASINO.crash.minTarget)}** to **${multiplierText(CASINO.crash.maxTarget)}** (for example \`2.5\`).`,
         badDice: (minChance, maxChance) => `❌ Pick \`under\` a number from ${minChance} to ${maxChance} or \`over\` a number from ${100 - maxChance} to ${100 - minChance} (for example \`dice 100 over 70\`).`,
         tooMany: () => `❌ At most ${CASINO.roulette.maxBetsPerMember} bets each in one round.`,
@@ -362,6 +365,9 @@ function boardRows(game, userId, { over = false } = {}) {
 
 const gameLine = (game, userId, lang) => withAllIn(say(lang).minesLine(userId, formatCC(game.bet), game.mines.length), game.allIn, lang);
 
+/** A running board's live countdown to its idle close (CASINO.idleMs after its last move), as a list of 0 or 1 line. */
+const idleLines = (game, lang) => (Number.isFinite(game?.lastActionAt) ? [say(lang).idleEnds(Math.ceil((game.lastActionAt + CASINO.idleMs) / 1000))] : []);
+
 /**
  * A running mines board: what cashing out pays now (in big letters), what the next safe cell would pay, the
  * multipliers after it, and the timeout rule in the footer. In the board's own language (`game.lang`, saved when
@@ -378,6 +384,7 @@ export function minesBoardPayload(game, userId, { note = '', lang = game.lang } 
         ...(note ? [note, ''] : []),
         gameLine(game, userId, lang),
         text.opened(picks, safe),
+        ...idleLines(game, lang),
         resultLine(text.cashOutNow(times(minesMultiplierHundredths(mines, picks)), formatCC(now))),
         ...(picks < safe ? [text.nextCell(times(minesMultiplierHundredths(mines, picks + 1)), formatCC(minesPayout(game.bet, mines, picks + 1)))] : []),
         ...(ladder.length ? [text.ladder(ladder)] : []),
@@ -488,6 +495,7 @@ export function chickenBoardPayload(game, userId, { note = '', lang = game.lang 
         chickenLine(game, userId, lang),
         text.crossed(game.steps, all),
         chickenRoad(game),
+        ...idleLines(game, lang),
         resultLine(text.cashOutNow(times(chickenMultiplierHundredths(game.steps)), formatCC(now))),
         ...(game.steps < all ? [text.nextLane(times(chickenMultiplierHundredths(game.steps + 1)), formatCC(chickenPayout(game.bet, game.steps + 1)), chickenSurvivePercent())] : []),
         ...(ladder.length ? [text.ladder(ladder)] : []),
@@ -597,6 +605,7 @@ export function blackjackBoardPayload(game, userId, { note = '', lang = game.lan
         ...(note ? [note, ''] : []),
         playerLine,
         text.blackjackPlaying(),
+        ...idleLines(game, lang),
     ].join('\n'), { color: casinoColor('blackjack'), fields: handFields(text, game, { hideDealer: true }), footer: text.blackjackLegend() });
 
     const buttons = new ActionRowBuilder().addComponents(

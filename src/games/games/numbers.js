@@ -2,8 +2,10 @@
 // digits), then hides it; the first member to type the same digits (either kind of digits, spaces allowed) wins.
 
 import { cardNote, cardPayload } from '../engine/card.js';
+import { roundCountdown, withCountdown } from '../engine/countdown.js';
+import { toPayload } from '../engine/payload.js';
 import { pickFresh } from '../engine/pick.js';
-import { randomDigits, toArabicDigits, typedDigits } from './lib/wordGames.js';
+import { ROUND_MS, randomDigits, toArabicDigits, typedDigits } from './lib/wordGames.js';
 import { langOf, playTypingRound, timeLine } from './lib/typingRound.js';
 
 /** How long the number stays on screen before it is hidden. */
@@ -46,7 +48,9 @@ export default {
             card(text.ask(seconds), shown, ctx.embed(text.title, `${text.ask(seconds)}\n${block(shown)}\n${timeLine(lang)}`)),
             card(text.hidden, masked, ctx.embed(text.title, `${text.hidden}\n${block(masked)}\n${timeLine(lang)}`)),
         ]);
-        const question = await ctx.send(shownPayload);
+        // The round starts as soon as the number is shown, so the number's message carries the round's live countdown
+        // (askRound posts no question of its own here); hiding the number edits only the embed and the image.
+        const question = await ctx.send(withCountdown(await toPayload(shownPayload), roundCountdown(lang, ctx.clock.now() + ROUND_MS)));
         const hidden = hiddenPayload?.files ? { ...hiddenPayload, attachments: [] } : { embeds: [hiddenPayload], files: [], attachments: [] };
         const hideTimer = ctx.session.setTimeout(() => {
             question?.edit?.(hidden)?.catch?.(() => {});

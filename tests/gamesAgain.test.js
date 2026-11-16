@@ -136,7 +136,7 @@ test('play again starts a new round of the same game in the same room, once; the
     assert.deepEqual(interaction.updates, [{ components: [] }], 'the button is removed with the press');
     assert.equal(interaction.replies.length, 0);
     await flush();
-    assert.equal(room.sent.at(-1).payload.content, 'type ok', 'the new question is posted');
+    assert.match(room.sent.at(-1).payload.content, /^type ok\n⏰ الوقت بيخلص <t:\d+:R>$/u, 'the new question is posted, with its countdown');
     // The same button again: stale, answered privately.
     const again = pressOn(message, room, BOB, { admin: true });
     await handleAgainButton(again, client, ['again1'], { clock });
@@ -329,7 +329,7 @@ test('the menu answers in the open channel; the old menu select (`g:menu:`, menu
     assert.equal(admin.replies.length, 0);
     assert.equal(getSession(room.id)?.gameId, 'again1');
     await flush();
-    assert.equal(room.sent.at(-1).payload.content, 'type ok');
+    assert.match(room.sent.at(-1).payload.content, /^type ok\n⏰ Time runs out <t:\d+:R>$/u);
     abortAll('test');
     // The admin-only sample game, and an unknown value.
     await clock.advance(AGAIN_COOLDOWN_MS);

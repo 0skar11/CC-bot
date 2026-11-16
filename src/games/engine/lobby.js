@@ -1,7 +1,9 @@
 // lobby.js — the join lobby of the dual and group games: one message with the players and three buttons,
 // ✅ Join, 🚪 Leave and ▶️ Start (the host only, once there are `min` players). The lobby closes when the host
 // starts it, when it is full (`max`) or when its time runs out (it starts then if `min` players joined, else it is
-// cancelled); the countdown is edited every GAMES.lobby.tickMs and the buttons go away when it closes.
+// cancelled); the time left is a Discord relative timestamp (`<t:UNIX:R>`, engine/countdown.js) that every member's
+// app counts down by itself, so the message is only edited when someone joins or leaves and when it closes (its
+// buttons go away then).
 // Buttons are `g:<join|leave|start>:<lobbyId>` (GAMES_BUTTON_PREFIX, src/interactions/buttons/store/games.js):
 // lobbies live in memory, so a button of a lobby that is gone (it closed, or the bot restarted) only answers,
 // privately, that the game ended, and its message loses its buttons.
@@ -19,13 +21,14 @@ import { ccEmbed } from '../../config/cc.js';
 import { GAMES, GAMES_BUTTON_PREFIX } from '../../config/games.js';
 import { buttonLanguage, inLang } from '../../services/cc/lang.js';
 import { logger } from '../../utils/logger.js';
+import { relativeTime } from './countdown.js';
 
 const TEXT = {
     ar: {
         host: (id) => `👑 صاحب اللعبة: <@${id}>`,
         count: (n, max, min) => `👥 اللاعبين: **${n}/${max}** (أقل عدد ${min})`,
         empty: 'لسه محدش دخل.',
-        left: (seconds) => `⏳ باقي **${seconds}** ثانية، دوس ✅ عشان تدخل.`,
+        left: (at) => `⏳ اللوبي بيقفل ${at}، دوس ✅ عشان تدخل.`,
         started: '▶️ اللعبة بدأت!',
         cancelled: {
             players: (min) => `❌ اللعبة اتلغت: محتاجين ${min} لاعبين على الأقل.`,
@@ -44,7 +47,7 @@ const TEXT = {
         host: (id) => `👑 Host: <@${id}>`,
         count: (n, max, min) => `👥 Players: **${n}/${max}** (at least ${min})`,
         empty: 'Nobody joined yet.',
-        left: (seconds) => `⏳ **${seconds}** seconds left, press ✅ to join.`,
+        left: (at) => `⏳ The lobby closes ${at}, press ✅ to join.`,
         started: '▶️ The game started!',
         cancelled: {
             players: (min) => `❌ Game cancelled: it needs at least ${min} players.`,
@@ -91,11 +94,9 @@ function buttons(lobby) {
     );
 }
 
-const secondsLeft = (lobby) => Math.max(0, Math.ceil((lobby.closesAt - lobby.session.clock.now()) / 1000));
-
-/** The open lobby's message: players, countdown and buttons. */
+/** The open lobby's message: players, the live countdown to its close and the buttons. */
 export function lobbyPayload(lobby) {
-    return { embeds: [lobbyEmbed(lobby, say(lobby.lang).left(secondsLeft(lobby)))], components: [buttons(lobby)], allowedMentions: { parse: [] } };
+    return { embeds: [lobbyEmbed(lobby, say(lobby.lang).left(relativeTime(lobby.closesAt)))], components: [buttons(lobby)], allowedMentions: { parse: [] } };
 }
 
 function closedPayload(lobby, result) {
@@ -112,7 +113,6 @@ function closeLobby(lobby, result, interaction = null) {
     lobby.done = true;
     lobbies.delete(lobby.id);
     lobby.session.clearTimeout(lobby.deadline);
-    lobby.session.clearTimeout(lobby.tick);
     lobby.offEnd();
     const final = result.cancelled ? { cancelled: true, reason: result.reason, players: [...lobby.players] } : { players: [...lobby.players], reason: result.reason };
     const payload = closedPayload(lobby, final);
@@ -124,14 +124,6 @@ function closeLobby(lobby, result, interaction = null) {
 // Acknowledges a press by editing its message; edits the lobby message directly if that fails.
 function updatePress(interaction, lobby, payload) {
     return Promise.resolve().then(() => interaction.update(payload)).catch(() => editMessage(lobby, payload));
-}
-
-function scheduleTick(lobby) {
-    lobby.tick = lobby.session.setTimeout(() => {
-        if (lobby.done) return;
-        editMessage(lobby, lobbyPayload(lobby));
-        scheduleTick(lobby);
-    }, GAMES.lobby.tickMs);
 }
 
 const wholeNumber = (value, fallback) => (Number.isSafeInteger(value) && value >= 1 ? value : fallback);
@@ -146,7 +138,7 @@ export async function openLobby(ctx, { min, max, joinSeconds, title, description
         id: randomBytes(6).toString('hex'), session, lang: ctx.lang, hostId: starter.id, hostPlays: hostPlays !== false,
         title: String(title || game?.names?.[ctx.lang]?.[0] || game?.id || '🎮').slice(0, 256), description,
         min: low, max: high, players: hostPlays !== false ? [starter.id] : [],
-        closesAt: session.clock.now() + seconds * 1000, done: false, message: null, deadline: null, tick: null, offEnd: () => {},
+        closesAt: session.clock.now() + seconds * 1000, done: false, message: null, deadline: null, offEnd: () => {},
     };
     try { lobby.message = await channel.send(lobbyPayload(lobby)); } catch (error) {
         logger.warn(`[GAMES] Could not post a lobby: ${error.code || error.message}`);
@@ -163,7 +155,6 @@ export async function openLobby(ctx, { min, max, joinSeconds, title, description
         lobby.deadline = session.setTimeout(() => {
             closeLobby(lobby, lobby.players.length >= lobby.min ? { reason: 'time' } : { cancelled: true, reason: 'players' });
         }, seconds * 1000);
-        scheduleTick(lobby);
         if (lobby.players.length >= lobby.max) closeLobby(lobby, { reason: 'full' });
     });
 }

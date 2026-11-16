@@ -6,12 +6,16 @@
 // Picking a category edits the same message (src/games/router.js handleHelpSelect) to that category's embed, same
 // banner, footer and menu, the chosen option marked default. The game categories add a second select
 // (`g:help:<token>:play:<n>`) that starts a chat game under the typed command's rule (router startRule).
+// The casino games (`🎰 العاب الكازينو`) are the first category of the select, a field of the home page (every
+// casino game with its typed example) and a button on every other page (`g:help:<token>:go:casino`, the same edit
+// as picking the category), so they are never hidden behind the other categories.
 // A menu answers only the member who opened it and lives HELP_LIFETIME_MS: then its selects are disabled by an
 // edit, and a later press is answered privately. At most HELP_MAX menus are kept in memory (the oldest is closed).
 
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } from 'discord.js';
+import { CASINO } from '../config/casino.js';
 import { CC } from '../config/cc.js';
 import { GAMES, GAMES_BUTTON_PREFIX, openGamesChannelIds } from '../config/games.js';
 import { gamesMenuEmbeds } from '../services/cc/gamesMenuUi.js';
@@ -26,7 +30,11 @@ export const HELP_LIFETIME_MS = 5 * 60_000;
 export const HELP_MAX = 500;
 export const BANNER_FILE = 'help-banner.png';
 export const BANNER_PATH = new URL('../../assets/help-banner.png', import.meta.url);
-export const HELP_CATEGORIES = ['admin', 'general', 'single', 'dual', 'group', 'casino', 'economy'];
+// The casino first: the most played part of the bot, never hidden among the others.
+export const HELP_CATEGORIES = ['casino', 'admin', 'general', 'single', 'dual', 'group', 'economy'];
+export const CASINO_CATEGORY = 'casino';
+// `g:help:<token>:go:<category>`: a button that opens a category (the casino's), like picking it in the select.
+export const HELP_GO = 'go';
 export const PLAY_KINDS = ['single', 'dual', 'group'];
 // The least the bot needs in a room: see, talk, embeds, the banner and cards, history, reactions, outside emoji.
 export const INVITE_PERMISSIONS = [
@@ -54,12 +62,19 @@ const TEXT = {
         pick: '🎮 اختار لعبة تبدأ في الروم ده',
         support: 'الدعم الفني',
         invite: 'اضافة البوت',
+        casinoButton: 'العاب الكازينو',
         requested: 'Requested by',
         labels: {
             admin: ['الاوامر الادارية', 'للأونر ومنظمين الفعاليات'], general: ['الاوامر العامة', 'النقاط والرصيد والشرح'],
             single: ['الالعاب الفردية', 'أول واحد يجاوب صح يكسب'], dual: ['الالعاب الثنائية', 'لاعب قصاد لاعب'],
-            group: ['الالعاب الجماعية', 'للروم كله بلوبي'], casino: ['الكازينو', 'رهانات بالـ CC'], economy: ['الاقتصاد والبورصة', 'CC والبورصة والستريك'],
+            group: ['الالعاب الجماعية', 'للروم كله بلوبي'], casino: ['العاب الكازينو', 'ماينز وبلاك جاك وروليت وصاروخ وغيرهم بالـ CC'], economy: ['الاقتصاد والبورصة', 'CC والبورصة والستريك'],
         },
+        // The home page's casino field: every casino game and how it is typed.
+        casinoHome: () => ['🎰 العاب الكازينو', [
+            `💣 \`مينز 100 ${CASINO.mines.default}\` ・ 🪙 \`عملة 100 ملك\` ・ 🎰 \`سلوت 100\` ・ 🎲 \`نرد 100 فوق 70\``,
+            '🐔 `فرخة 100` ・ 🃏 `بلاك جاك 100` ・ 🎡 `روليت 100 احمر` ・ 🚀 `صاروخ 100`',
+            '⬇️ دوس **🎰 العاب الكازينو** تحت للشرح كامل.',
+        ].join('\n')],
         admin: {
             money: ['💰 الرصيد (للأونر بس)', `\`addcc 500\` ・ \`addcc @عضو 500\` — يزوّد ${CC.short}\n\`removecc 500\` ・ \`removecc @عضو 500\` — ينقّص ${CC.short}`],
             rules: (open) => ['🎮 مين يبدأ الألعاب', `🛡️ الأونر واللي معاه Manage Server ورولات منظمين الفعاليات (EVENT_ROLE_IDS) والموثوقين (TRUSTED_USER_IDS و TRUSTED_ROLE_IDS) يبدأوا أي لعبة في أي روم. أي حد تاني يبدأ في الرومات المفتوحة بس (OPEN_GAMES_CHANNEL_IDS${open ? `: ${open}` : ''})، وفي أي روم تاني الأمر بيتجاهل من غير رد. لعبة واحدة بس في الروم، والألعاب الجماعية بتفتح لوبي ولازم يدخل أقل عدد لاعبين قبل ما تبدأ.`],
@@ -108,12 +123,18 @@ const TEXT = {
         pick: '🎮 Pick a game to start in this room',
         support: 'Support',
         invite: 'Add the bot',
+        casinoButton: 'Casino games',
         requested: 'Requested by',
         labels: {
             admin: ['Admin commands', 'For owners and event hosts'], general: ['General commands', 'Points, balance and help'],
             single: ['Single games', 'First right answer wins'], dual: ['Two-player games', 'One against one'],
-            group: ['Group games', 'The whole room, with a lobby'], casino: ['Casino', 'Bets in CC'], economy: ['Economy & bourse', 'CC, bourse and streak'],
+            group: ['Group games', 'The whole room, with a lobby'], casino: ['Casino games', 'Mines, blackjack, roulette, rocket and more, in CC'], economy: ['Economy & bourse', 'CC, bourse and streak'],
         },
+        casinoHome: () => ['🎰 Casino games', [
+            `💣 \`mines 100 ${CASINO.mines.default}\` ・ 🪙 \`coinflip 100 heads\` ・ 🎰 \`slots 100\` ・ 🎲 \`dice 100 over 70\``,
+            '🐔 `chicken 100` ・ 🃏 `blackjack 100` ・ 🎡 `roulette 100 red` ・ 🚀 `rocket 100`',
+            '⬇️ Press **🎰 Casino games** below for the full guide.',
+        ].join('\n')],
         admin: {
             money: ['💰 Balance (owners only)', `\`addcc 500\` ・ \`addcc @member 500\` — adds ${CC.short}\n\`removecc 500\` ・ \`removecc @member 500\` — removes ${CC.short}`],
             rules: (open) => ['🎮 Who starts games', `🛡️ Owners, members with Manage Server, event host roles (EVENT_ROLE_IDS) and trusted members (TRUSTED_USER_IDS, TRUSTED_ROLE_IDS) start any game in any room. Anyone else only in the open rooms (OPEN_GAMES_CHANNEL_IDS${open ? `: ${open}` : ''}); anywhere else the word is ignored without a reply. One game per room; group games open a lobby and need a minimum of players to start.`],
@@ -202,11 +223,16 @@ export function inviteUrl(env = process.env) {
 /** The support link (SUPPORT_URL), or null: the button is hidden. */
 export const supportUrl = (env = process.env) => httpsUrl(env.SUPPORT_URL);
 
-function linkRow(lang) {
+/** The button row: `🎰 العاب الكازينو` (on every page but the casino's own), then the support and add-the-bot links. */
+function buttonRow(lang, { token, category, disabled }) {
     const text = textOf(lang);
     const buttons = [];
     const support = supportUrl();
     const invite = inviteUrl();
+    if (category !== CASINO_CATEGORY) {
+        buttons.push(new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(text.casinoButton).setEmoji(CATEGORY_EMOJI.casino)
+            .setCustomId(`${GAMES_BUTTON_PREFIX}:${HELP_ACTION}:${token}:${HELP_GO}:${CASINO_CATEGORY}`).setDisabled(disabled));
+    }
     if (support) buttons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(text.support).setEmoji('🛠️').setURL(support));
     if (invite) buttons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(text.invite).setEmoji('➕').setURL(invite));
     return buttons.length ? new ActionRowBuilder().addComponents(buttons) : null;
@@ -250,11 +276,12 @@ function categoryFields(category, lang, guildId) {
         const description = [kind.how, kind.pays, ...(startableGames(category).length ? [text.start] : [])].join('\n');
         return { title: kind.title, description, fields };
     }
-    if (category === 'casino') {
+    if (category === CASINO_CATEGORY) {
+        // Every casino game (solo and group) with what it does and its typed example, the bets and the house edges.
         const [casino] = gamesMenuEmbeds(lang);
         const fields = [...(casino.fields || [])];
         if (casino.footer?.text) fields.push({ name: text.casinoEdge, value: casino.footer.text.replace(/^⚖️\s*/u, '').slice(0, 1024) });
-        return { title: casino.title, description: casino.description, fields };
+        return { title: `${CATEGORY_EMOJI.casino} ${text.labels.casino[0]}`, description: casino.description, fields };
     }
     if (category === 'economy') {
         const bourse = lang === 'en'
@@ -265,7 +292,8 @@ function categoryFields(category, lang, guildId) {
         if (isStreakGuild(guildId)) fields.push({ name: text.economy.streak, value: text.economy.streakLine });
         return { title: text.economy.title, description: text.economy.about, fields };
     }
-    return { title: text.title, description: text.home(), fields: [] };
+    const [casinoName, casinoValue] = text.casinoHome();
+    return { title: text.title, description: text.home(), fields: [{ name: casinoName, value: casinoValue }] };
 }
 
 /** The embed of `category` (null: the home page), cut to Discord's limits (6,000 in all, 25 fields, 1,024 a field). */
@@ -293,14 +321,14 @@ export function helpEmbed({ lang = 'ar', category = null, user = null, guildId =
     return embed;
 }
 
-/** The rows: the category select, the game selects of a game category, the link buttons (5 rows at most). */
+/** The rows: the category select, the game selects of a game category, the buttons (casino, links; 5 rows at most). */
 export function helpComponents({ token, lang = 'ar', category = null, disabled = false } = {}) {
     const text = textOf(lang);
     const options = HELP_CATEGORIES.map((id) => new StringSelectMenuOptionBuilder().setValue(id).setEmoji(CATEGORY_EMOJI[id])
         .setLabel(text.labels[id][0]).setDescription(text.labels[id][1]).setDefault(id === category));
     const rows = [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder()
         .setCustomId(`${GAMES_BUTTON_PREFIX}:${HELP_ACTION}:${token}:cat`).setPlaceholder(text.placeholder).setDisabled(disabled).addOptions(options))];
-    const links = linkRow(lang);
+    const links = buttonRow(lang, { token, category, disabled });
     if (PLAY_KINDS.includes(category)) {
         const games = startableGames(category);
         const most = 5 - rows.length - (links ? 1 : 0);

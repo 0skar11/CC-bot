@@ -10,7 +10,7 @@ import { DEFAULT_OPEN_GAMES_CHANNEL_ID } from '../src/config/games.js';
 import interactionCreate from '../src/events/interactionCreate.js';
 import loadInteractions from '../src/handlers/loaders/interactions.js';
 import { forgetAgain } from '../src/games/engine/again.js';
-import { abortAll, getSession, isBusy } from '../src/games/engine/session.js';
+import { abortAll, getSession, isBusy, realClock } from '../src/games/engine/session.js';
 import {
     BANNER_PATH, HELP_CATEGORIES, HELP_LIFETIME_MS, HELP_MAX, armHelpMenu, embedLength, forgetHelpMenus, helpMenuPayload, helpMenuState,
     inviteUrl, liveHelpMenus, startableGames,
@@ -78,10 +78,38 @@ test('every category, in both languages, fits Discord: 6,000 characters, 25 fiel
     const ar = helpMenuPayload({ token: 'abc', lang: 'ar', category: null, user: ALICE });
     assert.equal(ar.embeds[0].title, 'قائمة اوامر CC bot');
     assert.equal(selects(ar)[0].placeholder, 'اختر القائمة المطلوبة');
+    // The casino games come first, under their own clear name.
     assert.deepEqual(selects(ar)[0].options.map((option) => [option.emoji.name, option.label]), [
-        ['🛡️', 'الاوامر الادارية'], ['📜', 'الاوامر العامة'], ['🎮', 'الالعاب الفردية'], ['⚔️', 'الالعاب الثنائية'],
-        ['👥', 'الالعاب الجماعية'], ['🎰', 'الكازينو'], ['💱', 'الاقتصاد والبورصة'],
+        ['🎰', 'العاب الكازينو'], ['🛡️', 'الاوامر الادارية'], ['📜', 'الاوامر العامة'], ['🎮', 'الالعاب الفردية'], ['⚔️', 'الالعاب الثنائية'],
+        ['👥', 'الالعاب الجماعية'], ['💱', 'الاقتصاد والبورصة'],
     ]);
+    assert.equal(selects(helpMenuPayload({ token: 'abc', lang: 'en', category: null, user: ALICE }))[0].options[0].label, 'Casino games');
+});
+
+test('the casino games section: its own page with every casino game, a field on the home page and a button everywhere else', () => {
+    const all = (e) => [e.title, e.description, ...(e.fields || []).flatMap((field) => [field.name, field.value])].join('\n');
+    const games = {
+        ar: ['مينز 100 3', 'عملة 100 ملك', 'سلوت 100', 'نرد 100 فوق 70', 'فرخة 100', 'بلاك جاك 100', 'روليت 100 احمر', 'صاروخ 100'],
+        en: ['mines 100 3', 'coinflip 100 heads', 'slots 100', 'dice 100 over 70', 'chicken 100', 'blackjack 100', 'roulette 100 red', 'rocket 100'],
+    };
+    for (const lang of ['ar', 'en']) {
+        const page = helpMenuPayload({ token: 'abc', lang, category: 'casino', user: ALICE });
+        assert.equal(page.embeds[0].title, lang === 'ar' ? '🎰 العاب الكازينو' : '🎰 Casino games');
+        const home = helpMenuPayload({ token: 'abc', lang, category: null, user: ALICE }).embeds[0];
+        assert.equal(home.fields[0].name, lang === 'ar' ? '🎰 العاب الكازينو' : '🎰 Casino games');
+        for (const example of games[lang]) {
+            assert.ok(all(page.embeds[0]).includes(`\`${example}`), `${lang} page: ${example}`);
+            assert.ok(home.fields[0].value.includes(`\`${example}\``), `${lang} home: ${example}`);
+        }
+        // The button that opens the casino page: on every page but the casino's own (where it would do nothing).
+        for (const category of [null, ...HELP_CATEGORIES]) {
+            const casinoButtons = buttons(helpMenuPayload({ token: 'abc', lang, category, user: ALICE })).filter((button) => button.custom_id === 'g:help:abc:go:casino');
+            assert.equal(casinoButtons.length, category === 'casino' ? 0 : 1, `${lang} ${category}`);
+            if (casinoButtons.length) assert.deepEqual([casinoButtons[0].label, casinoButtons[0].emoji.name, casinoButtons[0].style], [lang === 'ar' ? 'العاب الكازينو' : 'Casino games', '🎰', 1]);
+        }
+        const closed = buttons(helpMenuPayload({ token: 'abc', lang, category: 'single', user: ALICE }, { disabled: true })).find((button) => button.custom_id === 'g:help:abc:go:casino');
+        assert.equal(closed.disabled, true, 'a closed menu disables the button too');
+    }
 });
 
 test('the categories: games from the registry with their words and pay, `قريبا` for the planned ones, the casino, the rest', () => {
@@ -113,20 +141,24 @@ test('the link buttons: support only with SUPPORT_URL, the invite from DISCORD_C
     delete process.env.SUPPORT_URL;
     delete process.env.INVITE_URL;
     delete process.env.DISCORD_CLIENT_ID;
+    const links = (payload) => buttons(payload).filter((button) => button.style === 5);
     const none = helpMenuPayload({ token: 't', lang: 'ar', category: null, user: ALICE });
-    assert.deepEqual(buttons(none), []);
-    assert.equal(none.components.length, 1);
+    assert.deepEqual(links(none), []);
+    assert.deepEqual(buttons(none).map((button) => button.custom_id), ['g:help:t:go:casino'], 'only the casino button');
+    assert.equal(none.components.length, 2);
+    assert.equal(helpMenuPayload({ token: 't', lang: 'ar', category: 'casino', user: ALICE }).components.length, 1, 'no button row on the casino page without links');
     process.env.DISCORD_CLIENT_ID = '123456789012345678';
-    const invite = buttons(helpMenuPayload({ token: 't', lang: 'ar', category: null, user: ALICE }));
+    const invite = links(helpMenuPayload({ token: 't', lang: 'ar', category: null, user: ALICE }));
     assert.deepEqual(invite.map((button) => [button.label, button.style]), [['اضافة البوت', 5]]);
     // ViewChannel, SendMessages, EmbedLinks, AttachFiles, ReadMessageHistory, AddReactions, UseExternalEmojis.
     assert.equal(invite[0].url, 'https://discord.com/oauth2/authorize?client_id=123456789012345678&permissions=379968&scope=bot%20applications.commands');
     process.env.SUPPORT_URL = 'https://discord.gg/example';
     process.env.INVITE_URL = 'https://example.com/invite';
     const both = buttons(helpMenuPayload({ token: 't', lang: 'en', category: 'single', user: ALICE }));
-    assert.deepEqual(both.map((button) => [button.label, button.url]), [['Support', 'https://discord.gg/example'], ['Add the bot', 'https://example.com/invite']]);
+    // One row: the casino button first, then the links.
+    assert.deepEqual(both.map((button) => [button.label, button.url]), [['Casino games', undefined], ['Support', 'https://discord.gg/example'], ['Add the bot', 'https://example.com/invite']]);
     process.env.SUPPORT_URL = 'not a url';
-    assert.equal(buttons(helpMenuPayload({ token: 't', lang: 'ar', category: null, user: ALICE })).length, 1);
+    assert.equal(links(helpMenuPayload({ token: 't', lang: 'ar', category: null, user: ALICE })).length, 1);
     assert.equal(inviteUrl({ DISCORD_CLIENT_ID: 'nope' }), null);
 });
 
@@ -162,6 +194,36 @@ test('picking a category edits the same message, marks the option, keeps the ban
     assert.equal(selects(casino.updates[0]).length, 1, 'no game select outside the game categories');
     const odd = pick(sent, room, BOB, `g:help:${token}:cat`, 'nope');
     await handleHelpSelect(odd, client, [token, 'cat'], { clock });
+    assert.equal(odd.updates.length, 0);
+    assert.match(odd.replies[0].content, /مش موجودة/u);
+});
+
+test('the 🎰 casino button opens the casino page in the same message, through interactionCreate, for the requester only', async () => {
+    const client = fakeClient();
+    await loadInteractions(client);
+    // interactionCreate reads the menus on the real clock.
+    const clock = realClock;
+    const room = newRoom();
+    room.isTextBased = () => true;
+    const { sent, token } = await openMenu(room, client, clock);
+    const press = (user) => Object.assign(pick(sent, room, user, `g:help:${token}:go:casino`, undefined), {
+        values: undefined, isChatInputCommand: () => false, isButton: () => true, isStringSelectMenu: () => false, isModalSubmit: () => false, isRepliable: () => true,
+    });
+    const other = press(CAROL);
+    await interactionCreate.execute(other, client);
+    assert.equal(other.updates.length, 0);
+    assert.match(other.replies[0].content, /القائمة دي لـ/u);
+    const mine = press(BOB);
+    await interactionCreate.execute(mine, client);
+    assert.equal(mine.replies.length, 0);
+    const [update] = mine.updates;
+    assert.equal(update.embeds[0].title, '🎰 العاب الكازينو');
+    assert.deepEqual(selects(update)[0].options.filter((option) => option.default).map((option) => option.value), ['casino']);
+    assert.ok(!buttons(update).some((button) => button.custom_id?.includes(':go:')), 'no casino button on the casino page');
+    assert.equal(helpMenuState(token, clock.now()).category, 'casino');
+    // A target that is no category is refused like an unknown pick.
+    const odd = Object.assign(press(BOB), { customId: `g:help:${token}:go:nope` });
+    await handleHelpSelect(odd, client, [token, 'go', 'nope'], { clock });
     assert.equal(odd.updates.length, 0);
     assert.match(odd.replies[0].content, /مش موجودة/u);
 });

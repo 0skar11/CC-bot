@@ -1,6 +1,8 @@
 import { Client, GatewayIntentBits } from 'discord.js';
 import { validateConfig } from './config/runtime.js';
 import { validateGamesConfig } from './config/games.js';
+import { validateInviteConfig } from './config/invites.js';
+import { inviteIntents } from './services/cc/inviteTracker.js';
 import { PostgreSQLDatabase } from './utils/postgresDatabase.js';
 import loadCommands from './handlers/loaders/commands.js';
 import loadInteractions from './handlers/loaders/interactions.js';
@@ -9,7 +11,11 @@ import { loadGames } from './games/registry.js';
 import { abortAll } from './games/engine/session.js';
 validateConfig();
 validateGamesConfig();
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+validateInviteConfig();
+// The invite gift adds GuildInvites, and GuildMembers only when the Server Members Intent is on in the developer
+// portal (asked before login: a privileged intent that is off would stop the login). See src/services/cc/inviteTracker.js.
+const extraIntents = await inviteIntents(process.env.DISCORD_TOKEN);
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, ...extraIntents] });
 client.db = new PostgreSQLDatabase();
 try {
     await client.db.connect();

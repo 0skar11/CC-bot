@@ -35,7 +35,7 @@ import { postIn, replyTo } from './engine/payload.js';
 import { announceWin, rewardWin } from './engine/rewards.js';
 import { askRound } from './engine/round.js';
 import { getSession, isBusy, realClock, startSession } from './engine/session.js';
-import { HELP_CATEGORIES, helpMenuPayload, helpMenuState, helpNotice } from './helpMenu.js';
+import { HELP_CATEGORIES, HELP_GO, helpMenuPayload, helpMenuState, helpNotice } from './helpMenu.js';
 import { findGame, getGame, loadGames } from './registry.js';
 
 const TEXT = {
@@ -293,11 +293,12 @@ export async function handleMenuSelect(interaction, client, [menuLang] = [], { c
 }
 
 /**
- * A pick in the help menu (`g:help:<token>:cat` a category, `g:help:<token>:play:<n>` a game; src/games/helpMenu.js).
+ * A pick in the help menu (`g:help:<token>:cat` a category, `g:help:<token>:play:<n>` a game; src/games/helpMenu.js),
+ * or a press of its `g:help:<token>:go:<category>` button (the casino's: the same as picking that category).
  * Only the member who opened it, in its room, while it lives. A category edits the same message; a game starts
  * like the typed command (startRule). Never throws.
  */
-export async function handleHelpSelect(interaction, client, [token, action] = [], { clock = realClock, random = Math.random } = {}) {
+export async function handleHelpSelect(interaction, client, [token, action, target] = [], { clock = realClock, random = Math.random } = {}) {
     const state = helpMenuState(token, clock.now());
     const lang = state?.lang ?? buttonLanguage(interaction);
     try {
@@ -305,8 +306,8 @@ export async function handleHelpSelect(interaction, client, [token, action] = []
         if (String(interaction.user?.id || '') !== state.requesterId) return await privately(interaction, helpNotice(lang).notYours(state.requesterId));
         if (state.channelId && state.channelId !== String(interaction.channelId || interaction.channel?.id || '')) return await privately(interaction, say(lang).foreign);
         await loadGames();
-        const value = String(interaction.values?.[0] || '');
-        if (action === 'cat') {
+        const value = String((action === HELP_GO ? target : interaction.values?.[0]) || '');
+        if (action === 'cat' || action === HELP_GO) {
             if (!HELP_CATEGORIES.includes(value)) return await privately(interaction, say(lang).unknown);
             state.category = value;
             if (typeof interaction.message?.edit === 'function') state.target = interaction.message;

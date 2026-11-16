@@ -18,6 +18,8 @@ npm start
 
 Enable **Message Content Intent** in the Discord developer portal for typed commands. Invite with `bot` and `applications.commands`, and grant View Channels, Send Messages, Embed Links and Read Message History. Trader roles additionally require Manage Roles, with the bot's role above the trader role and any configured anchor.
 
+The invite gift (5000 CC to the inviter when the invited member reaches level 5, read from the level bot's announcements in `LEVEL_CHANNEL_IDS`) also needs **Server Members Intent** switched on in the developer portal and **Manage Server** in that server to read the invites. Without them the bot still starts (it checks the intent before logging in) and logs a warning; no gift can be paid until they are given. `INVITE_REWARD_ENABLED=false` turns it off.
+
 For public installation, turn **Public Bot on**, enable Guild Install and configure the Discord-provided install link with `bot` and `applications.commands`. Set `BOURSE_GUILD_IDS=*` with an explicit stable `ECONOMY_SCOPE_ID`; use the application ID as the namespace before any players start. The runtime then accepts every guild where the bot is installed. For an owner-only deployment, turn Public Bot off and configure a finite guild allowlist instead. Keep the token in local `.env` or host secrets only.
 
 `npm run register` registers `/bourse`, `/casino`, `/games`, `/cc`, `/cctop`, `/daily`, `/give`, `/addcc`, `/removecc` and `/help` in the configured application. It replaces the global command list in public mode or each configured guild's list in finite-allowlist mode. [PUBLIC-MODE.md](PUBLIC-MODE.md) describes the two modes.

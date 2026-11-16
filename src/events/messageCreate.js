@@ -7,6 +7,7 @@ import { handleStreakCommand, handleStreakMessage } from '../services/cc/streakS
 import { handleStreakBotMessage } from '../services/cc/streakBotService.js';
 import { handleGamesBotWin } from '../services/cc/gamesBotService.js';
 import { handleGuideCommand } from '../services/cc/guideUi.js';
+import { handleLevelUpMessage } from '../services/cc/inviteRewardService.js';
 import { blackjackHelpPayload } from '../services/cc/casinoUi.js';
 import { casinoErrorText } from '../services/cc/casinoUi.js';
 import { wordLanguage } from '../services/cc/lang.js';
@@ -23,8 +24,12 @@ export default {
     name: 'messageCreate',
     async execute(message, client) {
         const guildId = message.guildId || message.guild?.id;
-        // StreakBot's "تم تحديث الستريك" post pays the member CC by streak day (other bots are ignored).
-        if (message.author?.bot) { if (!(await handleGamesBotWin(message))) await handleStreakBotMessage(message); return; }
+        // StreakBot's "تم تحديث الستريك" post pays the member CC by streak day, the level bot's level-up post pays the
+        // invite gift (src/services/cc/inviteRewardService.js); other bots are ignored.
+        if (message.author?.bot) {
+            if (!(await handleGamesBotWin(message)) && !(await handleLevelUpMessage(message))) await handleStreakBotMessage(message);
+            return;
+        }
         if (!isAllowedGuild(guildId)) return;
         // The chat games (src/games/router.js): only the PREFIX or a dot followed by a game word (`.اسرع`, `!توب`);
         // anything else, and every casino, bourse, CC and streak word, goes on below exactly as before.

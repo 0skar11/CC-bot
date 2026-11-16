@@ -132,9 +132,10 @@ for (const { word, answer } of REAL) {
         assert.equal(payload.files[0].name, CARD_FILE);
         assert.equal(payload.embeds[0].image.url, `attachment://${CARD_FILE}`);
         await assertPng(payload.files[0].attachment);
-        // All a member can copy is fixed text: the game title, the "question in the image" note, the time left.
+        // All a member can copy is fixed text: the game title, the "question in the image" note, the time left (and
+        // above them the live countdown, a Discord timestamp).
         const prompt = payload.embeds[0];
-        assert.equal(payload.content, undefined);
+        assert.match(payload.content, /^⏰ (?:الوقت بيخلص|Time runs out) <t:\d+:R>$/u);
         assert.deepEqual(Object.keys(prompt).sort(), ['color', 'description', 'image', 'title']);
         const [note, time, ...rest] = prompt.description.split('\n');
         assert.ok([cardNote('ar'), cardNote('en')].includes(note), note);

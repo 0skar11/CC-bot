@@ -28,8 +28,9 @@ export const GAMES = {
     points: { answer: 1, group: 5 },
     // `convert`: points to CC.
     convert: { ccPerPoint: 100, minPoints: 5 },
-    // Join lobbies (dual and group games): defaults when a game gives none, and how often the countdown is edited.
-    lobby: { joinSeconds: 60, minPlayers: 2, maxPlayers: 25, tickMs: 10_000 },
+    // Join lobbies (dual and group games): defaults when a game gives none. The time left is a live Discord
+    // countdown (`<t:UNIX:R>`, src/games/engine/countdown.js), so the lobby message is never edited just for it.
+    lobby: { joinSeconds: 60, minPlayers: 2, maxPlayers: 25 },
     // A room is never held longer than this, whatever a game does.
     maxLifetimeMs: 30 * 60_000,
     // The same short notice (not an admin, a game is running) is sent to one member at most this often.

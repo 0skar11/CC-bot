@@ -8,6 +8,7 @@ import { startHeartbeat } from '../services/heartbeatService.js';
 import { refreshGuildEmojis } from '../config/emojis.js';
 import { recoverCasinoGames } from '../services/cc/casinoSessions.js';
 import { recoverGroupGames } from '../services/cc/casinoGroupSessions.js';
+import { startInviteTracking } from '../services/cc/inviteTracker.js';
 export default {
     name: 'clientReady', once: true,
     async execute(client) {
@@ -32,6 +33,9 @@ export default {
             const rounds = await recoverGroupGames(client);
             if (rounds.settled || rounds.refunded || rounds.failed) logger.info('Casino group rounds after restart', rounds);
         } catch (error) { logger.warn('Casino group recovery failed', error.code || error.message); }
+        // The invite gift: every invite's use count in the level room's server, to tell which one a new member used.
+        const invites = await startInviteTracking(client);
+        if (invites.status !== 'disabled') logger.info(`[INVITES] Tracking: ${invites.status} (${invites.read}/${invites.guilds} servers read)`);
         for (const guild of managedGuilds(client)) {
             try { logger.info(`Trader role in ${guild.id}: ${(await ensureTraderRole(client, guild)).status}`); }
             catch (error) { logger.warn(`Trader setup failed in ${guild.id}`, error.code || error.message); }

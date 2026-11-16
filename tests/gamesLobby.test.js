@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { Collection } from 'discord.js';
-import { GAMES } from '../src/config/games.js';
 import interactionCreate from '../src/events/interactionCreate.js';
 import loadInteractions from '../src/handlers/loaders/interactions.js';
 import { handleLobbyButton, openLobbies, openLobby } from '../src/games/engine/lobby.js';
@@ -72,20 +71,22 @@ test('only the host starts, once there are enough players; members may leave, th
     assert.deepEqual(start.updates[0].components, []);
 });
 
-test('the countdown is edited while it waits; at the end it starts with enough players or is cancelled', async () => {
+test('the countdown is a live Discord timestamp (never edited); at the end it starts with enough players or is cancelled', async () => {
     const room = setup();
+    const closesAt = Math.floor((room.clock.now() + 30_000) / 1000);
     const lobby = openLobby(room.ctx, { joinSeconds: 30, title: 'سباق العربيات' });
     await flush();
     const message = room.channel.sent[0];
     assert.equal(message.payload.embeds[0].title, 'سباق العربيات');
-    assert.match(description(message.payload), /باقي \*\*30\*\* ثانية/u);
-    await room.clock.advance(GAMES.lobby.tickMs);
-    assert.match(description(message.edits[0]), /باقي \*\*20\*\* ثانية/u);
-    await room.clock.advance(GAMES.lobby.tickMs);
-    assert.match(description(message.edits[1]), /باقي \*\*10\*\* ثانية/u);
-    await room.clock.advance(10_000);
+    assert.match(description(message.payload), new RegExp(`⏳ اللوبي بيقفل <t:${closesAt}:R>، دوس ✅ عشان تدخل\\.`, 'u'));
+    // Nothing to edit while it waits: every member's app counts the timestamp down by itself.
+    await room.clock.advance(29_000);
+    assert.equal(message.edits.length, 0);
+    await room.clock.advance(1_000);
     assert.deepEqual(await lobby, { cancelled: true, reason: 'players', players: [ALICE.id] });
+    assert.equal(message.edits.length, 1, 'one edit: the close');
     assert.match(description(message.edits.at(-1)), /اتلغت: محتاجين 2 لاعبين/u);
+    assert.doesNotMatch(description(message.edits.at(-1)), /<t:/u, 'a closed lobby has no countdown');
     assert.deepEqual(message.edits.at(-1).components, []);
     assert.equal(room.clock.pending(), 0);
 

@@ -351,7 +351,8 @@ describe('the games menu', () => {
             assert.equal(menu.fields.length, 2);
             assert.match(menu.title, lang === 'ar' ? /ألعاب CC bot/u : /CC bot games/u);
             const [solo, group] = menu.fields;
-            assert.equal(solo.value.split('\n\n').length, 5);
+            // Mines, coinflip, slots, dice, chicken and blackjack.
+            assert.equal(solo.value.split('\n\n').length, 6);
             assert.equal(group.value.split('\n\n').length, 2);
             assert.ok(solo.value.length <= 1024 && group.value.length <= 1024);
             // Every game is two lines: what it does, then its typed example on a line of its own.
@@ -366,14 +367,14 @@ describe('the games menu', () => {
         }
         const [ar] = gamesMenuEmbeds('ar');
         assert.deepEqual(ar.fields.map((field) => field.name), ['🎯 فردية — انت والبيت بس', '👥 جماعية — جولة واحدة للروم كله']);
-        for (const example of ['مينز 100 3', 'عملة 100 ملك', 'سلوت 100', 'نرد 100 فوق 70', 'فرخة 100', 'روليت 100 احمر', 'صاروخ 100']) assert.ok(ar.fields.some((field) => field.value.includes(`\`${example}\``)), example);
+        for (const example of ['مينز 100 3', 'عملة 100 ملك', 'سلوت 100', 'نرد 100 فوق 70', 'فرخة 100', 'بلاك جاك 100', 'روليت 100 احمر', 'صاروخ 100']) assert.ok(ar.fields.some((field) => field.value.includes(`\`${example}\``)), example);
         assert.ok(ar.fields[1].value.includes('هو نفسه `كراش`'), 'crash is shown as the rocket itself');
         assert.match(ar.footer.text, /العب بمزاج/u);
         // Every Arabic line starts with an emoji or the example marker, so Discord keeps it in order.
         for (const line of ar.fields.flatMap((field) => field.value.split('\n')).filter(Boolean)) assert.doesNotMatch(line, /^[A-Za-z0-9` ]/u, line);
         const [en] = gamesMenuEmbeds('en');
         assert.deepEqual(en.fields.map((field) => field.name), ['🎯 Solo — you against the house', '👥 Group — one round for the whole room']);
-        for (const example of ['mines 100 3', 'coinflip 100 heads', 'slots 100', 'dice 100 over 70', 'chicken 100', 'roulette 100 red', 'rocket 100 2']) assert.ok(en.fields.some((field) => field.value.includes(`\`${example}\``)), example);
+        for (const example of ['mines 100 3', 'coinflip 100 heads', 'slots 100', 'dice 100 over 70', 'chicken 100', 'blackjack 100', 'roulette 100 red', 'rocket 100 2']) assert.ok(en.fields.some((field) => field.value.includes(`\`${example}\``)), example);
         assert.ok(en.fields[1].value.includes('(same as `crash`)'), 'crash is shown as the rocket itself');
         // The English menu is English apart from the one hint to the Arabic menu.
         assert.doesNotMatch(JSON.stringify(en).replace('العربية: العاب', ''), /[؀-ۿ]/u);

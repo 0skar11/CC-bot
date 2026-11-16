@@ -30,7 +30,8 @@ test('the first right answer from a member wins; bots, webhooks and wrong answer
     const room = setup();
     const round = askRound(room.ctx, { prompt: 'عاصمة مصر؟', validate: (content) => matches(content, 'القاهرة'), timeMs: 10_000 });
     await flush();
-    assert.equal(room.channel.sent[0].payload.content, 'عاصمة مصر؟');
+    // The question, then its live countdown: a Discord timestamp of the moment the time runs out (no edits needed).
+    assert.equal(room.channel.sent[0].payload.content, `عاصمة مصر؟\n⏰ الوقت بيخلص <t:${Math.floor((room.clock.now() + 10_000) / 1000)}:R>`);
     assert.deepEqual(room.channel.sent[0].payload.allowedMentions, { parse: [] });
     room.channel.emit(answer(BOT, 'القاهرة'));
     room.channel.emit(answer(CAROL, 'القاهرة', { webhookId: '1' }));

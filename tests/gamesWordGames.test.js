@@ -92,8 +92,9 @@ for (const word of Object.keys(GAMES)) {
         const { payload } = room.sent[0];
         assert.equal(question.image.url, `attachment://${CARD_FILE}`);
         assert.equal(payload.files.length, 1);
-        // The text a member can copy is fixed: the game title, the "question in the image" note and the time left.
-        assert.equal(payload.content, undefined);
+        // The text a member can copy is fixed: the game title, the "question in the image" note and the time left
+        // (the live countdown above them is only a Discord timestamp).
+        assert.match(payload.content, lang === 'en' ? /^⏰ Time runs out <t:\d+:R>$/u : /^⏰ الوقت بيخلص <t:\d+:R>$/u);
         assert.deepEqual(Object.keys(question).sort(), ['color', 'description', 'image', 'title']);
         assert.equal(question.description, cardNote(lang, timeLine(lang)));
         assert.equal(payload.files[0].name, CARD_FILE);

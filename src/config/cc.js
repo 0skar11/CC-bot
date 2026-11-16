@@ -7,6 +7,10 @@ export const CC = {
     // `dailyCap` = most CC one member can get per UTC day from the `answer` wins and the points conversion together;
     // group wins (`win`) have no limit and are not counted in it.
     gamesBot: { win: 2000, answer: 500, dailyCap: 20000 },
+    // Invite gift (src/services/cc/inviteRewardService.js): `amount` CC to the member who invited a new member, once
+    // per invited member, the first time the level bot announces that member at `level` or higher. Paid apart from
+    // the games (never counted in gamesBot.dailyCap).
+    inviteReward: { amount: 5000, level: 5 },
     transfer: { minServerDays: 0, minAmount: 10, taxPercent: 5, cheapPerWeek: 3, extraPercentPerTransfer: 5, maxTaxPercent: 50 },
 };
 // The bot's gold, the colour of every embed that doesn't choose its own (the casino's games have theirs: CASINO_COLORS).

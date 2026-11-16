@@ -12,6 +12,8 @@
 //                                                           'deleted' (the question was deleted), 'send' (it could
 //                                                           not be posted), 'channel' (the room cannot be read)
 // prompt:   what to post (src/games/engine/payload.js: a text, an embed, a payload or a function); null posts nothing.
+//           The posted question carries its countdown, `⏰ الوقت بيخلص <t:UNIX:R>` (engine/countdown.js), as a line of
+//           its text: Discord counts it down live, so the question is never edited for it.
 // validate: (content, message) → true / false, or { ok: true, ... } / { ok: false }; may be async; a throw = wrong.
 // reveal:   a string or number (the answer, shown in the standard "time's up" line), a payload or a function
 //           returning one, or false for no message. Left out: a plain "time's up" line.
@@ -23,7 +25,8 @@ import { GAMES } from '../../config/games.js';
 import { inLang } from '../../services/cc/lang.js';
 import { logger } from '../../utils/logger.js';
 import { armAgain, withAgain } from './again.js';
-import { postIn, toPayload } from './payload.js';
+import { roundCountdown, withCountdown } from './countdown.js';
+import { toPayload } from './payload.js';
 
 const TEXT = {
     ar: {
@@ -77,7 +80,11 @@ export async function askRound(ctx, { prompt = null, validate, timeMs = GAMES.ro
 
     let question = null;
     if (prompt !== null && prompt !== undefined) {
-        try { question = await postIn(channel, prompt); } catch (error) {
+        try {
+            const payload = await toPayload(prompt);
+            // The time starts once the question is posted, so the countdown (read just before) never ends late.
+            if (payload) question = await channel.send(withCountdown(payload, roundCountdown(lang, clock.now() + timeMs)));
+        } catch (error) {
             logger.warn(`[GAMES] Could not post a question: ${error.code || error.message}`);
             return abandon({ cancelled: true, reason: 'send' });
         }

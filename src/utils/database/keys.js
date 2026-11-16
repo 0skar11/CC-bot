@@ -11,3 +11,6 @@ export const getGamesPointsKey = (guildId, userId) => `guild:${guildId}:games:po
 export const getGamesPointsPrefix = (guildId) => `guild:${guildId}:games:points:`;
 export const getGamesGlobalKey = (scope, userId) => `guild:${scope}:games:global:${userId}`;
 export const getGamesGlobalPrefix = (scope) => `guild:${scope}:games:global:`;
+// Who invited a member into a server, and whether the invite gift for them was decided (src/services/cc/inviteTracker.js,
+// inviteRewardService.js): one record per invited member per server.
+export const getInviteRecordKey = (guildId, userId) => `guild:${guildId}:invites:${userId}`;
