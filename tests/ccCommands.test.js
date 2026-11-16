@@ -155,6 +155,8 @@ test('a new StreakBot day is paid even when it falls inside the same UTC day as 
     const second = await payStreakBotUpdate(client, GUILD, SELF.id, 3, Date.parse('2026-11-15T23:40:00Z'));
     assert.ok(second, 'day 3 is paid although it is the same UTC day');
     assert.equal(await payStreakBotUpdate(client, GUILD, SELF.id, 3, Date.parse('2026-11-15T23:50:00Z')), null, 'the same streak day is never paid twice');
+    assert.equal(await payStreakBotUpdate(client, GUILD, SELF.id, 2, Date.parse('2026-11-15T23:55:00Z')), null, 'an earlier day is not paid again');
+    assert.equal(await payStreakBotUpdate(client, GUILD, SELF.id, 9, Date.parse('2026-11-15T23:56:00Z')), null, 'a jump inside the window is not paid');
 });
 
 test('addcc, give, daily and cc also work in the casino rooms', async () => {

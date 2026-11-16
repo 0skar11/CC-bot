@@ -83,7 +83,9 @@ export async function payStreakBotUpdate(client, guildId, userId, count, now = D
     const bonus = (STREAKBOT_ROOMS[guildId]?.bonus || streakBonus)(count);
     const result = await updateCCState(client, guildId, userId, (state, record) => {
         const last = record.ccStreakBotLast;
-        const repeated = last && last.count === count && Number.isFinite(last.at) && now - last.at < SAME_DAY_WINDOW_MS;
+        // Inside the window only the very next streak day (last + 1) is paid: the same day again, an earlier day or a
+        // jump are never paid, so a replayed or edited update cannot be turned into extra CC.
+        const repeated = last && Number.isFinite(last.at) && now - last.at < SAME_DAY_WINDOW_MS && count !== last.count + 1;
         // Records written before `ccStreakBotLast` existed: the old once-per-UTC-day rule still stops an immediate repeat.
         const legacyRepeat = !last && record.ccStreakBotDay === today && count === 1;
         if (repeated || legacyRepeat) return { skipSave: true, duplicate: true };
