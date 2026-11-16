@@ -1,6 +1,7 @@
 import pg from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { economyScope } from '../config/sharedEconomy.js';
+import { recordDb } from './perfProbe.js';
 
 // Only stock market, holdings/CC, and trader role setup records use this dedicated table.
 export class PostgreSQLDatabase {
@@ -15,7 +16,11 @@ export class PostgreSQLDatabase {
         this.context = new AsyncLocalStorage();
         this.pool.on('error', (error) => console.error('PostgreSQL connection error:', error.code || 'unknown'));
     }
-    query(text, values) { return (this.context.getStore() || this.pool).query(text, values); }
+    query(text, values) {
+        const startedAt = performance.now();
+        const done = () => recordDb(performance.now() - startedAt, text);
+        return Promise.resolve((this.context.getStore() || this.pool).query(text, values)).finally(done);
+    }
     async connect() { await this.query('SELECT 1'); await this.query('SELECT key FROM bourse_records LIMIT 0'); }
     async get(key, fallback = null) {
         const { rows } = await this.query('SELECT value FROM bourse_records WHERE key = $1', [key]);
