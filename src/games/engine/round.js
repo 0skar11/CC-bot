@@ -15,11 +15,14 @@
 // validate: (content, message) → true / false, or { ok: true, ... } / { ok: false }; may be async; a throw = wrong.
 // reveal:   a string or number (the answer, shown in the standard "time's up" line), a payload or a function
 //           returning one, or false for no message. Left out: a plain "time's up" line.
+// playAgain: the reveal carries the play-again button (engine/again.js); default: for the 'single' games (one
+//           round is the whole game), so a group game's rounds do not (it shows it on its last message).
 
 import { escapeMarkdown } from 'discord.js';
 import { GAMES } from '../../config/games.js';
 import { inLang } from '../../services/cc/lang.js';
 import { logger } from '../../utils/logger.js';
+import { armAgain, withAgain } from './again.js';
 import { postIn, toPayload } from './payload.js';
 
 const TEXT = {
@@ -49,7 +52,7 @@ async function revealPayload(reveal, lang) {
 const typedBefore = (message, question) => Number.isFinite(question?.createdTimestamp)
     && Number.isFinite(message?.createdTimestamp) && message.createdTimestamp < question.createdTimestamp;
 
-export async function askRound(ctx, { prompt = null, validate, timeMs = GAMES.roundMs, reveal, cooldownMs = GAMES.answerCooldownMs } = {}) {
+export async function askRound(ctx, { prompt = null, validate, timeMs = GAMES.roundMs, reveal, cooldownMs = GAMES.answerCooldownMs, playAgain = ctx?.game?.kind === 'single' } = {}) {
     if (typeof validate !== 'function') throw new TypeError('askRound needs validate(content, message)');
     const { session, channel, client } = ctx;
     if (!session || session.ended) return { cancelled: true, reason: session?.endReason || 'ended' };
@@ -147,7 +150,9 @@ export async function askRound(ctx, { prompt = null, validate, timeMs = GAMES.ro
             if (!stop('timeout')) return;
             try {
                 const payload = await revealPayload(reveal, lang);
-                if (payload) await channel.send(payload);
+                const gameId = playAgain ? ctx.game?.id : null;
+                if (payload && gameId) armAgain(await channel.send(withAgain(payload, gameId, lang)), { gameId, lang, channelId: ctx.channelId, clock });
+                else if (payload) await channel.send(payload);
             } catch (error) { logger.warn(`[GAMES] Could not post the answer: ${error.code || error.message}`); }
             resolve({ timeout: true, prompt: question });
         }, timeMs);

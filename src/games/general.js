@@ -1,11 +1,14 @@
 // general.js — the games' general commands, registered like games (kind 'general', src/games/registry.js) but
 // answered at once and never holding the room: `اوامر` / `commands` (every game and command, from the registry),
 // `توب` / `top` (this server's points), `عالمي` / `global` (every server), `نقاط` / `points` (yours or a member's)
-// and `تحويل_نقاط` / `convert` (points to CC; `تحويل` alone stays the CC transfer). Typed after the PREFIX or a dot.
+// and `تحويل_نقاط` / `convert` (points to CC; `تحويل` alone stays the CC transfer), and `العاب` / `games` / `menu`
+// (the one games menu: chat and casino games, with a select menu to start a chat game). Typed after the PREFIX or a dot.
 
-import { CC, formatCC } from '../config/cc.js';
-import { GAMES, gamesChannelIds } from '../config/games.js';
+import { ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } from 'discord.js';
+import { CC, ccEmbed, formatCC } from '../config/cc.js';
+import { GAMES, GAMES_BUTTON_PREFIX, gamesChannelIds } from '../config/games.js';
 import { ALL_IN_WORDS } from '../config/casino.js';
+import { gamesMenuEmbeds } from '../services/cc/gamesMenuUi.js';
 import { inLang } from '../services/cc/lang.js';
 import { convertLimitNotice, convertPoints } from './engine/rewards.js';
 import { normalize } from './engine/text.js';
@@ -96,6 +99,85 @@ export function commandsPayload(ctx) {
     return { embeds: [embed], allowedMentions: { parse: [] } };
 }
 
+const MENU_TEXT = {
+    ar: {
+        title: '🎮 كل الألعاب',
+        how: (prefixes) => `⌨️ ألعاب الشات: اكتب اسم اللعبة بعد ${prefixes.join(' أو ')} (مثال: \`.سؤال\`)، أو اختارها من القايمة تحت. لعبة واحدة بس في الروم في نفس الوقت.`,
+        pays: () => `💰 كل إجابة صح: **${number(CC.gamesBot.answer)}** ${CC.short} ・ الفوز في لعبة جماعية: **${number(CC.gamesBot.win)}** ${CC.short} ・ أقصى **${number(CC.gamesBot.dailyCap)}** ${CC.short} في اليوم من الألعاب الفردية.`,
+        kinds: {
+            single: `🎯 فردية — ${number(CC.gamesBot.answer)} ${CC.short} لكل إجابة صح`,
+            dual: '⚔️ لاتنين',
+            group: `👥 جماعية — ${number(CC.gamesBot.win)} ${CC.short} للفايز`,
+            general: '📋 أوامر',
+        },
+        pick: '🎮 اختار لعبة وتبدأ في الروم ده',
+        casino: '🎰 ألعاب الكازينو (بالرهان) تحت ⬇️',
+    },
+    en: {
+        title: '🎮 All games',
+        how: (prefixes) => `⌨️ Chat games: type the game word after ${prefixes.join(' or ')} (for example \`.quiz\`), or pick it in the menu below. One game at a time per room.`,
+        pays: () => `💰 Each right answer: **${number(CC.gamesBot.answer)}** ${CC.short} ・ a group game win: **${number(CC.gamesBot.win)}** ${CC.short} ・ at most **${number(CC.gamesBot.dailyCap)}** ${CC.short} a day from the single games.`,
+        kinds: {
+            single: `🎯 Single — ${number(CC.gamesBot.answer)} ${CC.short} per right answer`,
+            dual: '⚔️ Two players',
+            group: `👥 Group — ${number(CC.gamesBot.win)} ${CC.short} to the winner`,
+            general: '📋 Commands',
+        },
+        pick: '🎮 Pick a game to start it in this room',
+        casino: '🎰 The casino games (with a bet) are below ⬇️',
+    },
+};
+const PLAY_KINDS = ['single', 'dual', 'group'];
+const KIND_EMOJI = { single: '🎯', dual: '⚔️', group: '👥' };
+const embedLength = (embed) => [embed.title, embed.description, embed.footer?.text, ...(embed.fields || []).flatMap((field) => [field.name, field.value])]
+    .reduce((sum, part) => sum + String(part || '').length, 0);
+
+/** The games the menu can start: every game but the general commands and the trusted-only ones, by kind. */
+export const menuGames = () => PLAY_KINDS.flatMap((kind) => listGames({ kind })).filter((game) => !game.eventAdminOnly);
+
+/** The select menus of the games menu: `g:menu:<lang>:<n>`, 25 games each, the game id as the value. */
+function menuRows(lang) {
+    const text = MENU_TEXT[lang];
+    const games = menuGames();
+    const rows = [];
+    for (let start = 0; start < games.length && rows.length < 5; start += 25) {
+        const options = games.slice(start, start + 25).map((game) => {
+            const words = lang === 'en' ? [game.names.en[0], game.names.ar[0]] : [game.names.ar[0], game.names.en[0]];
+            const about = (lang === 'en' ? game.description.en : game.description.ar) || '';
+            const option = new StringSelectMenuOptionBuilder().setLabel(words.filter(Boolean).join(' · ').slice(0, 100)).setValue(game.id).setEmoji(KIND_EMOJI[game.kind]);
+            return about ? option.setDescription(about.slice(0, 100)) : option;
+        });
+        rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder()
+            .setCustomId(`${GAMES_BUTTON_PREFIX}:menu:${lang}:${rows.length}`).setPlaceholder(text.pick).addOptions(options)));
+    }
+    return rows;
+}
+
+/**
+ * The unified games menu (`العاب` / `games` / `menu`, typed or `/games`): the chat games by kind with their words
+ * and what they pay, the general commands, the casino games (src/services/cc/gamesMenuUi.js) and a select menu
+ * that starts a chat game in the room (src/games/router.js handleMenuSelect). Needs loadGames() first.
+ */
+export function gamesMenu(lang = 'ar') {
+    const shown = lang === 'en' ? 'en' : 'ar';
+    const text = MENU_TEXT[shown];
+    const [casino] = gamesMenuEmbeds(shown);
+    const description = [text.how(GAMES.prefixes.map((word) => `\`${word}\``)), text.pays()].join('\n');
+    // Discord refuses a message whose embeds are over 6000 characters in all: the fields stop before that.
+    let room = 5900 - embedLength(casino) - text.title.length - description.length - text.casino.length;
+    const fields = [];
+    const general = listGames({ kind: 'general' }).map((game) => (shown === 'en' ? [...game.names.en, ...game.names.ar] : [...game.names.ar, ...game.names.en])[0])
+        .map((word) => `\`.${word}\``).join(' ・ ');
+    const kinds = PLAY_KINDS.flatMap((kind) => fieldsOf(text.kinds[kind], listGames({ kind }).map((game) => describeGame(game, shown))));
+    for (const field of [...kinds, ...(general ? [{ name: text.kinds.general, value: general.slice(0, 1024) }] : [])]) {
+        room -= field.name.length + field.value.length;
+        if (room < 0 || fields.length === 25) break;
+        fields.push(field);
+    }
+    const chat = ccEmbed(text.title, description, { color: GAMES.color, fields, footer: text.casino });
+    return { content: '', embeds: [chat, casino], components: menuRows(shown), allowedMentions: { parse: [] } };
+}
+
 function boardPayload(ctx, title, rows) {
     const text = say(ctx.lang);
     const lines = rows.slice(0, GAMES.topSize).map((row, index) => `${MEDALS[index] || `**#${index + 1}**`} <@${row.userId}> — ${text.row(row)}`);
@@ -161,4 +243,14 @@ const convert = {
     },
 };
 
-export const GENERAL_COMMANDS = [commands, top, global, points, convert];
+// `العاب` / `games`: the one games menu (gamesMenu), also typed without the prefix and as `/games`
+// (src/commands/Games/games.js). everyGamesRoom: it answers in every games room, not only the general ones.
+const menu = {
+    id: 'menu', kind: 'general', names: { ar: ['العاب', 'الالعاب'], en: ['games', 'menu'] }, // normalize(): `ألعاب`, `الألعاب` too
+    description: { ar: 'قايمة كل الألعاب (الشات والكازينو)', en: 'the menu of every game (chat and casino)' },
+    everyGamesRoom: true,
+    acceptArgs: noArgs,
+    run: (ctx) => ctx.send(gamesMenu(ctx.lang)),
+};
+
+export const GENERAL_COMMANDS = [commands, menu, top, global, points, convert];

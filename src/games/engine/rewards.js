@@ -5,13 +5,15 @@
 // (points.js). The points are given even once today's CC cap is reached. `convert` turns a member's points of the
 // server into CC at GAMES.convert.ccPerPoint (at least GAMES.convert.minPoints asked at once), paid from the SAME
 // daily cap as the wins (payGamesConvert): past it a conversion is trimmed to whole points, and only the points
-// actually paid are taken.
+// actually paid are taken. announceWin() shows a win for every game (a reply to the winner, with play-again).
 
 import { CC, formatCC } from '../../config/cc.js';
 import { GAMES } from '../../config/games.js';
 import { payGamesConvert, payGamesWin } from '../../services/cc/gamesPayout.js';
 import { inLang } from '../../services/cc/lang.js';
 import { logger } from '../../utils/logger.js';
+import { armAgain, withAgain } from './again.js';
+import { replyWin } from './payload.js';
 import { addPoints, spendPoints } from './points.js';
 
 export const WIN_KINDS = ['answer', 'group'];
@@ -89,6 +91,28 @@ export function winPayload(lang, userId, reward, kind = 'answer') {
     const head = kind === 'group' ? text.group(userId) : text.answer(userId);
     const tail = !reward?.ok ? text.failed : reward.amount > 0 ? text.paid(reward) : text.capped(reward);
     return { content: `${head} ${tail}`, allowedMentions: { parse: [] } };
+}
+
+/**
+ * Shows a win, for every game: the winPayload() line as a reply to the winner's winning message (`round.message`,
+ * pinging only the winner; a plain post in the room when that message was deleted), with the play-again button
+ * (engine/again.js) unless `again` is false (a round that is not the game's last). `round`: askRound's winner
+ * result ({ winner, message }) or { winner, message: null }. Never throws; resolves to the sent message or null.
+ */
+export async function announceWin(ctx, round, reward, kind = 'answer', { again = true } = {}) {
+    const userId = round?.winner?.id;
+    if (!userId) return null;
+    const lang = ctx.lang === 'en' ? 'en' : 'ar';
+    const gameId = ctx.game?.id;
+    const payload = again && gameId ? withAgain(winPayload(lang, userId, reward, kind), gameId, lang) : winPayload(lang, userId, reward, kind);
+    try {
+        const sent = await replyWin(round.message, ctx.channel, payload, userId);
+        if (again && gameId && sent) armAgain(sent, { gameId, lang, channelId: ctx.channelId, clock: ctx.session?.clock });
+        return sent;
+    } catch (error) {
+        logger.warn(`[GAMES] Could not post a win: ${error?.code || error?.message || error}`);
+        return null;
+    }
 }
 
 /**

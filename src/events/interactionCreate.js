@@ -15,9 +15,11 @@ function isCasinoInteraction(interaction) {
     if (interaction.isChatInputCommand?.()) return interaction.commandName === CASINO_COMMAND;
     return Boolean(interaction.isButton?.() || interaction.isModalSubmit?.()) && String(interaction.customId || '').split(':')[0] === CASINO_BUTTON_PREFIX;
 }
-// The chat games' lobby buttons work in any text channel of an allowed guild: a game can be started in any channel
-// (by a trusted member, src/games/router.js), and any member there may join it.
-const isGamesButton = (interaction) => Boolean(interaction.isButton?.()) && String(interaction.customId || '').split(':')[0] === GAMES_BUTTON_PREFIX;
+// The chat games' buttons (lobby, play again `g:again:<gameId>`) and the games menu's select (`g:menu:...`) work in
+// any text channel of an allowed guild: a game can be started in any channel (by a trusted member, anyone in the
+// open channels: src/games/router.js decides and answers privately when it may not), and any member may join it.
+const isGamesSelect = (interaction) => Boolean(interaction.isStringSelectMenu?.()) && String(interaction.customId || '').split(':')[0] === GAMES_BUTTON_PREFIX;
+const isGamesButton = (interaction) => (Boolean(interaction.isButton?.()) && String(interaction.customId || '').split(':')[0] === GAMES_BUTTON_PREFIX) || isGamesSelect(interaction);
 const isTextChannel = (interaction) => Boolean(interaction.channelId) && (typeof interaction.channel?.isTextBased !== 'function' || interaction.channel.isTextBased());
 export default {
     name: 'interactionCreate',
@@ -47,7 +49,15 @@ export default {
                 else await refused(interaction);
                 return;
             }
-            // The casino's join forms (modals) are the only modals; no select menu or autocomplete handlers exist.
+            // The games menu's select (`g:menu:...`) is the only select menu.
+            if (isGamesSelect(interaction)) {
+                const [name, ...args] = interaction.customId.split(':');
+                const handler = client.buttons.get(name);
+                if (handler?.executeSelect) await handler.executeSelect(interaction, client, args);
+                else await refused(interaction);
+                return;
+            }
+            // The casino's join forms (modals) are the only modals; no autocomplete handlers exist.
             if (interaction.isModalSubmit?.()) {
                 const [name, ...args] = interaction.customId.split(':');
                 const handler = client.buttons.get(name);

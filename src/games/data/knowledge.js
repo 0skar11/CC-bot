@@ -7,10 +7,9 @@
 // playAnswer(ctx, { title, question, answers, reveal, image }): posts the question as an image card (engine/card.js;
 // `image: false` or a render error: bold, in a text embed), waits
 // ROUND_MS for the first right answer (never the message that started the game), pays the winner the `answer`
-// reward and shows it with winPayload(); on a timeout the round itself shows `reveal`.
+// reward and shows it with ctx.announceWin() (a reply to the winner); on a timeout the round itself shows `reveal`.
 
 import { cardNote, cardPayload } from '../engine/card.js';
-import { winPayload } from '../engine/rewards.js';
 import { matches, normalize } from '../engine/text.js';
 
 export const ROUND_MS = 25_000;
@@ -66,6 +65,6 @@ export async function playAnswer(ctx, { title, question, answers, reveal, footer
     });
     if (!round?.winner) return round;
     const reward = await ctx.rewardWin(round.winner.id, 'answer');
-    await ctx.send(winPayload(lang, round.winner.id, reward, 'answer'));
+    await ctx.announceWin(round, reward, 'answer');
     return { ...round, reward };
 }

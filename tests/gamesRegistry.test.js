@@ -12,7 +12,8 @@ test('the bot registry loads the general commands and every game file, found by 
     const all = await loadGames();
     assert.ok(all.length >= 6);
     assert.equal(await loadGames(), all, 'loads once');
-    assert.deepEqual(listGames({ kind: 'general' }).map((entry) => entry.id), ['commands', 'top', 'global', 'points', 'convert']);
+    assert.deepEqual(listGames({ kind: 'general' }).map((entry) => entry.id), ['commands', 'menu', 'top', 'global', 'points', 'convert']);
+    for (const word of ['العاب', 'ألعاب', 'الالعاب', 'الألعاب', 'games', 'GAMES', 'menu']) assert.equal(findGame(word)?.id, 'menu', word);
     assert.equal(findGame('تجربة').id, 'test');
     assert.equal(findGame('تجربه').id, 'test', 'normalized: ta marbuta');
     assert.equal(findGame('TEST').id, 'test');
@@ -32,9 +33,11 @@ test('the bot registry loads the general commands and every game file, found by 
 test('no registered word is an existing bot command, and the reserved list covers the casino, bourse, CC and guide words', async () => {
     await loadGames();
     const reserved = reservedWords();
-    for (const word of ['مينز', 'صاروخ', 'كراش', 'روليت', 'اسعار', 'بيع', 'تحويل', 'transfer', 'cc', 'help', 'شرح', 'ستريك', 'العاب', 'games', 'daily']) {
+    for (const word of ['مينز', 'صاروخ', 'كراش', 'روليت', 'اسعار', 'بيع', 'تحويل', 'transfer', 'cc', 'help', 'شرح', 'ستريك', 'daily']) {
         assert.ok(reserved.has(word), word);
     }
+    // The games menu's words are the general command `menu` (the one menu of the chat and casino games), not reserved.
+    for (const word of ['العاب', 'الالعاب', 'games']) assert.equal(reserved.has(word), false, word);
     for (const entry of listGames()) for (const word of [...entry.names.ar, ...entry.names.en]) assert.equal(reserved.has(word), false, word);
 });
 

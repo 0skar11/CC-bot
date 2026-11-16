@@ -4,30 +4,37 @@
 // game's acceptArgs (none by default), anything else goes on to the rest of the bot unchanged (`!توب cc` is still
 // cctop, `!توب ستريك` the streak top). A picture or sticker post is never a command (it may count for the streak).
 // - General commands (`اوامر`, `توب`, `نقاط`...) answer at once for everyone, in the games rooms
-//   (GAMES_CHANNEL_IDS, or the bot's channels) or the bot's channels.
+//   (GAMES_CHANNEL_IDS, or the bot's channels) or the bot's channels. The games menu (`العاب` / `games`, marked
+//   everyGamesRoom) also answers in the casino rooms, the open channels, and anywhere for a trusted member.
 // - Games (any kind) are started by a trusted member (engine/admin.js isTrustedMember) in any channel of an allowed
-//   guild, and by anyone in the open channels (OPEN_GAMES_CHANNEL_IDS, src/config/games.js), one game per room.
+//   guild, and by anyone in the open channels (OPEN_GAMES_CHANNEL_IDS, src/config/games.js), one game per room
+//   (startRule: the same rule for the typed command, the play-again button and the games menu).
 //   A member who is not trusted typing a game word anywhere else gets no reply at all (the message is consumed),
 //   so the room stays clean. The games marked eventAdminOnly (the sample game `test`) need a trusted member even in
 //   an open channel: there a member who is not trusted gets the admin notice at most every GAMES.noticeGapMs.
 //   Group games keep their lobby minimum (minPlayers). A game word in a busy room gets one short "a game is
 //   running" reply per member for that game.
+// - `g:again:<gameId>` (engine/again.js) and the games menu's select start a round exactly like the typed command
+//   (same ctx, rewards and daily cap); a press that cannot start one gets a short private reply.
 // - The game runs detached from the message handler: its session holds the room until run() returns (or the safety
 //   lifetime ends it), and any error is logged with a short line in the room, never thrown.
 
+import { MessageFlags } from 'discord.js';
+import { GAMES_COMMAND } from '../config/casino.js';
 import { ccEmbed } from '../config/cc.js';
 import { commandArgAliases } from '../config/commands/commandAliases.js';
 import { GAMES, isGamesChannel, isOpenGamesChannel } from '../config/games.js';
-import { isAllowedChannel, isAllowedGuild } from '../config/runtime.js';
-import { inLang, wordLanguage } from '../services/cc/lang.js';
+import { isAllowedChannel, isAllowedGuild, isCommandChannel } from '../config/runtime.js';
+import { buttonLanguage, inLang, wordLanguage } from '../services/cc/lang.js';
 import { logger } from '../utils/logger.js';
 import { isTrustedMember } from './engine/admin.js';
+import { armedAgain, cooldownLeft, disarm, markStarted, removeAgain } from './engine/again.js';
 import { openLobby } from './engine/lobby.js';
 import { postIn, replyTo } from './engine/payload.js';
-import { rewardWin } from './engine/rewards.js';
+import { announceWin, rewardWin } from './engine/rewards.js';
 import { askRound } from './engine/round.js';
-import { getSession, realClock, startSession } from './engine/session.js';
-import { findGame, loadGames } from './registry.js';
+import { getSession, isBusy, realClock, startSession } from './engine/session.js';
+import { findGame, getGame, loadGames } from './registry.js';
 
 const TEXT = {
     ar: {
@@ -36,6 +43,11 @@ const TEXT = {
         failed: '❌ حصل خطأ في اللعبة واتقفلت.',
         commandFailed: '❌ حصل خطأ. حاول تاني بعد شوية.',
         expired: '⌛ اللعبة طولت أوي واتقفلت.',
+        cannot: '🚫 مينفعش تبدأ ألعاب في الروم ده.',
+        foreign: '🚫 الزرار ده مش للروم ده.',
+        stale: '⌛ الزرار ده خلص، اكتب أمر اللعبة تاني.',
+        unknown: '❌ اللعبة دي مش موجودة.',
+        wait: (seconds) => `⏳ استنى **${seconds}** ثانية وجرّب تاني.`,
     },
     en: {
         busy: '⏳ A game is already running in this room, wait for it to end.',
@@ -43,6 +55,11 @@ const TEXT = {
         failed: '❌ Something went wrong, the game was closed.',
         commandFailed: '❌ Something went wrong. Try again in a bit.',
         expired: '⌛ The game ran too long and was closed.',
+        cannot: "🚫 You can't start games in this room.",
+        foreign: "🚫 This button isn't for this room.",
+        stale: '⌛ This button has expired, type the game command again.',
+        unknown: "❌ This game doesn't exist.",
+        wait: (seconds) => `⏳ Wait **${seconds}** second(s) and try again.`,
     },
 };
 const say = (lang) => inLang(lang, TEXT);
@@ -83,6 +100,7 @@ export function buildContext({ client, message, game, session = null, args = [],
     ctx.askRound = (options) => askRound(ctx, options);
     ctx.openLobby = (options) => openLobby(ctx, options);
     ctx.rewardWin = (userId, kind = 'answer') => rewardWin(client, guildId, userId, kind, game.id);
+    ctx.announceWin = (round, reward, kind = 'answer', options) => announceWin(ctx, round, reward, kind, options);
     return ctx;
 }
 
@@ -95,6 +113,47 @@ async function runGame(game, ctx) {
     } finally {
         ctx.session.end('done');
     }
+}
+
+/**
+ * Who may start `game` (not a general command) in this room, the one rule of the typed command, the play-again
+ * button and the menu: 'ok'; 'guild' (not an allowed guild); 'closed' (a member who is not trusted, outside the
+ * open channels); 'admin' (an eventAdminOnly game and a member who is not trusted).
+ */
+export function startRule(game, { member, channel, channelId, guildId }) {
+    if (!isAllowedGuild(guildId)) return 'guild';
+    const trusted = isTrustedMember(member);
+    if (!trusted && !isOpenGamesChannel(channel, channelId)) return 'closed';
+    if (game.eventAdminOnly && !trusted) return 'admin';
+    return 'ok';
+}
+
+/** The rooms of a general command; the games menu (everyGamesRoom) also answers in every games room. */
+function generalRoom(game, { member, channel, channelId }) {
+    if (isGamesChannel(channel, channelId) || isAllowedChannel(channel, channelId)) return true;
+    if (!game.everyGamesRoom) return false;
+    return isCommandChannel(GAMES_COMMAND, channel, channelId) || isOpenGamesChannel(channel, channelId) || isTrustedMember(member);
+}
+
+/**
+ * Starts `game` in the room of `message` (a typed command, or a press dressed as one: pressMessage) once
+ * startRule allowed it: holds the room and runs the game detached. Returns { session }, or { busy } (the room's
+ * running session) when the room already has a game.
+ */
+export function launchGame({ client, message, game, args = [], lang = 'ar', random = Math.random, clock = realClock }) {
+    const channelId = message.channelId || message.channel?.id;
+    const ctx = buildContext({ client, message, game, args, lang, random });
+    const userId = message.author.id;
+    const session = startSession({ channelId, guildId: ctx.guildId, gameId: game.id, starterId: userId, clock });
+    if (!session) return { busy: getSession(channelId) };
+    ctx.session = session;
+    session.onEnd((reason) => {
+        if (reason === 'expired') return postIn(message.channel, say(lang).expired).catch(() => {});
+        return null;
+    });
+    logger.info(`[GAMES] ${game.id} started in ${channelId} by ${userId}`);
+    session.running = runGame(game, ctx);
+    return { session };
 }
 
 /**
@@ -116,46 +175,117 @@ export async function handleGamesMessage(message, client, { clock = realClock, r
         if (!game || !game.acceptArgs(command.args)) return false;
         const channelId = message.channelId || message.channel?.id;
         if (!channelId || typeof message.channel?.send !== 'function') return false;
-        const general = game.kind === 'general';
-        if (general) {
-            if (!isGamesChannel(message.channel, channelId) && !isAllowedChannel(message.channel, channelId)) return false;
+        const room = { member: message.member, channel: message.channel, channelId, guildId: message.guildId || message.guild?.id };
+        if (game.kind === 'general') {
+            if (!generalRoom(game, room)) return false;
             claimed = true;
             lang = wordLanguage(command.word);
             await game.run(buildContext({ client, message, game, args: command.args, lang, random }));
             return true;
         }
-        if (!isAllowedGuild(message.guildId || message.guild?.id)) return false;
-        const trusted = isTrustedMember(message.member);
+        const rule = startRule(game, room);
+        if (rule === 'guild') return false;
         // Not trusted outside an open channel: no reply at all, and the message goes nowhere else.
-        if (!trusted && !isOpenGamesChannel(message.channel, channelId)) return true;
+        if (rule === 'closed') return true;
         claimed = true;
         lang = wordLanguage(command.word);
-        const ctx = buildContext({ client, message, game, args: command.args, lang, random });
         const userId = message.author.id;
-        if (game.eventAdminOnly && !trusted) {
+        if (rule === 'admin') {
             if (noticeDue(`${userId}:admin`, clock.now())) await replyTo(message, say(lang).admin);
             return true;
         }
-        const session = startSession({ channelId, guildId: ctx.guildId, gameId: game.id, starterId: userId, clock });
-        if (!session) {
-            const running = getSession(channelId);
-            if (running && !running.notices.has(userId)) {
-                running.notices.add(userId);
-                await replyTo(message, say(lang).busy);
-            }
-            return true;
+        const { busy } = launchGame({ client, message, game, args: command.args, lang, random, clock });
+        if (busy && !busy.notices.has(userId)) {
+            busy.notices.add(userId);
+            await replyTo(message, say(lang).busy);
         }
-        ctx.session = session;
-        session.onEnd((reason) => {
-            if (reason === 'expired') return postIn(message.channel, say(lang).expired).catch(() => {});
-            return null;
-        });
-        logger.info(`[GAMES] ${game.id} started in ${channelId} by ${userId}`);
-        session.running = runGame(game, ctx);
         return true;
     } catch (error) {
         logger.error('[GAMES] A typed games command failed', error?.code || error?.message || error);
         if (claimed) await postIn(message.channel, say(lang).commandFailed).catch(() => {});
         return claimed;
     }
+}
+
+// ─── A round started from a button (play again) or the games menu ───
+
+/** A press, shaped like the typed command a game's ctx expects (no id: it is never an answer). */
+function pressMessage(interaction) {
+    const channel = interaction.channel;
+    return {
+        id: null, content: '', author: interaction.user, member: interaction.member ?? null,
+        guild: interaction.guild ?? null, guildId: interaction.guildId || interaction.guild?.id || null,
+        channel, channelId: interaction.channelId || channel?.id || null,
+        attachments: new Map(), stickers: new Map(), mentions: { users: new Map() },
+    };
+}
+
+const privately = (interaction, content) => Promise.resolve()
+    .then(() => interaction.reply({ content, flags: MessageFlags.Ephemeral, allowedMentions: { parse: [] } }))
+    .catch(() => {});
+
+/**
+ * Starts `game` for a press under startRule, one round at a time per room and at most one from a press every
+ * AGAIN_COOLDOWN_MS (engine/again.js). Returns null when it started, else the private notice to answer.
+ */
+function startFromPress(interaction, client, game, lang, { clock, random }) {
+    const text = say(lang);
+    const message = pressMessage(interaction);
+    if (!message.author?.id || message.author.bot) return text.cannot;
+    if (!message.channelId || typeof message.channel?.send !== 'function' || typeof message.channel?.createMessageCollector !== 'function') return text.foreign;
+    const rule = startRule(game, message);
+    if (rule === 'guild') return text.foreign;
+    if (rule === 'closed') return text.cannot;
+    if (rule === 'admin') return text.admin;
+    if (isBusy(message.channelId)) return text.busy;
+    const wait = cooldownLeft(message.channelId, clock.now());
+    if (wait > 0) return text.wait(Math.ceil(wait / 1000));
+    if (launchGame({ client, message, game, lang, random, clock }).busy !== undefined) return text.busy;
+    markStarted(message.channelId, clock.now());
+    return null;
+}
+
+/** A press on `g:again:<gameId>`: a new round of the same game in the same room. Never throws. */
+export async function handleAgainButton(interaction, client, [gameId] = [], { clock = realClock, random = Math.random } = {}) {
+    const messageId = interaction.message?.id;
+    const state = armedAgain(messageId);
+    const lang = state?.lang ?? buttonLanguage(interaction);
+    try {
+        await loadGames();
+        const game = getGame(String(gameId || ''));
+        if (!game || game.kind === 'general') return await privately(interaction, say(lang).unknown);
+        if (!state || state.gameId !== game.id) {
+            // Used, timed out or from before a restart: it goes away so nobody else presses it.
+            await privately(interaction, say(lang).stale);
+            if (!state) await removeAgain(interaction.message);
+            return undefined;
+        }
+        if (state.channelId && state.channelId !== String(interaction.channelId || interaction.channel?.id || '')) return await privately(interaction, say(lang).foreign);
+        const notice = startFromPress(interaction, client, game, lang, { clock, random });
+        if (notice) return await privately(interaction, notice);
+        // One use: the button goes away with this press.
+        disarm(messageId);
+        await Promise.resolve().then(() => interaction.update({ components: [] })).catch(() => removeAgain(interaction.message));
+    } catch (error) {
+        logger.warn(`[GAMES] A play-again button failed: ${error?.message || error}`);
+        await privately(interaction, say(lang).commandFailed);
+    }
+    return undefined;
+}
+
+/** A pick in the games menu (`g:menu:<lang>:<n>`, the game id as the value). Never throws. */
+export async function handleMenuSelect(interaction, client, [menuLang] = [], { clock = realClock, random = Math.random } = {}) {
+    const lang = menuLang === 'en' || menuLang === 'ar' ? menuLang : buttonLanguage(interaction);
+    try {
+        await loadGames();
+        const game = getGame(String(interaction.values?.[0] || ''));
+        if (!game || game.kind === 'general') return await privately(interaction, say(lang).unknown);
+        const notice = startFromPress(interaction, client, game, lang, { clock, random });
+        if (notice) return await privately(interaction, notice);
+        await Promise.resolve().then(() => interaction.deferUpdate()).catch(() => {});
+    } catch (error) {
+        logger.warn(`[GAMES] A games menu pick failed: ${error?.message || error}`);
+        await privately(interaction, say(lang).commandFailed);
+    }
+    return undefined;
 }

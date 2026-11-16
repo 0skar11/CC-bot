@@ -105,7 +105,7 @@ test('the sample game end to end: an admin starts it, the first right answer is 
     room.emit(typed(room, `  ${word}  `, BOB));
     await session.running;
     assert.equal(isBusy(room.id), false);
-    const win = textOf(room.sent.at(-1));
+    const win = textOf({ payload: room.replies.at(-1) });
     assert.match(win, new RegExp(`<@${BOB.id}> جاوب صح! \\+\\*\\*500\\*\\* 🌀 CC ・ \\+\\*\\*1\\*\\* نقطة`, 'u'));
     assert.equal((await client.db.get(getEconomyKey(economyScopeId, BOB.id))).cc, 500);
     const points = await getPoints(client, GUILD, BOB.id);
@@ -345,7 +345,7 @@ test('every casino, bourse, CC and streak word still routes exactly as before', 
         [`${prefix}مينز 100 3`, 'casino'], ['مينز 100 3', 'casino'], [`${prefix}صاروخ 100`, 'casino'], ['روليت 100 احمر', 'casino'],
         [`${prefix}توب cc`, 'cctop'], ['توب cc', 'cctop'], [`${prefix}top cc`, 'cctop'], ['توب كريدت', 'cctop'],
         ['اسعار', 'bourse'], [`${prefix}بيع كلو`, 'bourse'], [`${prefix}cc`, 'cc'], ['رصيد', 'cc'],
-        [`تحويل <@${BOB.id}> 100`, 'give'], [`${prefix}transfer <@${BOB.id}> 100`, 'give'], [`${prefix}العاب`, 'games'], ['games', 'games'], ['daily', 'daily'],
+        [`تحويل <@${BOB.id}> 100`, 'give'], [`${prefix}transfer <@${BOB.id}> 100`, 'give'], ['العاب', 'games'], ['games', 'games'], ['daily', 'daily'],
     ];
     for (const [content, command] of cases) {
         ran.length = 0;

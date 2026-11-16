@@ -94,7 +94,7 @@ for (const { game, title, shown, answer, reveal } of CASES) {
         assert.equal(channel.sent.length, 1, 'no winner yet');
         channel.emit(typed(channel, answer, BOB));
         await running;
-        const win = textOf(channel.sent.at(-1));
+        const win = textOf({ payload: channel.replies.at(-1) });
         assert.match(win, new RegExp(`<@${BOB.id}> جاوب صح! \\+\\*\\*500\\*\\*`, 'u'));
         assert.equal(await balance(client, BOB.id), 500);
         assert.equal(await balance(client, ALICE.id), 0);

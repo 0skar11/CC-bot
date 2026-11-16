@@ -41,3 +41,18 @@ export async function replyTo(message, input) {
     }
     return message?.channel?.send ? message.channel.send(payload) : null;
 }
+
+/**
+ * The win message: a Discord reply to the winning `message` that mentions only `userId` (the winner); posted in
+ * `channel` instead when the reply fails (the message was deleted). Resolves to the sent message. Throws like send().
+ */
+export async function replyWin(message, channel, input, userId) {
+    const payload = await toPayload(input);
+    if (!payload) return null;
+    const win = { ...payload, allowedMentions: { users: [String(userId)] } };
+    if (typeof message?.reply === 'function') {
+        try { return await message.reply(win); } catch { /* a deleted message: post in the room instead */ }
+    }
+    const room = channel ?? message?.channel;
+    return room?.send ? room.send(win) : null;
+}

@@ -106,7 +106,7 @@ test('a game whose card cannot be rendered still plays with the old text questio
     const word = /\*\*(.+?)\*\*/u.exec(payload.embeds[0].description)[1];
     room.emit(typed(room, word, BOB));
     await getSession(room.id).running;
-    assert.match(JSON.stringify(room.sent.at(-1).payload), new RegExp(`<@${BOB.id}>`, 'u'));
+    assert.match(JSON.stringify(room.replies.at(-1)), new RegExp(`<@${BOB.id}>`, 'u'), 'the win replies to the winner');
 });
 
 // The real renderer, end to end: the posted prompt is a PNG and nothing a member can copy holds the question.
@@ -147,7 +147,7 @@ for (const { word, answer } of REAL) {
             const right = answer(question);
             room.emit(typed(room, right, BOB));
             await getSession(room.id).running;
-            assert.match(JSON.stringify(room.sent.at(-1).payload), new RegExp(`<@${BOB.id}>`, 'u'), 'the answer is checked as before');
+            assert.match(JSON.stringify(room.replies.at(-1)), new RegExp(`<@${BOB.id}>`, 'u'), 'the answer is checked as before');
         }
     });
 }

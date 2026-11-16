@@ -114,7 +114,14 @@ export function typed(channel, content, author = ALICE, { admin = false, guildId
         id: nextMessageId(), content, author, guildId, guild: { id: guildId }, channel, channelId: channel.id,
         member: { id: author.id, user: author, permissions: { has: () => admin }, roles: { cache: new Map() } },
         attachments: new Map(), stickers: new Map(), mentions: { users: new Map() },
-        async reply(payload) { (replies || channel.replies).push(payload); return payload; },
+        // A reply is kept in `replies` (the payload) and returns a message like the room's (with edit()).
+        async reply(payload) {
+            if (extra.failReply) throw Object.assign(new Error('Unknown Message'), { code: 10008 });
+            (replies || channel.replies).push(payload);
+            const message = { id: nextMessageId(), channel, channelId: channel.id, payload, edits: [], async edit(next) { this.edits.push(next); return this; } };
+            (channel.replyMessages ||= []).push(message);
+            return message;
+        },
         ...extra,
     };
 }

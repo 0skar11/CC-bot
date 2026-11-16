@@ -1,10 +1,9 @@
 // typingRound.js — the shared round of the typing games: one question, the first right answer in ROUND_MS wins
-// the answer reward (shown with winPayload), nobody in time → the answer is shown. The message that started the
+// the answer reward (shown with ctx.announceWin: a reply to the winner), nobody in time → the answer is shown. The message that started the
 // game never counts as an answer.
 
 import { cardNote, cardPayload } from '../../engine/card.js';
 import { matches } from '../../engine/text.js';
-import { winPayload } from '../../engine/rewards.js';
 import { ROUND_MS } from './wordGames.js';
 
 export const langOf = (ctx) => (ctx.lang === 'en' ? 'en' : 'ar');
@@ -31,7 +30,6 @@ export const questionCard = (ctx, { title, ask, text, fallback }) => {
  * Resolves to askRound's result.
  */
 export async function playTypingRound(ctx, { prompt, answers, check, reveal, timeMs = ROUND_MS }) {
-    const lang = langOf(ctx);
     const startId = ctx.message?.id ?? null;
     const isRight = check || ((content) => matches(content, answers));
     const round = await ctx.askRound({
@@ -42,6 +40,6 @@ export async function playTypingRound(ctx, { prompt, answers, check, reveal, tim
     });
     if (!round.winner) return round;
     const reward = await ctx.rewardWin(round.winner.id, 'answer');
-    await ctx.send(winPayload(lang, round.winner.id, reward, 'answer'));
+    await ctx.announceWin(round, reward, 'answer');
     return round;
 }

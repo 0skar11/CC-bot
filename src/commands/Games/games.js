@@ -1,7 +1,8 @@
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { isAllowedGuild } from '../../config/runtime.js';
 import { GAMES_COMMAND, casinoGuildNotice } from '../../config/casino.js';
-import { gamesMenuPayload } from '../../services/cc/gamesMenuUi.js';
+import { gamesMenu } from '../../games/general.js';
+import { loadGames } from '../../games/registry.js';
 import { commandLanguage, isLang } from '../../services/cc/lang.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 
@@ -12,10 +13,11 @@ function menuLanguage(interaction) {
     return isLang(chosen) ? chosen : commandLanguage(interaction);
 }
 
-// `/games` and the typed `العاب` / `ألعاب` / `الالعاب` / `الألعاب` / `games`
-// (src/config/commands/commandAliases.js): the menu of every game, solo and group
-// (src/services/cc/gamesMenuUi.js). It moves no money, so it answers in the bot's channels and in the casino
-// rooms (CASINO_ROOM_COMMANDS); the games themselves stay in the casino rooms.
+// `/games` and the typed `العاب` / `ألعاب` / `الالعاب` / `الألعاب` / `games` without the prefix
+// (src/config/commands/commandAliases.js): the one games menu (src/games/general.js gamesMenu: the chat games, the
+// casino games of src/services/cc/gamesMenuUi.js, and a select menu to start a chat game). With the PREFIX or a dot
+// the same menu is the games router's general command `menu` (every games room). Here it answers in the bot's
+// channels and in the casino rooms (CASINO_ROOM_COMMANDS); the casino games themselves stay in the casino rooms.
 export default {
     data: new SlashCommandBuilder()
         .setName(GAMES_COMMAND)
@@ -30,6 +32,7 @@ export default {
         const lang = menuLanguage(interaction);
         const reply = (payload) => InteractionHelper.safeReply(interaction, { allowedMentions: { parse: [] }, ...payload });
         if (!isAllowedGuild(interaction.guildId)) return reply({ content: casinoGuildNotice(lang), flags: MessageFlags.Ephemeral });
-        return reply(gamesMenuPayload(lang));
+        await loadGames();
+        return reply(gamesMenu(lang));
     },
 };

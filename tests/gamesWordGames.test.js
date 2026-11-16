@@ -105,7 +105,7 @@ for (const word of Object.keys(GAMES)) {
         room.emit(typed(room, answer, BOB));
         await session.running;
         assert.equal(isBusy(room.id), false);
-        const win = textOf(room.sent.at(-1));
+        const win = textOf({ payload: room.replies.at(-1) });
         assert.match(win, new RegExp(`<@${BOB.id}>`, 'u'));
         assert.match(win, /500/u);
         assert.equal((await client.db.get(getEconomyKey(economyScopeId, BOB.id))).cc, 500);
@@ -141,7 +141,7 @@ test('ارقام: the number is hidden after a few seconds, and Arabic-Indic dig
     assert.ok(cards.at(-1).text.startsWith('?'), 'the gone card shows only question marks');
     room.emit(typed(room, toArabicDigits(answer), BOB));
     await session.running;
-    assert.match(textOf(room.sent.at(-1)), new RegExp(`<@${BOB.id}>`, 'u'));
+    assert.match(textOf({ payload: room.replies.at(-1) }), new RegExp(`<@${BOB.id}>`, 'u'));
 });
 
 test('the same room does not get the same word twice in a row', async () => {

@@ -4,7 +4,6 @@
 
 import { GAMES } from '../../config/games.js';
 import { matches } from '../engine/text.js';
-import { winPayload } from '../engine/rewards.js';
 
 const WORDS = {
     ar: ['تفاحة', 'قمر', 'نجمة', 'بحر', 'شمس', 'مدرسة', 'سماء'],
@@ -34,6 +33,6 @@ export default {
         });
         if (!round.winner) return;
         const reward = await ctx.rewardWin(round.winner.id, 'answer');
-        await ctx.send(winPayload(lang, round.winner.id, reward, 'answer'));
+        await ctx.announceWin(round, reward, 'answer');
     },
 };

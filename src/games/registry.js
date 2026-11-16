@@ -28,7 +28,11 @@
 //                          prompt } | { timeout: true, prompt } | { cancelled: true, reason }
 //     openLobby(options) → engine/lobby.js openLobby(ctx, options): { players, reason } | { cancelled, reason, players }
 //     rewardWin(userId, kind = 'answer' | 'group') → engine/rewards.js rewardWin(client, guildId, userId, kind, game.id):
-//                          { ok, amount, balance, points, totalPoints, wins, capped }; post it with winPayload()
+//                          { ok, amount, balance, points, totalPoints, wins, capped }; show it with announceWin
+//     announceWin(round, reward, kind, { again }) → engine/rewards.js announceWin: the win line as a reply to the
+//                          winner's message (pinging only the winner), with the 🔁 play-again button
+//                          (engine/again.js) unless again: false (not the game's last message). Every game uses it.
+//                          A 'single' game's time's-up reveal (askRound) carries the button too.
 //     embed(title, description, options) → a ccEmbed() in the games colour
 //     send(input) → posts a text / embed / payload / function result in the room without pings (engine/payload.js)
 //     random() → a number in [0, 1) (Math.random; tests replace it)
@@ -37,6 +41,7 @@
 
 import { readdir } from 'node:fs/promises';
 import { BOURSE_GUILD_COMMANDS } from '../config/bourseGuild.js';
+import { GAMES_COMMAND } from '../config/casino.js';
 import { commandArgAliases } from '../config/commands/commandAliases.js';
 import { GAMES } from '../config/games.js';
 import { GUIDE_PHRASES } from '../services/cc/guideUi.js';
@@ -51,11 +56,17 @@ const PLAYERS = {
     get group() { return [GAMES.lobby.minPlayers, GAMES.lobby.maxPlayers]; },
 };
 
-/** The normalized one-word commands the rest of the bot already answers: no game may take them. */
+/**
+ * The normalized one-word commands the rest of the bot already answers: no game may take them. The games menu's
+ * words (`العاب`, `games`: GAMES_COMMAND and its aliases) are not reserved: they are the general command `menu`
+ * (src/games/general.js), the same menu the casino rooms show.
+ */
 export function reservedWords() {
     const oneWord = (word) => !/\s/u.test(word);
+    const menuWord = (word) => word === GAMES_COMMAND || commandArgAliases[word] === GAMES_COMMAND;
     const words = [
-        ...Object.keys(commandArgAliases).filter(oneWord), ...BOURSE_GUILD_COMMANDS,
+        ...Object.keys(commandArgAliases).filter((word) => oneWord(word) && !menuWord(word)),
+        ...[...BOURSE_GUILD_COMMANDS].filter((word) => !menuWord(word)),
         ...[...GUIDE_PHRASES].filter(oneWord), ...STREAK_WORDS,
     ];
     return new Set(words.map(normalize));
