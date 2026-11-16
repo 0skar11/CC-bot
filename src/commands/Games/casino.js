@@ -2,7 +2,7 @@ import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { CC } from '../../config/cc.js';
 import { isAllowedGuild, isCasinoChannel } from '../../config/runtime.js';
 import {
-    ALL_IN, CASINO, CASINO_COMMAND, isPercentAsk, GROUP_GAMES, SOLO_GAMES, betWord, casinoChannelNotice, casinoGuildNotice, coinSide, diceDirection, readGameArgs, rouletteChoice, targetHundredths,
+    ALL_IN, CASINO, CASINO_COMMAND, isPercentAsk, GROUP_GAMES, SOLO_GAMES, betFirst, betWord, casinoChannelNotice, casinoGuildNotice, coinSide, diceDirection, readGameArgs, rouletteChoice, targetHundredths,
 } from '../../config/casino.js';
 import {
     isBetRequest, isValidMineCount, isValidCrashTarget, diceChance, startMines, cashOutMines, startChicken, cashOutChicken,
@@ -15,6 +15,7 @@ import {
 import { onCasinoCooldown, withCasinoLock, scheduleIdleCashOut, closePreviousBoard } from '../../services/cc/casinoSessions.js';
 import { placeGroupBet } from '../../services/cc/casinoGroupSessions.js';
 import { commandLanguage } from '../../services/cc/lang.js';
+import { amountErrorText, looksLikeAmount } from '../../config/amount.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 
 // The CC casino: `/casino mines|coinflip|slots|dice|chicken|roulette|rocket` and the typed `مينز 100 3`,
@@ -213,15 +214,18 @@ export default {
     // `lang` is the language of the typed command word, for the usage answers. Returns `{ options }` for execute,
     // or `{ error }` to send instead.
     parsePrefixArgs(args, { lang = null } = {}) {
-        const [typedSub, ...rest] = args;
+        const [typedSub, ...typedRest] = args;
         const sub = SUB_ALIASES[typedSub] ?? typedSub;
+        const rest = betFirst(typedRest);
+        // A bet that was meant as an amount but can't be read (`5q`, `1.0005k`) gets the amount answer, not the usage.
+        const badAmount = rest.length > 0 && looksLikeAmount(rest[0]) && betWord(rest[0]) === null && !/^\d+(?:[.,]\d+)?$/u.test(rest[0]);
         if (NEWER_GAMES.includes(sub)) {
             const read = readGameArgs(sub, rest);
-            if (read.error) return { error: gameUsageText(sub, lang) };
+            if (read.error) return { error: badAmount ? amountErrorText(lang) : gameUsageText(sub, lang) };
             const { bet, target = null, direction = null, number = null, choice = null } = read.values;
             return { options: typedOptions(sub, { bet, number }, { direction, choice }, target) };
         }
-        const usage = { error: casinoUsageText(lang) };
+        const usage = { error: SUBCOMMANDS.includes(sub) && badAmount ? amountErrorText(lang) : casinoUsageText(lang) };
         if (!SUBCOMMANDS.includes(sub) || !rest.length || rest.length > 2) return usage;
         if (sub === 'coinflip') {
             const amounts = rest.filter((value) => betWord(value) !== null);

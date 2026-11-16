@@ -55,6 +55,7 @@
 
 import { CASINO_BET_LIMITS, casinoChannelIds, casinoMaxBet } from './runtime.js';
 import { BOURSE_GUILD_NOTICE } from './bourseGuild.js';
+import { parseAmount } from './amount.js';
 
 export const CASINO_COMMAND = 'casino';
 export const CASINO_BUTTON_PREFIX = 'casino';
@@ -215,18 +216,15 @@ export function isAllInWord(word) {
     return ALL_IN_WORDS.has(wordOf(word));
 }
 
-// Amount shorthand: `500k` / `1.5k` / `2m` / `2 مليون` are whole numbers; `50%`, `نص` (half) and `ربع` (quarter) are a share of the
-// balance, asked as `pct:N` (PERCENT_PREFIX) and worked out by the save that takes the bet, like ALL_IN.
+// Amount shorthand: `500k` / `1.5k` / `2m` / `2 مليون` / `5,000` / `٥٠٠` are whole numbers (parseAmount, src/config/amount.js);
+// `50%`, `نص` (half) and `ربع` (quarter) are a share of the balance, asked as `pct:N` (PERCENT_PREFIX) and worked out by
+// the save that takes the bet, like ALL_IN.
 export const PERCENT_PREFIX = 'pct:';
-const SUFFIX_MULTIPLIERS = { k: 1_000, m: 1_000_000, ك: 1_000, الف: 1_000, ألف: 1_000, مليون: 1_000_000 };
 const SHARE_WORDS = { نص: 50, نصف: 50, half: 50, ربع: 25, quarter: 25 };
 
 /** The whole number a shorthand like `500k` stands for, else null. Plain digits are not shorthand. */
 export function shorthandAmount(word) {
-    const match = /^(\d+(?:[.,]\d+)?)\s*(k|m|ك|الف|ألف|مليون)$/iu.exec(wordOf(word));
-    if (!match) return null;
-    const value = Number(match[1].replace(',', '.')) * SUFFIX_MULTIPLIERS[match[2].toLowerCase()];
-    return Number.isSafeInteger(value) && value > 0 ? value : null;
+    return isWhole(wordOf(word)) ? null : parseAmount(wordOf(word));
 }
 
 /** `pct:N` for `50%`, `نص`, `ربع`... (1–100), else null. */
@@ -243,11 +241,23 @@ export const isPercentAsk = (asked) => typeof asked === 'string' && /^pct:\d{1,3
 export function betWord(word) {
     if (isWhole(word)) return Number(word);
     if (isAllInWord(word)) return ALL_IN;
-    return shorthandAmount(word) ?? percentAmount(word);
+    return parseAmount(wordOf(word)) ?? percentAmount(word);
 }
 
 /** Whether `word` is an amount that is not plain digits (shorthand, share or all-in): it can only be a bet. */
 export const isBetOnlyWord = (word) => !isWhole(word) && betWord(word) !== null;
+
+/**
+ * The words with the bet first: when the first word is no bet-only word and exactly one later word is an amount
+ * written with a suffix or separators (`5k`, `5,000`, `٥٠٠`), that word moves to the front (`فوق 70 5k` →
+ * `5k فوق 70`). Plain numbers, all-in words and shares never move: in `100 2` the first one stays the bet.
+ */
+const isWrittenAmount = (word) => !isWhole(word) && parseAmount(wordOf(word)) !== null;
+export function betFirst(words) {
+    if (!words.length || isBetOnlyWord(words[0])) return words;
+    const at = words.map((word, index) => (isWrittenAmount(word) ? index : -1)).filter((index) => index > 0);
+    return at.length === 1 ? [words[at[0]], ...words.filter((_, index) => index !== at[0])] : words;
+}
 
 /** `heads` or `tails` for a typed side (`ملك`, `كتابة`, `h`, `tails`...), else null. */
 export function coinSide(word) {
@@ -299,7 +309,7 @@ export function targetHundredths(value, fallback = null) {
  * Returns `{ values }` (the numbers are checked by the game) or `{ error: 'usage' }` when it isn't a game command.
  */
 export function readGameArgs(game, words) {
-    const rest = words.map(String);
+    const rest = betFirst(words.map(String));
     const usage = { error: 'usage' };
     if (!rest.length) return usage;
     const bet = betWord(rest[0]);
