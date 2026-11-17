@@ -12,3 +12,5 @@ process.env.EVENT_ROLE_IDS = '';
 process.env.TRUSTED_USER_IDS = '';
 process.env.TRUSTED_ROLE_IDS = '';
 process.env.OPEN_GAMES_CHANNEL_IDS = '';
+// The invite gift is off unless switched on (DISbot already pays the invite reward); the tests exercise it.
+process.env.INVITE_REWARD_ENABLED = 'true';

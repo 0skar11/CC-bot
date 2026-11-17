@@ -23,8 +23,8 @@ const listOr = (value, fallback) => {
 export const levelBotIds = (env = process.env) => listOr(env.LEVEL_BOT_IDS, DEFAULT_LEVEL_BOT_ID);
 /** The level-up rooms (LEVEL_CHANNEL_IDS, else DEFAULT_LEVEL_CHANNEL_ID). */
 export const levelChannelIds = (env = process.env) => listOr(env.LEVEL_CHANNEL_IDS, DEFAULT_LEVEL_CHANNEL_ID);
-/** Whether the invite gift runs at all (INVITE_REWARD_ENABLED is anything but `false`). */
-export const inviteRewardEnabled = (env = process.env) => String(env.INVITE_REWARD_ENABLED ?? '').trim().toLowerCase() !== 'false';
+/** Whether the invite gift runs at all (OFF unless INVITE_REWARD_ENABLED=true: DISbot already pays the invite reward, so this one must not pay twice). */
+export const inviteRewardEnabled = (env = process.env) => String(env.INVITE_REWARD_ENABLED ?? '').trim().toLowerCase() === 'true';
 
 /** Startup check (src/app.js): the configured IDs must be Discord IDs. */
 export function validateInviteConfig(env = process.env) {

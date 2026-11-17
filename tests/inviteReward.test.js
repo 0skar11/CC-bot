@@ -8,7 +8,7 @@ import { afterEach, describe, test } from 'node:test';
 import { GatewayIntentBits, GuildMemberFlags } from 'discord.js';
 import { createSnapshot } from '../scripts/lib/bourseBackup.js';
 import { CC } from '../src/config/cc.js';
-import { DEFAULT_LEVEL_BOT_ID, DEFAULT_LEVEL_CHANNEL_ID, levelBotIds, levelChannelIds, validateInviteConfig } from '../src/config/invites.js';
+import { DEFAULT_LEVEL_BOT_ID, DEFAULT_LEVEL_CHANNEL_ID, levelBotIds, levelChannelIds, inviteRewardEnabled, validateInviteConfig } from '../src/config/invites.js';
 import messageCreate from '../src/events/messageCreate.js';
 import { getProfile, updateCCState } from '../src/services/cc/ccService.js';
 import {
@@ -82,7 +82,8 @@ function announcement(client, { content = '', embeds = [], id = `9${Math.random(
 afterEach(() => {
     forgetInvites();
     forgetLevelMessages();
-    for (const key of ['LEVEL_BOT_IDS', 'LEVEL_CHANNEL_IDS', 'INVITE_REWARD_ENABLED']) delete process.env[key];
+    for (const key of ['LEVEL_BOT_IDS', 'LEVEL_CHANNEL_IDS']) delete process.env[key];
+    process.env.INVITE_REWARD_ENABLED = 'true'; // the tests' baseline (tests/env.js)
 });
 
 describe('the configuration', () => {
@@ -105,6 +106,9 @@ describe('the configuration', () => {
         assert.deepEqual(await inviteIntents('t', { rest: rest(1 << 15) }), [GatewayIntentBits.GuildInvites, GatewayIntentBits.GuildMembers]);
         assert.deepEqual(await inviteIntents('t', { rest: rest(0) }), [GatewayIntentBits.GuildInvites]);
         assert.deepEqual(await inviteIntents('t', { rest: { get: async () => { throw new Error('offline'); } } }), [GatewayIntentBits.GuildInvites]);
+        // Off unless switched on (DISbot already pays the invite reward: never two payers by default).
+        assert.equal(inviteRewardEnabled({}), false);
+        assert.equal(inviteRewardEnabled({ INVITE_REWARD_ENABLED: 'true' }), true);
         process.env.INVITE_REWARD_ENABLED = 'false';
         assert.deepEqual(await inviteIntents('t', { rest: rest(1 << 14) }), []);
     });
