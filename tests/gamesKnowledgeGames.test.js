@@ -12,6 +12,7 @@ import { RIDDLES } from '../src/games/data/knowledgeRiddles.js';
 import { TRANSLATIONS } from '../src/games/data/knowledgeTranslate.js';
 import { ANTONYMS, NO_REVERSE, PLURALS } from '../src/games/data/knowledgeWords.js';
 import { CARD_FILE, setCardRenderer } from '../src/games/engine/card.js';
+import { setPictureRenderer } from '../src/games/engine/imageCard.js';
 import { forgetPicks } from '../src/games/engine/pick.js';
 import { abortAll, startSession } from '../src/games/engine/session.js';
 import antonym from '../src/games/games/antonym.js';
@@ -32,6 +33,9 @@ const textOf = (message) => [message.payload?.content, ...(message.payload?.embe
 // The questions are images (src/games/engine/card.js): a recording renderer keeps what each card shows.
 const cards = [];
 setCardRenderer(async (card) => { cards.push(card); return Buffer.from('89504e470d0a1a0a', 'hex'); });
+// The flags are drawn pictures (src/games/data/pictureFlags.js): a recording picture renderer keeps each one.
+const pictures = [];
+setPictureRenderer(async (card) => { pictures.push(card); return Buffer.from('89504e470d0a1a0a', 'hex'); });
 const balance = async (client, userId) => (await client.db.get(getEconomyKey(economyScopeId, userId)))?.cc ?? 0;
 
 afterEach(() => {
@@ -63,18 +67,23 @@ const CASES = [
 ];
 
 for (const { game, title, shown, answer, reveal } of CASES) {
-    test(`${game.id}: the question is shown (an image, the flag as text), the command is never an answer, the first right answer (${answer}) is paid 500`, async () => {
+    test(`${game.id}: the question is shown as an image, the command is never an answer, the first right answer (${answer}) is paid 500`, async () => {
         const before = cards.length;
+        const drawn = pictures.length;
         const { channel, client, message, running } = await start(game);
         assert.equal(channel.sent.length, 1);
         const { payload } = channel.sent[0];
         const prompt = payload.embeds[0];
         assert.equal(prompt.title, title);
         if (game === flags) {
-            assert.equal(cards.length, before, 'the flag stays text');
-            assert.equal(payload.files, undefined);
-            assert.ok(prompt.description.includes(shown), prompt.description);
-            assert.match(prompt.description, /\*\*[^*]+\*\*/u, 'bold question');
+            // The flag is a drawn picture: no emoji, no country name anywhere in the message.
+            assert.equal(cards.length, before, 'no text card');
+            assert.equal(pictures.length, drawn + 1, 'one picture');
+            assert.match(pictures.at(-1).picture, /^<svg /u);
+            assert.equal(prompt.image.url, `attachment://${CARD_FILE}`);
+            assert.equal(payload.files.length, 1);
+            const visible = JSON.stringify({ content: payload.content, embeds: payload.embeds, card: [pictures.at(-1).title, pictures.at(-1).hint] }).toLowerCase();
+            for (const name of [shown, ...FLAG_ROUNDS[0].ar, ...FLAG_ROUNDS[0].en]) assert.ok(!visible.includes(name.toLowerCase()), `"${name}" is not in ${visible}`);
         } else {
             // Only the image carries the question: no text of it (nor the answer) in the message itself.
             const card = cards.at(-1);
@@ -169,13 +178,13 @@ test('flags in English reveal the English name; the same room never repeats a qu
     await clock.advance(ROUND_MS);
     await first.running;
     assert.match(textOf(room.sent.at(-1)), new RegExp(FLAG_ROUNDS[0].en[0], 'iu'));
-    const seen = new Set([room.sent[0].payload.embeds[0].description]);
+    assert.equal(pictures.at(-1).title, 'Which country has this flag?');
+    const seen = new Set([pictures.at(-1).picture]);
     for (let i = 0; i < 5; i += 1) {
-        const before = room.sent.length;
         const next = await start(flags, { lang: 'en', room, clock, r: 0 });
-        const description = room.sent[before].payload.embeds[0].description;
-        assert.equal(seen.has(description), false, 'a new flag');
-        seen.add(description);
+        const flag = pictures.at(-1).picture;
+        assert.equal(seen.has(flag), false, 'a new flag');
+        seen.add(flag);
         await clock.advance(ROUND_MS);
         await next.running;
     }

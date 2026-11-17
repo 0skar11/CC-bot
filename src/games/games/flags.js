@@ -1,16 +1,32 @@
-// flags.js — `اعلام` / `flags`: the bot shows a country's flag emoji, the first to type the country (Arabic or English,
-// usual aliases: `الامارات`, `uae`, `ksa`, `امريكا`...) wins; nobody in time → the country is shown.
+// flags.js — `اعلام` / `flags`: the bot posts a country's flag as a picture it draws itself (src/games/data/
+// pictureFlags.js: no emoji or name in the message, so the question cannot be copied into a search); the first to
+// type the country (Arabic or English, usual aliases: `الامارات`, `uae`, `ksa`, `امريكا`...) wins; nobody in time →
+// the country is shown. If the picture cannot be made the round goes on with the flag emoji as text.
 
 import { pickFresh } from '../engine/pick.js';
-import { langOf, playAnswer } from '../data/knowledge.js';
+import { langOf, ROUND_MS } from '../data/knowledge.js';
 import { FLAG_ROUNDS } from '../data/knowledgeFlags.js';
+import { flagSvg } from '../data/pictureFlags.js';
+import { playPicture } from './lib/pictureRound.js';
 
 const TEXT = {
-    ar: { title: '🏳️ أعلام', ask: (flag) => `**علم أنهي دولة ده؟** ${flag}`, reveal: (country) => `${country.flag} ${country.ar[0]}` },
-    en: { title: '🏳️ Flags', ask: (flag) => `**Which country has this flag?** ${flag}`, reveal: (country) => `${country.flag} ${country.en[0]}` },
+    ar: {
+        title: '🏳️ أعلام',
+        heading: 'علم أنهي دولة ده؟',
+        fallback: (country) => `**علم أنهي دولة ده؟** ${country.flag}`,
+        reveal: (country) => `${country.flag} ${country.ar[0]}`,
+    },
+    en: {
+        title: '🏳️ Flags',
+        heading: 'Which country has this flag?',
+        fallback: (country) => `**Which country has this flag?** ${country.flag}`,
+        reveal: (country) => `${country.flag} ${titleCase(country.en[0])}`,
+    },
 };
 
-const titleCase = (name) => name.replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
+function titleCase(name) {
+    return name.replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
+}
 
 export default {
     id: 'flags',
@@ -20,7 +36,14 @@ export default {
     async run(ctx) {
         const text = TEXT[langOf(ctx)];
         const country = pickFresh(ctx.channelId, 'flags', FLAG_ROUNDS, ctx.random);
-        const shown = langOf(ctx) === 'en' ? { ...country, en: [titleCase(country.en[0])] } : country;
-        await playAnswer(ctx, { title: text.title, question: text.ask(country.flag), answers: [...country.ar, ...country.en], reveal: text.reveal(shown), image: false });
+        await playPicture(ctx, {
+            title: text.title,
+            heading: text.heading,
+            picture: () => flagSvg(country.code),
+            answers: [...country.ar, ...country.en],
+            reveal: text.reveal(country),
+            fallback: text.fallback(country),
+            timeMs: ROUND_MS,
+        });
     },
 };

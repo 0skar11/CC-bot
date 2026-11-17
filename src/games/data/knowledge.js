@@ -53,7 +53,7 @@ export async function playAnswer(ctx, { title, question, answers, reveal, footer
     const time = TEXT[lang].time(Math.round(timeMs / 1000));
     const textPrompt = ctx.embed(title, `${question}\n\n${time}`, footer ? { footer } : {});
     // The question as an image (src/games/engine/card.js) so it cannot be copy-pasted; the text embed when the
-    // card cannot be rendered, or when the game keeps text (`image: false`, the flags: the emoji is not the answer).
+    // card cannot be rendered, or when the game keeps text (`image: false`).
     const prompt = image
         ? () => cardPayload(ctx, { title, text: question, hint: time, note: cardNote(lang, time), footer, fallback: textPrompt })
         : textPrompt;

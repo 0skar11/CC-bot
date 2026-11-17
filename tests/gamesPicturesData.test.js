@@ -5,8 +5,9 @@ import assert from 'node:assert/strict';
 import { statSync } from 'node:fs';
 import { test } from 'node:test';
 import { accepts } from '../src/games/data/knowledge.js';
-import { COUNTRIES } from '../src/games/data/knowledgeFlags.js';
+import { COUNTRIES, FLAG_ROUNDS } from '../src/games/data/knowledgeFlags.js';
 import { CAMO_WORDS, camoNumber } from '../src/games/data/pictureCamo.js';
+import { FLAG_CODES, flagSvg } from '../src/games/data/pictureFlags.js';
 import { MAP_ROUNDS, SHAPES, shapeSvg } from '../src/games/data/pictureMap.js';
 import { CARD_FILE } from '../src/games/engine/card.js';
 import { pictureCardPayload, renderPictureCard } from '../src/games/engine/imageCard.js';
@@ -85,6 +86,29 @@ test('renders: map and camo cards are PNGs of the asked size, made in under 400 
     assert.deepEqual(sizeOf(await renderCamo({ text: '12345', width: 600, height: 260 })), { width: 600, height: 260 });
     await assert.rejects(renderCamo({ text: '' }), TypeError);
     await assert.rejects(renderPictureCard({ picture: null }), TypeError);
+});
+
+test('flag drawings: one per knowledgeFlags country, plain shapes only (no text, emoji or outside image), each a distinct real picture', async () => {
+    assert.deepEqual([...FLAG_CODES].sort(), COUNTRIES.map((country) => country.code).sort());
+    const drawings = new Set();
+    for (const { code, flag } of COUNTRIES) {
+        const svg = flagSvg(code);
+        assert.match(svg, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" /u, code);
+        assert.ok(!/<text|<image|href=|https?:\/\/(?!www\.w3\.org\/2000\/svg)/u.test(svg), `${code}: shapes only`);
+        assert.ok(!svg.includes(flag) && !/[^\x20-\x7e]/u.test(svg), `${code}: no emoji or other text`);
+        drawings.add(svg);
+    }
+    assert.equal(drawings.size, COUNTRIES.length, 'no two countries share a drawing');
+    assert.throws(() => flagSvg('XX'), /No flag drawing/u);
+    // Every asked flag rasterizes (sharp) into a card; a few shapes checked for size.
+    const sharp = (await import('sharp')).default;
+    for (const { code } of FLAG_ROUNDS) {
+        const { width, height } = await sharp(Buffer.from(flagSvg(code))).metadata();
+        assert.ok(width >= 400 && height >= 200, `${code}: ${width}x${height}`);
+    }
+    const png = await renderPictureCard({ picture: flagSvg('GB'), title: 'علم أنهي دولة ده؟', hint: 'قدامكم 25 ثانية' });
+    assert.ok(isPng(png));
+    assert.deepEqual(sizeOf(png), { width: 800, height: 520 });
 });
 
 test('pictureCardPayload with the real renderer: one q.png, no text of the picture; a picture that fails → the fallback', async () => {

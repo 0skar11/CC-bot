@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { economyScopeId } from '../src/config/runtime.js';
+import { FLAG_ROUNDS } from '../src/games/data/knowledgeFlags.js';
 import { CAMO_WORDS } from '../src/games/data/pictureCamo.js';
 import { MAP_ROUNDS } from '../src/games/data/pictureMap.js';
 import { CARD_FILE } from '../src/games/engine/card.js';
@@ -13,6 +14,7 @@ import { setPictureRenderer } from '../src/games/engine/imageCard.js';
 import { forgetPicks } from '../src/games/engine/pick.js';
 import { abortAll, startSession } from '../src/games/engine/session.js';
 import camo, { CAMO_MS } from '../src/games/games/camo.js';
+import flags from '../src/games/games/flags.js';
 import map, { MAP_MS } from '../src/games/games/map.js';
 import { helpEmbed, helpMenuPayload, startableGames } from '../src/games/helpMenu.js';
 import { findGame, loadGames } from '../src/games/registry.js';
@@ -127,6 +129,20 @@ test('the map fallback gives the flag as a clue, never the name', async () => {
     assert.ok(![...MAP_ROUNDS[0].ar, ...MAP_ROUNDS[0].en].some((name) => mapText.toLowerCase().includes(name.toLowerCase())), mapText);
     await first.clock.advance(MAP_MS);
     await first.running;
+});
+
+test('flags: the picture cannot be rendered → the flag emoji as text (never the name), and the round still pays', async () => {
+    setPictureRenderer(async () => { throw new Error('broken'); });
+    const { channel, client, running } = await start(flags);
+    const { payload } = channel.sent[0];
+    assert.equal(payload.files, undefined);
+    const text = payload.embeds[0].description;
+    assert.ok(text.includes(FLAG_ROUNDS[0].flag), text);
+    assert.match(text, /\*\*25\*\* ثانية/u);
+    assert.ok(![...FLAG_ROUNDS[0].ar, ...FLAG_ROUNDS[0].en].some((name) => text.toLowerCase().includes(name.toLowerCase())), text);
+    channel.emit(typed(channel, FLAG_ROUNDS[0].en[0], BOB));
+    await running;
+    assert.equal(await balance(client, BOB.id), 500);
 });
 
 test('English words get English copy and English reveals; the map accepts the Arabic name too', async () => {
