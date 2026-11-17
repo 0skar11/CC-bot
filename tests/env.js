@@ -5,6 +5,7 @@ process.env.BOURSE_CHANNEL_IDS = '';
 process.env.INITIAL_CC = '0';
 process.env.TRADER_ROLE_ENABLED = 'true';
 process.env.LOG_LEVEL = 'silent';
+process.env.NODE_ENV = 'test';
 // The chat games: every channel, no event roles (tests add them where they need them).
 process.env.GAMES_CHANNEL_IDS = '';
 process.env.EVENT_ROLE_IDS = '';

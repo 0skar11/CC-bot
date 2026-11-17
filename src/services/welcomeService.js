@@ -16,6 +16,7 @@
 import { ChannelType, GatewayIntentBits, PermissionFlagsBits, escapeMarkdown } from 'discord.js';
 import { isAllowedGuild } from '../config/runtime.js';
 import { welcomeChannelSetting, welcomeEnabled } from '../config/welcome.js';
+import { inviteRewardEnabled } from '../config/invites.js';
 import { inviteWelcomeNotice } from './cc/inviteRewardService.js';
 import { logger } from '../utils/logger.js';
 
@@ -91,22 +92,33 @@ export async function welcomeChannel(guild, { env = process.env, now = Date.now(
  * guildMemberAdd: the welcome, then the invite notice under it once `join` (the promise of handleMemberJoin, started
  * at the join) tells who invited the member. Returns what happened. Never throws.
  */
-export async function welcomeMember(member, client, { join = null, env = process.env, now = Date.now() } = {}) {
+export async function welcomeMember(member, client, { join = null, env = process.env, now = Date.now(), waitNoticeMs = null } = {}) {
     try {
-        if (!welcomeEnabled(env)) return { status: 'disabled' };
         const guild = member?.guild;
         if (!guild?.id || !isAllowedGuild(guild.id)) return { status: 'not_allowed' };
         if (!member.id || member.user?.bot) return { status: 'bot' };
         const channel = await welcomeChannel(guild, { env, now });
         if (!channel) return { status: 'no_channel' };
         const memberId = String(member.id);
-        const content = welcomeText(guild.name, memberId, welcomeEmoji(client ?? member.client));
-        const sent = await Promise.resolve().then(() => channel.send({ content, allowedMentions: { users: [memberId] } })).catch((error) => {
-            warnOnce(`send:${guild.id}`, `[WELCOME] Could not send the welcome in ${channel.id} of ${guild.id}: ${errorText(error)}`, now);
-            return null;
-        });
-        if (!sent) return { status: 'failed', channelId: channel.id };
-        const notice = inviteWelcomeNotice(memberId, (await Promise.resolve(join).catch(() => null))?.join);
+        let sentWelcome = false;
+
+        if (welcomeEnabled(env)) {
+            const content = welcomeText(guild.name, memberId, welcomeEmoji(client ?? member.client));
+            const sent = await Promise.resolve().then(() => channel.send({ content, allowedMentions: { users: [memberId] } })).catch((error) => {
+                warnOnce(`send:${guild.id}`, `[WELCOME] Could not send the welcome in ${channel.id} of ${guild.id}: ${errorText(error)}`, now);
+                return null;
+            });
+            if (!sent) return { status: 'failed', channelId: channel.id };
+            sentWelcome = true;
+        }
+
+        const delay = waitNoticeMs ?? ((env.NODE_ENV ?? process.env.NODE_ENV) === 'test' ? 0 : 1500);
+        if (delay > 0) {
+            await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+
+        const joinResult = await Promise.resolve(join).catch(() => null);
+        const notice = inviteWelcomeNotice(memberId, joinResult?.join);
         if (notice) {
             const posted = await Promise.resolve().then(() => channel.send({ content: notice, allowedMentions: { parse: [] } })).catch((error) => {
                 logger.warn(`[WELCOME] Could not send the invite notice in ${channel.id} of ${guild.id}: ${errorText(error)}`);
@@ -114,7 +126,8 @@ export async function welcomeMember(member, client, { join = null, env = process
             });
             return { status: 'sent', channelId: channel.id, notice: Boolean(posted) };
         }
-        return { status: 'sent', channelId: channel.id, notice: false };
+        if (sentWelcome) return { status: 'sent', channelId: channel.id, notice: false };
+        return { status: 'disabled' };
     } catch (error) {
         logger.warn(`[WELCOME] Could not welcome a member: ${errorText(error)}`);
         return { status: 'failed' };

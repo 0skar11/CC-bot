@@ -4,7 +4,7 @@
 // post), the invite notice under it (who invited, the gift, or why the invite doesn't count; nothing for unknown,
 // self or a bot), bots and other servers left out, WELCOME_ENABLED, and the bot's own wave emoji.
 import assert from 'node:assert/strict';
-import { afterEach, describe, test } from 'node:test';
+import { afterEach, beforeEach, describe, test } from 'node:test';
 import { ChannelType, GatewayIntentBits, PermissionFlagsBits } from 'discord.js';
 import { DEFAULT_LEVEL_CHANNEL_ID } from '../src/config/invites.js';
 import {
@@ -68,7 +68,7 @@ function server({ id = GUILD, name = 'CHAOS', channels = [], systemChannelId = n
 }
 const joiner = (guild, id = MEMBER, { bot = false } = {}) => ({ id, guild, user: { id, bot } });
 const pendingJoin = (extra = {}) => ({ status: 'saved', join: { inviterId: INVITER, code: 'abc', source: 'invite', status: 'pending', reason: null, joinedAt: T0, ...extra } });
-const at = (guildId, channelId) => ({ WELCOME_CHANNEL_IDS: `${guildId}:${channelId}` });
+const at = (guildId, channelId) => ({ WELCOME_CHANNEL_IDS: `${guildId}:${channelId}`, WELCOME_ENABLED: 'true' });
 const noticeOf = (memberId = MEMBER, inviterId = INVITER) => [
     `-# 📨 دعاه <@${inviterId}>`,
     `-# 🎁 <@${inviterId}> هياخد **5,000** 🌀 CC لما <@${memberId}> يوصل لفل 5 ويكتب 50 رسالة`,
@@ -84,8 +84,8 @@ afterEach(() => {
 });
 
 describe('the configuration', () => {
-    test('on unless switched off; CHAOS and Zenith have their channels; pairs on top of them; checked at start', () => {
-        assert.equal(welcomeEnabled({}), true);
+    test('off unless switched on; CHAOS and Zenith have their channels; pairs on top of them; checked at start', () => {
+        assert.equal(welcomeEnabled({}), false);
         assert.equal(welcomeEnabled({ WELCOME_ENABLED: 'true' }), true);
         for (const off of ['false', 'FALSE', ' 0 ', 'off', 'no']) assert.equal(welcomeEnabled({ WELCOME_ENABLED: off }), false, off);
         assert.deepEqual(DEFAULT_WELCOME_CHANNELS, { '1155236281706627173': '1547305745417113700', '1569932761471524874': '1570728122259611779' });
@@ -169,6 +169,7 @@ describe('the welcome channel', () => {
 });
 
 describe('welcoming a member', () => {
+    beforeEach(() => { process.env.WELCOME_ENABLED = 'true'; });
     test('the welcome, then the invite notice under it, in the same channel; only the member is pinged, nobody by the notice', async () => {
         const room = channel(WELCOME);
         const guild = server({ name: 'CHAOS', channels: [room] });
@@ -183,13 +184,13 @@ describe('welcoming a member', () => {
     test('every server in its own name', async () => {
         const first = channel(WELCOME);
         const second = channel(SYSTEM);
-        const env = { WELCOME_CHANNEL_IDS: `${GUILD}:${WELCOME},${SECOND}:${SYSTEM}` };
+        const env = { WELCOME_CHANNEL_IDS: `${GUILD}:${WELCOME},${SECOND}:${SYSTEM}`, WELCOME_ENABLED: 'true' };
         await welcomeMember(joiner(server({ id: GUILD, name: 'CHAOS', channels: [first] })), {}, { env });
         await welcomeMember(joiner(server({ id: SECOND, name: 'Zenith', channels: [second] }), OTHER), {}, { env });
         assert.deepEqual([first.sent[0].content, second.sent[0].content], [`welcome to CHAOS <@${MEMBER}> 👋`, `welcome to Zenith <@${OTHER}> 👋`]);
         // A server with nothing set and no system channel: its `welcome` channel.
         const named = channel('400000000000000020', { name: 'welcome' });
-        await welcomeMember(joiner(server({ id: SECOND, name: '**Zen**', channels: [named] })), {}, { env: {} });
+        await welcomeMember(joiner(server({ id: SECOND, name: '**Zen**', channels: [named] })), {}, { env: { WELCOME_ENABLED: 'true' } });
         assert.equal(named.sent[0].content, String.raw`welcome to \*\*Zen\*\* <@200000000000000102> 👋`);
     });
 
@@ -227,7 +228,7 @@ describe('welcoming a member', () => {
         const room = channel(WELCOME);
         const guild = server({ channels: [room] });
         assert.equal((await welcomeMember(joiner(guild, BOT, { bot: true }), {}, { env: at(GUILD, WELCOME) })).status, 'bot');
-        assert.equal((await welcomeMember(joiner(guild), {}, { join: Promise.resolve(pendingJoin()), env: { ...at(GUILD, WELCOME), WELCOME_ENABLED: 'false' } })).status, 'disabled');
+        assert.equal((await welcomeMember(joiner(guild), {}, { join: Promise.resolve(null), env: { ...at(GUILD, WELCOME), WELCOME_ENABLED: 'false' } })).status, 'disabled');
         assert.equal((await welcomeMember(joiner(server({ id: NOT_ALLOWED, channels: [room] })), {}, { env: at(NOT_ALLOWED, WELCOME) })).status, 'not_allowed');
         assert.equal((await welcomeMember(joiner(server({ channels: [] })), {}, { env: {} })).status, 'no_channel');
         assert.equal((await welcomeMember(null, {}, { env: {} })).status, 'not_allowed');
@@ -250,6 +251,7 @@ describe('welcoming a member', () => {
 });
 
 describe('guildMemberAdd', () => {
+    beforeEach(() => { process.env.WELCOME_ENABLED = 'true'; });
     function fakeDb(records = {}) {
         const store = new Map(Object.entries(records));
         const reads = [];
@@ -313,7 +315,7 @@ describe('guildMemberAdd', () => {
         }
     });
 
-    test('WELCOME_ENABLED=false: no welcome, the invite still tracked', async () => {
+    test('WELCOME_ENABLED=false: no welcome, the invite still tracked and notice sent', async () => {
         process.env.WELCOME_CHANNEL_IDS = `${GUILD}:${WELCOME}`;
         process.env.WELCOME_ENABLED = 'false';
         try {
@@ -321,8 +323,22 @@ describe('guildMemberAdd', () => {
             assert.equal(await primeGuild(guild), true);
             use();
             await guildMemberAdd.execute(joiner(guild), client);
-            assert.equal(room.sent.length, 0);
+            assert.deepEqual(room.sent.map((p) => p.content), [noticeOf()]);
             assert.equal(client.db.store.get(getInviteRecordKey(GUILD, MEMBER)).inviterId, INVITER);
+        } finally {
+            delete process.env.WELCOME_CHANNEL_IDS;
+        }
+    });
+
+    test('WELCOME_ENABLED=false and INVITE_REWARD_ENABLED=false: nothing sent in the room', async () => {
+        process.env.WELCOME_CHANNEL_IDS = `${GUILD}:${WELCOME}`;
+        process.env.WELCOME_ENABLED = 'false';
+        process.env.INVITE_REWARD_ENABLED = 'false';
+        try {
+            const { guild, room, client, use } = setup();
+            use();
+            await guildMemberAdd.execute(joiner(guild), client);
+            assert.equal(room.sent.length, 0);
         } finally {
             delete process.env.WELCOME_CHANNEL_IDS;
         }
@@ -330,6 +346,7 @@ describe('guildMemberAdd', () => {
 });
 
 describe('starting the welcome', () => {
+    beforeEach(() => { process.env.WELCOME_ENABLED = 'true'; });
     test('reads the bot\'s own emojis (never uploads one), warns without the Server Members Intent, never throws', async () => {
         const items = [];
         let created = 0;

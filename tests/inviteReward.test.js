@@ -148,6 +148,7 @@ describe('the configuration', () => {
         assert.equal(inviteRewardEnabled({ INVITE_REWARD_ENABLED: 'true' }), true);
         // The welcome alone (the gift off) still needs to see members join: GuildMembers, never GuildInvites.
         process.env.INVITE_REWARD_ENABLED = 'false';
+        process.env.WELCOME_ENABLED = 'true';
         assert.deepEqual(await inviteIntents('t', { rest: rest(1 << 14) }), [GatewayIntentBits.GuildMembers]);
         assert.deepEqual(await inviteIntents('t', { rest: rest(0) }), [], 'the switch off: the bot still starts, without it');
         assert.deepEqual(await inviteIntents('t', { rest: rest(1 << 14), env: { WELCOME_ENABLED: 'false' } }), []);

@@ -9,7 +9,7 @@
 //   Settings → System Messages), else a text channel named `welcome`.
 
 const snowflake = /^\d{17,20}$/u;
-const OFF = new Set(['false', '0', 'off', 'no']);
+const ON = new Set(['true', '1', 'yes', 'on']);
 
 export const CHAOS_GUILD_ID = '1155236281706627173';
 export const ZENITH_GUILD_ID = '1569932761471524874';
@@ -19,8 +19,8 @@ export const DEFAULT_WELCOME_CHANNELS = Object.freeze({
     [ZENITH_GUILD_ID]: '1570728122259611779',
 });
 
-/** Whether the welcome runs at all (on unless WELCOME_ENABLED is `false`, `0`, `off` or `no`). Read on every call. */
-export const welcomeEnabled = (env = process.env) => !OFF.has(String(env.WELCOME_ENABLED ?? '').trim().toLowerCase());
+/** Whether the welcome line runs (OFF unless WELCOME_ENABLED is `true`, `1`, `yes` or `on`). Default false so DISbot sends the welcome. */
+export const welcomeEnabled = (env = process.env) => ON.has(String(env.WELCOME_ENABLED ?? '').trim().toLowerCase());
 
 /** The WELCOME_CHANNEL_IDS pairs as [guildId, channelId or 'off'], as written (not checked). */
 function pairs(env) {
