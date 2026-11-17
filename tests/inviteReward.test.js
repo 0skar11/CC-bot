@@ -25,6 +25,7 @@ const SCOPE = '100000000000000001';
 const INVITER = '200000000000000101';
 const MEMBER = '200000000000000102';
 const OTHER = '200000000000000103';
+const NEWCOMER = '200000000000000104';
 const SOME_BOT = '200000000000000109';
 const T0 = Date.UTC(2026, 10, 16, 12);
 const AMOUNT = CC.inviteReward.amount;
@@ -213,6 +214,47 @@ describe('only a real level-up of one member pays', () => {
         await nothingPaid(client, rank);
     });
 
+    test('two different levels in one message pay nothing', async () => {
+        const client = setup();
+        await nothingPaid(client, announcement(client, { content: `GG <@${MEMBER}>, you just advanced to level 5! Level 6 is next`, mentions: [member] }));
+        await nothingPaid(client, announcement(client, { content: `<@${MEMBER}> reached level 5 and reached level 7`, mentions: [member] }));
+        assert.equal(parseLevel('Level up!\nLevel 3\nLevel 9'), null);
+    });
+
+    test('a member\'s own name can\'t give or change the level: it is cut out before the message is read', async () => {
+        const client = setup();
+        const named = (name, extra = {}) => ({ id: MEMBER, bot: false, username: 'member', globalName: name, displayName: name, ...extra });
+        // The real level-up is level 2: a display name saying 9 or 5 (or a level-up) must not pay or change it.
+        for (const name of ['advanced to level 9', 'reached level 5', 'Level Up! level 7', 'وصلت لفل 9']) {
+            const message = announcement(client, { content: `GG ${name} <@${MEMBER}>, you just advanced to level 2!`, mentions: [named(name)] });
+            assert.deepEqual(await parseLevelUp(message), { userId: MEMBER, level: 2 }, name);
+            await nothingPaid(client, message);
+            // The same name written on the embed's card (its author line) instead.
+            const card = announcement(client, { content: `<@${MEMBER}>`, embeds: [{ data: { author: { name }, description: 'GG, you just advanced to level 2!' } }], mentions: [named(name)] });
+            assert.deepEqual(await parseLevelUp(card), { userId: MEMBER, level: 2 }, `${name} on the card`);
+        }
+        // A nickname (the mentioned member), the replied member's names, a cached member shown only on the card.
+        const nick = announcement(client, { content: `GG reached level 6 <@${MEMBER}>, you just advanced to level 2!`, mentions: [named('member')] });
+        nick.mentions.members = new Map([[MEMBER, { nickname: 'reached level 6', displayName: 'reached level 6', user: named('member') }]]);
+        assert.equal((await parseLevelUp(nick)).level, 2);
+        const reply = Object.assign(announcement(client, { content: 'GG reached level 8, you just advanced to level 2!' }), {
+            reference: { messageId: '1' }, fetchReference: async () => ({ author: named('reached level 8'), member: { nickname: null, displayName: 'reached level 8' } }),
+        });
+        assert.equal((await parseLevelUp(reply)).level, 2);
+        const shown = announcement(client, { embeds: [{ data: { description: `<@${MEMBER}> is now level 9\nGG, you just advanced to level 2!`, thumbnail: { url: `https://cdn.discordapp.com/avatars/${MEMBER}/a.png` } } }] });
+        shown.guild = { ...shown.guild, members: { ...shown.guild.members, cache: new Map([[MEMBER, { nickname: 'is now level 9', displayName: 'is now level 9', user: named('member') }]]) } };
+        assert.equal((await parseLevelUp(shown)).level, 2);
+        await nothingPaid(client, shown);
+        // A name that could not be cut out (not known to the bot) still pays nothing: the message names two levels.
+        await nothingPaid(client, announcement(client, { content: `GG reached level 9 <@${MEMBER}>, you just advanced to level 2!`, mentions: [named('member')] }));
+        // And a real level 5 stays level 5 whatever the member is called.
+        const real = announcement(client, { content: `GG reached level 9 <@${MEMBER}>, you just advanced to level 5!`, mentions: [named('reached level 9')] });
+        assert.deepEqual(await parseLevelUp(real), { userId: MEMBER, level: 5 });
+        assert.equal(await handleLevelUpMessage(real, { now: T0 }), true);
+        assert.equal(await balance(client, INVITER), AMOUNT);
+        assert.equal(client.db.store.get(getInviteRecordKey(GUILD, MEMBER)).level, 5);
+    });
+
     test('a real level-up of one member pays the inviter once', async () => {
         const client = setup();
         const levelUp = () => announcement(client, { content: `GG <@${MEMBER}>, you just advanced to level 5!`, mentions: [member] });
@@ -243,14 +285,34 @@ describe('tracking who invited whom', () => {
         assert.equal(didRejoin({ flags: 0 }), false);
     });
 
-    test('the invite whose count went up; one deleted on its last use; two at once are ambiguous', () => {
+    test('the invite whose count went up; two at once are ambiguous; nothing matched is unknown', () => {
         const map = (...entries) => new Map(entries.map((entry) => [entry.code, { maxUses: 0, inviterId: INVITER, inviterBot: false, ...entry }]));
         assert.equal(findUsedInvite(map({ code: 'a', uses: 1 }, { code: 'b', uses: 4 }), map({ code: 'a', uses: 1 }, { code: 'b', uses: 5 })).invite.code, 'b');
         assert.equal(findUsedInvite(map({ code: 'a', uses: 1 }), map({ code: 'a', uses: 1 }, { code: 'new', uses: 1 })).invite.code, 'new');
         assert.equal(findUsedInvite(map({ code: 'a', uses: 1 }, { code: 'b', uses: 1 }), map({ code: 'a', uses: 2 }, { code: 'b', uses: 2 })).source, 'ambiguous');
-        assert.equal(findUsedInvite(map({ code: 'one', uses: 4, maxUses: 5 }), map()).invite.code, 'one');
-        assert.equal(findUsedInvite(map(), map(), [{ code: 'gone', uses: 0, maxUses: 1, inviterId: INVITER, at: T0 }]).invite.code, 'gone');
         assert.equal(findUsedInvite(map({ code: 'a', uses: 1 }), map({ code: 'a', uses: 1 })).source, 'unknown');
+    });
+
+    test('a deleted invite is credited only when it surely ran out on this join: seen deleted, exactly exhausted, alone, no vanity', () => {
+        const map = (...entries) => new Map(entries.map((entry) => [entry.code, { maxUses: 0, inviterId: INVITER, inviterBot: false, ...entry }]));
+        const seen = (code, uses, maxUses) => ({ code, uses, maxUses, inviterId: OTHER, inviterBot: false, at: T0 });
+        const keep = map({ code: 'a', uses: 1 });
+        // Exhausted on its last use (4 of 5, now gone), seen deleted: credited.
+        assert.deepEqual(findUsedInvite(keep, keep, [seen('last', 4, 5)]), { source: 'invite', invite: seen('last', 4, 5) });
+        assert.equal(findUsedInvite(map(), map(), [seen('once', 0, 1)]).invite.code, 'once');
+        // Deleted by hand before it ran out (1 of 5), or one with no limit: unknown.
+        assert.equal(findUsedInvite(keep, keep, [seen('manual', 1, 5)]).source, 'unknown');
+        assert.equal(findUsedInvite(keep, keep, [seen('open', 3, 0)]).source, 'unknown');
+        // More than one use short or past its max: never "exactly" its last use.
+        assert.equal(findUsedInvite(keep, keep, [seen('odd', 5, 5)]).source, 'unknown');
+        // Gone from the list without an inviteDelete event seen: unknown, even exhausted.
+        assert.equal(findUsedInvite(map({ code: 'one', uses: 4, maxUses: 5 }), map()).source, 'unknown');
+        assert.equal(findUsedInvite(map({ code: 'a', uses: 1 }, { code: 'x', uses: 1, maxUses: 9 }), map({ code: 'a', uses: 1 }), [seen('last', 4, 5)]).source, 'unknown', 'another invite vanished too');
+        // Two deleted, or a server with a vanity link: unknown.
+        assert.equal(findUsedInvite(keep, keep, [seen('last', 4, 5), seen('once', 0, 1)]).source, 'unknown');
+        assert.equal(findUsedInvite(keep, keep, [seen('last', 4, 5)], { vanity: true }).source, 'unknown');
+        // A count that rose wins over a deletion.
+        assert.equal(findUsedInvite(keep, map({ code: 'a', uses: 2 }), [seen('last', 4, 5)]).invite.code, 'a');
     });
 
     test('a join is saved once with its inviter; bots are not saved; the first join decides', async () => {
@@ -279,7 +341,7 @@ describe('tracking who invited whom', () => {
         assert.equal((await handleMemberJoin({ ...joining(guild), guild: { ...guild, id: '100000000000000001' } }, client)).status, 'untracked');
     });
 
-    test('invites created and deleted on the way are followed; a max-uses invite deleted by its last use still counts', async () => {
+    test('invites created and deleted on the way are followed; an exhausted invite deleted by its last use is credited once', async () => {
         let invites = [invite('abc', 0, INVITER)];
         const guild = fakeGuild({ list: () => invites });
         const client = fakeClient(guild);
@@ -291,6 +353,37 @@ describe('tracking who invited whom', () => {
         invites = [invite('abc', 0, INVITER)];
         const { record } = await handleMemberJoin(joining(guild), client, { now: T0 + 1000 });
         assert.deepEqual([record.inviterId, record.code, record.status], [OTHER, 'once', 'pending']);
+        // The deletion served that join: the next one (a vanity link, a widget...) within the 15 s gets nothing from it.
+        const next = await handleMemberJoin(joining(guild, NEWCOMER), client, { now: T0 + 2000 });
+        assert.deepEqual([next.record.status, next.record.reason], ['excluded', 'unknown']);
+    });
+
+    test('an invite deleted by hand before it ran out credits nobody; one seen too late or in a vanity server neither', async () => {
+        let invites = [invite('abc', 0, INVITER), invite('five', 1, OTHER, { maxUses: 5 })];
+        const guild = fakeGuild({ list: () => invites });
+        const client = fakeClient(guild);
+        assert.equal(await primeGuild(guild), true);
+        // An admin deletes `five` (1 of 5 used), then somebody joins through something else.
+        onInviteDelete({ code: 'five', guild: { id: GUILD } }, { now: T0 });
+        invites = [invite('abc', 0, INVITER)];
+        const manual = await handleMemberJoin(joining(guild), client, { now: T0 + 1000 });
+        assert.deepEqual([manual.record.status, manual.record.reason, manual.record.inviterId], ['excluded', 'unknown', null]);
+        // Exhausted, but its inviteDelete event older than 15 s: unknown.
+        invites = [invite('abc', 0, INVITER), invite('last', 4, OTHER, { maxUses: 5 })];
+        assert.equal(await primeGuild(guild), true);
+        onInviteDelete({ code: 'last', guild: { id: GUILD } }, { now: T0 });
+        invites = [invite('abc', 0, INVITER)];
+        const late = await handleMemberJoin(joining(guild, OTHER), client, { now: T0 + 16_000 });
+        assert.equal(late.record.reason, 'unknown');
+        // Exhausted and seen deleted, but the server has a vanity link: unknown.
+        const vanity = fakeGuild({ list: () => invites, vanityURLCode: 'cool' });
+        const vanityClient = fakeClient(vanity);
+        invites = [invite('abc', 0, INVITER), invite('last', 4, OTHER, { maxUses: 5 })];
+        assert.equal(await primeGuild(vanity), true);
+        onInviteDelete({ code: 'last', guild: { id: GUILD } }, { now: T0 });
+        invites = [invite('abc', 0, INVITER)];
+        const viaVanity = await handleMemberJoin(joining(vanity), vanityClient, { now: T0 + 1000 });
+        assert.deepEqual([viaVanity.record.status, viaVanity.record.reason], ['excluded', 'unknown']);
     });
 
     test('without Manage Server the join is saved as unknown and nothing throws', async () => {

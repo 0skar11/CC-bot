@@ -6,11 +6,15 @@
 //   the level must come with words that say it was just reached — `advanced to level 5`, `reached level 5`, `is now
 //   level 5`, `leveled up to 5`, `New level: 5`, a `Level up!` heading, `وصلت للمستوى ٥`, `طلعت لفل 5`, `لفلك صار 5`,
 //   `ارتقيت إلى المستوى الخامس`... A rank card (`Level 7 | 300 XP`), a leaderboard or a level list names levels
-//   without them and never pays. The highest level so announced counts; "next" and "previous" levels never do.
+//   without them and never pays. "Next" and "previous" levels never count, and a message that names two different
+//   levels pays nothing (nothing is guessed).
+// - The members' own names are cut out of the text before it is read (levelText): a display name, username, global
+//   name or nickname is anybody's to write, so a member called `reached level 9` can't change the level read. So are
+//   mentions, custom emoji and timestamps.
 // - The member is the one user the message mentions (message.mentions.users, bots left out): exactly one, else
 //   nothing happens. With no user mentioned at all, the member the message replies to, or the one avatar on its card,
-//   when that is a single user. Nobody else may be named in the message (its text or its card), and a user named
-//   only in the text is never taken as the member.
+//   when that is a single user. Nobody else may be named in the message (its text, its card or the replied message),
+//   and a user named only in the text is never taken as the member.
 // - Who invited the member is the record inviteTracker.js saved when they joined. Only a 'pending' record pays (a
 //   real member's invite, not their own, not a bot's, not a vanity or unknown one, not a rejoin), and only while the
 //   inviter is still in the server (else the record becomes 'skipped': inviter_left / bot_inviter).
@@ -68,17 +72,50 @@ const ARROW = /^[\s*_`]*(?:→|->|=>|⟶|➜|➡\u{FE0F}?|←|⬅\u{FE0F}?|<-|»
 // Arabic ordinals written out: `المستوى الخامس`.
 const ORDINALS = { اول: 1, ثاني: 2, تاني: 2, ثالث: 3, تالت: 3, رابع: 4, خامس: 5, سادس: 6, سابع: 7, ثامن: 8, تامن: 8, تاسع: 9, عاشر: 10 };
 const ORDINAL = /^[\s:*_]*(?:ال)?(اول|ثاني|تاني|ثالث|تالت|رابع|خامس|سادس|سابع|ثامن|تامن|تاسع|عاشر)(?![\u{621}-\u{64A}])/u;
-// A level that is not the one reached: `next level 6`, `previous level`, `from level 4` (`المستوى التالي` has no number).
-const NOT_REACHED_BEFORE = /(?:next|previous|prev|old|from|last)[\s*_]*$/iu;
+// A level that is not the one reached: `next level 6`, `previous level`, `from level 4`, `من لفل 4` (`المستوى التالي`
+// has no number).
+const NOT_REACHED_BEFORE = /(?:(?<![a-z])(?:next|previous|prev|old|from|last)[\s*_]*|(?<![\u{621}-\u{64A}])من[\s*_]*(?:ال|ل)?)$/iu;
+// `level 4 → level 5`: the level after the arrow replaces the one before it on the line.
+const ARROW_BEFORE = /(?:→|->|=>|⟶|➜|➡\u{FE0F}?|»|(?<![a-z])to|(?<![\u{621}-\u{64A}])الي)[ \t*_`]*$/iu;
+// Discord markup in the text: user, role and channel mentions, custom emoji (their names are anybody's), timestamps.
+const MARKUP = /<(?:@[!&]?|#)\d+>|<a?:\w+:\d+>|<t:-?\d+(?::[a-z])?>/giu;
+// Where a member's name was cut out: no level, verb or gap may be read across it.
+const CUT = ' ¦ ';
+const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+
+/** The names to cut out, normalized like the text, longest first; a one-character name can't spell a level. */
+function cutList(names) {
+    const out = new Set();
+    for (const name of names) {
+        const plain = plainArabic(String(name ?? '')).trim();
+        if ([...plain].length >= 2) out.add(plain);
+    }
+    return [...out].sort((a, b) => [...b].length - [...a].length);
+}
 
 /**
- * The level a level-up announcement says was just reached (the highest one), or null when the message announces no
- * level-up (a rank card, a leaderboard, a level list) or names no level.
+ * The text of a message with the members' own names cut out (display names, usernames, nicknames: anybody can call
+ * themselves `reached level 9`), and the Discord markup. Names of 4 characters or more go wherever they are; shorter
+ * ones only as whole words.
  */
-export function parseLevel(text) {
-    const plain = plainArabic(String(text ?? '')).replace(/<a?:\w+:\d+>/gu, ' ');
+export function levelText(text, names = []) {
+    let plain = plainArabic(String(text ?? '')).replace(MARKUP, ' ');
+    for (const name of cutList(names)) {
+        const whole = [...name].length >= 4 ? escapeRegex(name) : `(?<![\\p{L}\\p{N}])${escapeRegex(name)}(?![\\p{L}\\p{N}])`;
+        plain = plain.replace(new RegExp(whole, 'giu'), CUT);
+    }
+    return plain;
+}
+
+/**
+ * The level a level-up announcement says was just reached, or null: no level-up announced (a rank card, a
+ * leaderboard, a level list), no level, or more than one different level in the message (nothing is guessed).
+ * `names`: the names of the members in the message, cut out before reading (levelText).
+ */
+export function parseLevel(text, { names = [] } = {}) {
+    const plain = levelText(text, names);
     const heading = HEADING.test(plain);
-    const levels = [];
+    const found = [];
     for (const match of plain.matchAll(LEVEL_WORD)) {
         const word = match[0];
         const lineStart = plain.lastIndexOf('\n', match.index - 1) + 1;
@@ -102,10 +139,15 @@ export function parseLevel(text) {
             const ordinal = ORDINAL.exec(after);
             if (ordinal) level = ORDINALS[ordinal[1]];
         }
-        if (!(heading || levelUp || announced || REACHED_BEFORE.test(before))) continue;
-        if (Number.isSafeInteger(level) && level >= 1 && level <= MAX_LEVEL) levels.push(level);
+        if (!(Number.isSafeInteger(level) && level >= 1 && level <= MAX_LEVEL)) continue;
+        if (ARROW_BEFORE.test(before)) {
+            for (let i = found.length - 1; i >= 0; i -= 1) if (found[i].line === lineStart) found.splice(i, 1);
+        }
+        found.push({ level, line: lineStart, reached: heading || levelUp || announced || REACHED_BEFORE.test(before) });
     }
-    return levels.length ? Math.max(...levels) : null;
+    const levels = new Set(found.map((entry) => entry.level));
+    if (levels.size !== 1 || !found.some((entry) => entry.reached)) return null;
+    return [...levels][0];
 }
 
 const MENTION = /<@!?(\d{17,20})>/gu;
@@ -125,14 +167,33 @@ function avatarIds(message) {
 }
 
 /**
- * `{ userId, level }` from a level bot's level-up announcement, or null: no level-up announced (parseLevel), not
- * exactly one member (message.mentions.users, bots left out; with none mentioned, the one member it replies to or
- * shows the avatar of), or anybody else named in it.
+ * Every name the members in the message go by (they choose them, so a name can read `reached level 9`): the
+ * mentioned users and members, the author of the replied message, and the cached users and members of `ids` (the
+ * users named or shown in it): usernames, global and display names, tags and nicknames.
+ */
+export function memberNames(message, { replied = null, ids = [] } = {}) {
+    const names = [];
+    const user = (entry) => { if (entry) names.push(entry.username, entry.globalName, entry.displayName, entry.tag); };
+    const member = (entry) => { if (entry) { names.push(entry.nickname, entry.displayName); user(entry.user); } };
+    for (const entry of message.mentions?.users?.values?.() || []) user(entry);
+    for (const entry of message.mentions?.members?.values?.() || []) member(entry);
+    if (replied) { user(replied.author); member(replied.member); }
+    for (const id of ids) {
+        member(message.guild?.members?.cache?.get?.(id));
+        user(message.client?.users?.cache?.get?.(id));
+    }
+    return names.filter((name) => typeof name === 'string' && name.trim());
+}
+
+/**
+ * `{ userId, level }` from a level bot's level-up announcement, or null: not exactly one member
+ * (message.mentions.users, bots left out; with none mentioned, the one member it replies to or shows the avatar of),
+ * anybody else named in it, or no single level-up level once the members' own names are cut out (parseLevel).
  */
 export async function parseLevelUp(message) {
     const text = messageText(message);
-    const level = parseLevel(text);
-    if (!level) return null;
+    // Nothing that could be a level at all: no lookups.
+    if (plainArabic(text).search(LEVEL_WORD) < 0) return null;
     const bots = new Set([String(message.author?.id ?? ''), ...levelBotIds()]);
     const users = [...(message.mentions?.users?.values?.() || [])];
     for (const user of users) if (user?.bot) bots.add(String(user.id));
@@ -143,17 +204,18 @@ export async function parseLevelUp(message) {
     // only the check that nobody but the member is in the message (a leaderboard, two members).
     const named = people([...text.matchAll(MENTION)].map((found) => found[1]));
     const avatars = people(avatarIds(message));
+    let replied = null;
+    if (message.reference?.messageId && typeof message.fetchReference === 'function') replied = await message.fetchReference().catch(() => null);
+    const repliedId = replied?.author && !replied.author.bot ? String(replied.author.id) : null;
     let userId = mentioned.size === 1 ? [...mentioned][0] : null;
     if (!userId) {
-        const candidates = new Set(avatars);
-        if (message.reference?.messageId && typeof message.fetchReference === 'function') {
-            const replied = await message.fetchReference().catch(() => null);
-            if (replied?.author && !replied.author.bot) candidates.add(String(replied.author.id));
-        }
+        const candidates = new Set([...avatars, ...(repliedId ? [repliedId] : [])]);
         if (candidates.size !== 1) return null;
         userId = [...candidates][0];
     }
-    if ([...named, ...avatars].some((id) => id !== userId)) return null;
+    if ([...named, ...avatars, ...(repliedId ? [repliedId] : [])].some((id) => id !== userId)) return null;
+    const level = parseLevel(text, { names: memberNames(message, { replied, ids: [userId, ...named, ...avatars, ...(repliedId ? [repliedId] : [])] }) });
+    if (!level) return null;
     return { userId, level };
 }
 

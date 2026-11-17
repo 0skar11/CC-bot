@@ -3,7 +3,9 @@
 // (the servers of the level-up rooms, LEVEL_CHANNEL_IDS in src/config/invites.js) in memory: read at start
 // (startInviteTracking, from the clientReady event), kept up to date by inviteCreate / inviteDelete, and read again
 // when a member joins (guildMemberAdd): the one invite whose count went up is the one used. An invite that reached
-// its max uses is deleted by Discord, so the one that was a single use short counts too.
+// its max uses is deleted by Discord, so it counts only without doubt: the only invite gone, seen deleted by its
+// inviteDelete event in the last DELETED_MEMORY_MS, exactly one use short of its max, no count rose, and the server
+// has no vanity link (findUsedInvite). Each seen deletion serves one join at most.
 // Each join is saved once, in `guild:<guildId>:invites:<memberId>` (getInviteRecordKey):
 //   { inviterId, code, source, status, reason, joinedAt }
 //   status 'pending'  — a real member's invite: the gift is paid when the level bot shows the member at the level
@@ -23,7 +25,8 @@ import { getInviteRecordKey } from '../../utils/database/keys.js';
 import { logger } from '../../utils/logger.js';
 import { Mutex } from '../../utils/mutex.js';
 
-// An invite deleted this recently may still be the one a joining member used (its last use deleted it).
+// An invite an inviteDelete event removed this recently may still be the one a joining member used (its last use
+// deleted it).
 export const DELETED_MEMORY_MS = 15_000;
 const WARN_GAP_MS = 60 * 60_000;
 
@@ -145,20 +148,27 @@ function recentlyDeleted(guildId, now) {
 }
 
 /**
- * Which invite a join used, from the counts `before` and `after` it (Maps code → entry) and the invites deleted
- * just before it: `{ source: 'invite', invite }`, else `{ source: 'ambiguous' | 'unknown' }`.
+ * Which invite a join used, from the counts `before` and `after` it (Maps code → entry) and the invites an
+ * inviteDelete event removed in the last DELETED_MEMORY_MS (`recent`): `{ source: 'invite', invite }`, else
+ * `{ source: 'ambiguous' | 'unknown' }`.
+ * - The one invite whose count rose (two or more: 'ambiguous').
+ * - No count rose: Discord deletes an invite on its last allowed use, so a deleted invite is credited, but only
+ *   without any doubt: it is the only invite gone since the last count (and that one was seen deleted by its
+ *   inviteDelete event), its uses were exactly one short of its max (`uses + 1 === maxUses`: one an admin deleted
+ *   earlier is not), and the server has no vanity link (`vanity`: a vanity join may coincide with a deletion).
+ *   Anything else is 'unknown': no gift.
  */
-export function findUsedInvite(before, after, recent = []) {
+export function findUsedInvite(before, after, recent = [], { vanity = false } = {}) {
     const grown = [...after.values()].filter((entry) => entry.uses > (before.get(entry.code)?.uses ?? 0));
     if (grown.length === 1) return { source: 'invite', invite: grown[0] };
     if (grown.length > 1) return { source: 'ambiguous' };
-    // Discord deletes an invite on its last allowed use: the one that was a single use short was used.
-    const gone = new Map();
-    for (const entry of [...[...before.values()].filter((item) => !after.has(item.code)), ...recent]) {
-        if (entry.maxUses > 0 && entry.uses + 1 >= entry.maxUses) gone.set(entry.code, entry);
-    }
-    if (gone.size === 1) return { source: 'invite', invite: [...gone.values()][0] };
-    return { source: gone.size > 1 ? 'ambiguous' : 'unknown' };
+    const seen = new Map(recent.map((entry) => [entry.code, entry]));
+    // Gone from the list with no inviteDelete event seen for it: nothing can be told about it.
+    const unseen = [...before.values()].filter((entry) => !after.has(entry.code) && !seen.has(entry.code));
+    if (vanity || unseen.length || seen.size !== 1) return { source: 'unknown' };
+    const [entry] = seen.values();
+    const exhausted = Number.isSafeInteger(entry.maxUses) && entry.maxUses > 0 && entry.uses + 1 === entry.maxUses;
+    return exhausted ? { source: 'invite', invite: entry } : { source: 'unknown' };
 }
 
 /** Whether Discord marks the member as one who left and came back (GuildMemberFlags.DidRejoin). */
@@ -201,7 +211,10 @@ export async function handleMemberJoin(member, client, { now = Date.now() } = {}
             } catch (error) {
                 warnOnce(`read:${guildId}`, `[INVITES] Could not read the invites of ${guildId} (give the bot Manage Server): ${errorText(error)}`, now);
             }
-            const found = before && after ? findUsedInvite(before, after, recentlyDeleted(guildId, now)) : { source: 'unknown' };
+            const recent = recentlyDeleted(guildId, now);
+            // Each deletion is evidence for this one join at most: whatever it decided, the next join can't use it.
+            deleted.delete(guildId);
+            const found = before && after ? findUsedInvite(before, after, recent, { vanity: Boolean(guild.vanityURLCode) }) : { source: 'unknown' };
             const key = getInviteRecordKey(guildId, member.id);
             const existing = await client.db.get(key, null);
             if (existing) return { status: 'kept', record: existing };
