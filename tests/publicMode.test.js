@@ -74,7 +74,7 @@ test('public registration writes exactly addcc, bourse, casino, cc, cctop, daily
         assert.equal(calls.length, 1);
         assert.equal(calls[0].route, '/applications/${APP}/commands');
         assert.deepEqual(calls[0].payload.body, commands);
-        assert.deepEqual(commands.map(c => c.name), ['addcc','bourse','casino','cc','cctop','daily','games','give','help','removecc']);
+        assert.deepEqual(commands.map(c => c.name), ['addcc','bourse','casino','cc','cctop','daily','games','give','guide','help','removecc']);
         assert.deepEqual(commands[1].options.map(c => c.name), ['prices','invest','sell','buymax','sellall','holdings']);
         assert.deepEqual(commands[2].options.map(c => c.name), ['mines','coinflip','slots','dice','chicken','blackjack','roulette','rocket']);
     `);
@@ -86,7 +86,7 @@ test('finite registration continues using only configured guild routes', () => {
         const calls = [];
         await registerCommands({rest:{put:async (route,payload) => calls.push({route,payload})}});
         assert.deepEqual(calls.map(c => c.route), ['/applications/${APP}/guilds/${FIRST}/commands','/applications/${APP}/guilds/${SECOND}/commands']);
-        for (const call of calls) assert.deepEqual(call.payload.body.map(c => c.name), ['addcc','bourse','casino','cc','cctop','daily','games','give','help','removecc']);
+        for (const call of calls) assert.deepEqual(call.payload.body.map(c => c.name), ['addcc','bourse','casino','cc','cctop','daily','games','give','guide','help','removecc']);
     `);
 });
 

@@ -147,7 +147,8 @@ test('the streak guide answers only its exact words and leaves the other typed w
     await say('توب ستريك');
     assert.equal(sent.at(-1).embeds[0].title, '🔥 Top Streak');
     await say('شرح');
-    assert.equal(dms.at(-1).embeds[0].title, '🌀 شرح CC bot');
+    assert.equal(sent.at(-1).embeds[0].title, '🌀 شرح CC bot — المحتويات');
+    assert.equal(dms.length, 0);
     await say('رصيد');
     assert.deepEqual(balances, [userId]);
 

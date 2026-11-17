@@ -3,6 +3,7 @@ import { isAllowedGuild, isCasinoChannel, isCommandChannel } from '../config/run
 import { isBourseGuildCommand, BOURSE_GUILD_BUTTONS, BOURSE_GUILD_NOTICE } from '../config/bourseGuild.js';
 import { CASINO_COMMAND, CASINO_BUTTON_PREFIX, casinoChannelNotice } from '../config/casino.js';
 import { GAMES_BUTTON_PREFIX } from '../config/games.js';
+import { GUIDE_MENU_PREFIX } from '../services/cc/guideMenuUi.js';
 import { casinoErrorText } from '../services/cc/casinoUi.js';
 import { interactionLanguage } from '../services/cc/lang.js';
 import { logger } from '../utils/logger.js';
@@ -19,6 +20,8 @@ function isCasinoInteraction(interaction) {
 // any text channel of an allowed guild: a game can be started in any channel (by a trusted member, anyone in the
 // open channels: src/games/router.js decides and answers privately when it may not), and any member may join it.
 const isGamesSelect = (interaction) => Boolean(interaction.isStringSelectMenu?.()) && String(interaction.customId || '').split(':')[0] === GAMES_BUTTON_PREFIX;
+// The `شرح` guide's sections menu (`guide:...`: src/services/cc/guideMenuUi.js) works wherever the guide was sent.
+const isGuideSelect = (interaction) => Boolean(interaction.isStringSelectMenu?.()) && String(interaction.customId || '').split(':')[0] === GUIDE_MENU_PREFIX;
 const isGamesButton = (interaction) => (Boolean(interaction.isButton?.()) && String(interaction.customId || '').split(':')[0] === GAMES_BUTTON_PREFIX) || isGamesSelect(interaction);
 const isTextChannel = (interaction) => Boolean(interaction.channelId) && (typeof interaction.channel?.isTextBased !== 'function' || interaction.channel.isTextBased());
 export default {
@@ -29,7 +32,7 @@ export default {
         const casino = isCasinoInteraction(interaction);
         if (casino) {
             if (!isCasinoChannel(interaction.channel, interaction.channelId)) return refused(interaction, casinoChannelNotice(interactionLanguage(interaction)));
-        } else if (isGamesButton(interaction)) {
+        } else if (isGamesButton(interaction) || isGuideSelect(interaction)) {
             if (!isTextChannel(interaction)) return refused(interaction);
         } else if (!isCommandChannel(interaction.isChatInputCommand?.() ? interaction.commandName : '', interaction.channel, interaction.channelId)) return refused(interaction);
         try {
@@ -49,8 +52,8 @@ export default {
                 else await refused(interaction);
                 return;
             }
-            // The help menu's selects (`g:help:...`) and the old games menu's (`g:menu:...`) are the only select menus.
-            if (isGamesSelect(interaction)) {
+            // The help menu's selects (`g:help:...`), the old games menu's (`g:menu:...`) and the guide's (`guide:...`) are the only select menus.
+            if (isGamesSelect(interaction) || isGuideSelect(interaction)) {
                 const [name, ...args] = interaction.customId.split(':');
                 const handler = client.buttons.get(name);
                 if (handler?.executeSelect) await handler.executeSelect(interaction, client, args);

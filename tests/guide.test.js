@@ -44,20 +44,20 @@ afterEach(() => {
     allowedChannelIds.clear();
 });
 
-test('the typed guide answers its exact words, with or without the prefix, and never pings', async () => {
+test('the typed guide answers its exact words, with or without the prefix or a dot, in the room, and never pings', async () => {
     const { sent, dms, ran, say } = setup();
-    for (const words of [...GUIDE_PHRASES, 'HELP', 'شرح CC', `${prefix}شرح`, `${prefix} مساعدة`, `${prefix}help`]) {
+    for (const words of [...GUIDE_PHRASES, 'HELP', 'شرح CC', `${prefix}شرح`, `${prefix} مساعدة`, `${prefix}help`, '.شرح', '.help']) {
         sent.length = 0;
-        dms.length = 0;
         await say(words);
-        // The guide goes to the member's DM; the channel only gets a short note.
-        assert.equal(dms.length, 1, words);
-        assert.deepEqual(titles(dms[0]), ['🌀 شرح CC bot', '📈 شرح البورصة', '🎰 شرح الكازينو'], words);
-        assert.deepEqual(dms[0].allowedMentions, { parse: [] });
+        // The short guide with its sections menu, in the room it was typed in (no DM).
         assert.equal(sent.length, 1, words);
-        assert.match(sent[0].content, /بعتلك الشرح في الخاص/u);
-        assert.equal(sent[0].embeds, undefined);
+        const english = /help/iu.test(words);
+        assert.deepEqual(titles(sent[0]), [english ? '🌀 CC bot guide — Contents' : '🌀 شرح CC bot — المحتويات'], words);
+        assert.equal(sent[0].components[0].components[0].type, 3, words);
+        assert.ok(sent[0].components[0].components[0].custom_id.startsWith(`guide:${userId}:`), words);
+        assert.deepEqual(sent[0].allowedMentions, { parse: [] });
     }
+    assert.equal(dms.length, 0);
     assert.deepEqual(ran, []);
 });
 
@@ -76,21 +76,19 @@ test('longer sentences and the other typed words are left alone', async () => {
 
 test('the streak words keep the streak guide, and the full guide adds the streak only where it works', async () => {
     process.env.STREAK_ENABLED = 'true';
-    const { sent, dms, say } = setup(STREAK_GUILD_ID);
+    const { sent, say } = setup(STREAK_GUILD_ID);
     for (const words of ['شرح ستريك', 'ستريك شرح', 'شرح الستريك', 'الستريك', 'streak help']) {
         sent.length = 0;
         await say(words);
         assert.deepEqual(titles(sent[0]), ['🔥 شرح الستريك'], words);
     }
-    await say('شرح');
-    assert.deepEqual(titles(dms.at(-1)), ['🌀 شرح CC bot', '📈 شرح البورصة', '🎰 شرح الكازينو', '🔥 شرح الستريك']);
-    assert.match(dms.at(-1).embeds[0].description, /الستريك/u);
+    assert.deepEqual(guideEmbeds(STREAK_GUILD_ID).map((embed) => embed.title), ['🌀 شرح CC bot', '📈 شرح البورصة', '🎰 شرح الكازينو', '🔥 شرح الستريك']);
+    assert.match(guideEmbeds(STREAK_GUILD_ID)[0].description, /الستريك/u);
 
     // Without STREAK_ENABLED (or outside the streak server) the guide doesn't claim the streak works.
     delete process.env.STREAK_ENABLED;
-    await say('شرح');
-    assert.equal(dms.at(-1).embeds.length, 3);
-    assert.doesNotMatch(dms.at(-1).embeds[0].description, /الستريك/u);
+    assert.equal(guideEmbeds(STREAK_GUILD_ID).length, 3);
+    assert.doesNotMatch(guideEmbeds(STREAK_GUILD_ID)[0].description, /الستريك/u);
     process.env.STREAK_ENABLED = 'true';
     assert.equal(guideEmbeds(OTHER_GUILD).length, 3);
 });

@@ -40,7 +40,8 @@ export default {
         const text = String(message.content || '').trim();
         const prefixed = text.startsWith(prefix);
         const [typed = '', ...words] = (prefixed ? text.slice(prefix.length) : text).trim().split(/\s+/u);
-        // `شرح` / `مساعدة` / `help`: the whole guide, in any allowed channel (the streak's own words stay below).
+        // `شرح` / `مساعدة` / `help` (also after a dot): the guide with its sections menu, in the bot's channels and the
+        // casino rooms (the streak's own words stay below).
         if (await handleGuideCommand(message, typed, words)) return;
         if (streakEnabled()) {
             if (await handleStreakCommand(message, typed, words)) return;

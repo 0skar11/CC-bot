@@ -1,5 +1,6 @@
-// guideUi.js — `/help` and the typed `شرح` / `مساعدة` / `help`: a guide to the whole bot (CC, the bourse,
-// the casino and the streak), sent as a few embeds in one message. Every number is read from the
+// guideUi.js — `/help`: a guide to the whole bot (CC, the bourse, the casino and the streak), sent to the member's
+// DM as a few embeds in one message. The typed `شرح` / `مساعدة` / `help` and `/guide` send the short guide with a
+// sections menu instead (guideMenuUi.js, report #287). Every number is read from the
 // settings (CC, bourseSettings, CASINO, STREAK, perkPrices) and every typed word from commandArgAliases,
 // so the guide never drifts from what the bot really does. Each line starts with Arabic or an emoji so
 // Discord doesn't reorder it.
@@ -7,13 +8,15 @@
 import { CC, ccEmbed } from '../../config/cc.js';
 import { ALL_IN_WORDS, CASINO, GAMES_COMMAND, GROUP_GAMES, SOLO_GAMES } from '../../config/casino.js';
 import { commandArgAliases } from '../../config/commands/commandAliases.js';
-import { casinoChannelIds, initialCC, isAllowedChannel, traderRoleEnabled } from '../../config/runtime.js';
+import { casinoChannelIds, initialCC, isCommandChannel, traderRoleEnabled } from '../../config/runtime.js';
 import { bourseAssets, bourseSettings, SELL_ALL_WORDS } from '../../config/store/bourse.js';
 import { assetsFor, maxOwnedOf } from './bourseService.js';
 import { perkPrices } from './boursePerks.js';
 import { casinoEdges, chickenMultiplierHundredths, chickenSurvivePercent } from './casinoService.js';
 import { multiplierText } from './casinoGroupUi.js';
 import { slotsTableText } from './casinoUi.js';
+import { guideMenuPayload } from './guideMenuUi.js';
+import { wordLanguage } from './lang.js';
 import { isStreakGuild, streakGuideEmbed } from './streakService.js';
 
 // The house edge of each game, worked out from the payouts (src/services/cc/casinoService.js).
@@ -147,20 +150,22 @@ export function guidePayload(guildId, topic = null) {
     return { embeds, allowedMentions: { parse: [] } };
 }
 
-// Whole typed messages (after the optional PREFIX) that ask for the guide; longer chat is ignored.
+// Whole typed messages (after the optional PREFIX or a dot) that ask for the guide; longer chat is ignored.
 // The streak guide's words (`شرح ستريك`...) stay with streakService.js.
 export const GUIDE_PHRASES = new Set(['شرح', 'شرح cc', 'شرح البوت', 'مساعدة', 'help', 'الشرح']);
 
-/** `شرح` / `مساعدة` / `help` typed in an allowed channel. Returns true when handled. */
+/**
+ * `شرح` / `مساعدة` / `help` typed in the bot's channels or the casino rooms: the short guide with its sections menu
+ * (guideMenuUi.js), in the room it was typed in and the language of the typed word. Returns true when handled.
+ */
 export async function handleGuideCommand(message, commandName, args = []) {
     if (message.author?.bot || message.webhookId) return false;
     // A picture/GIF/sticker post is never a guide request: its caption must reach the streak counting.
     if (message.attachments?.size > 0 || message.embeds?.length > 0 || message.stickers?.size > 0) return false;
-    if (!GUIDE_PHRASES.has([commandName, ...args].join(' ').toLowerCase())) return false;
-    if (!isAllowedChannel(message.channel, message.channelId)) return false;
+    const word = String(commandName || '').replace(/^\./u, '');
+    if (!GUIDE_PHRASES.has([word, ...args].join(' ').toLowerCase())) return false;
+    if (!isCommandChannel('guide', message.channel, message.channelId)) return false;
     const guildId = message.guildId || message.guild?.id;
-    // The guide goes to the member's DM; the chat only gets a short note.
-    const sent = await message.author.send(guidePayload(guildId)).then(() => true).catch(() => false);
-    await message.channel.send({ content: `<@${message.author.id}> ${sent ? GUIDE_SENT : GUIDE_DM_CLOSED}`, allowedMentions: { users: [message.author.id] } }).catch(() => {});
+    await message.channel.send(guideMenuPayload({ userId: message.author.id, guildId, lang: wordLanguage(word) })).catch(() => {});
     return true;
 }

@@ -24,7 +24,7 @@ describe('standalone bourse guild boundary', () => {
         assert.ok(isBourseGuild(GUILD)); assert.ok(isBourseGuild(SECOND));
         assert.equal(isBourseGuild(OUTSIDE), false);
         assert.equal(isBourseGuild(null), false);
-        for (const name of ['addcc', 'removecc', 'bourse', 'casino', 'cc', 'cctop', 'daily', 'games', 'give', 'help']) assert.ok(isBourseGuildCommand(name));
+        for (const name of ['addcc', 'removecc', 'bourse', 'casino', 'cc', 'cctop', 'daily', 'games', 'give', 'guide', 'help']) assert.ok(isBourseGuildCommand(name));
         for (const name of ['ban', 'store']) assert.equal(isBourseGuildCommand(name), false);
     });
     test('automatic jobs only receive explicitly configured guilds', () => {
@@ -60,10 +60,10 @@ describe('standalone bourse guild boundary', () => {
         await loadEvents({ on: (name) => events.push(name), once: (name) => events.push(name) });
         assert.deepEqual(events.sort(), ['clientReady', 'guildMemberAdd', 'interactionCreate', 'inviteCreate', 'inviteDelete', 'messageCreate', 'messageUpdate']);
     });
-    test('dry registry contains exactly addcc, bourse, casino, cc, cctop, daily, games, give, help, removecc, the two stock button namespaces and the casino buttons', async () => {
+    test('dry registry contains exactly addcc, bourse, casino, cc, cctop, daily, games, give, guide, help, removecc, the two stock button namespaces, the casino and games buttons and the guide menu', async () => {
         const client = {};
         const commands = await loadCommands(client); await loadInteractions(client);
-        assert.deepEqual(commands.map((command) => command.name), ['addcc', 'bourse', 'casino', 'cc', 'cctop', 'daily', 'games', 'give', 'help', 'removecc']);
+        assert.deepEqual(commands.map((command) => command.name), ['addcc', 'bourse', 'casino', 'cc', 'cctop', 'daily', 'games', 'give', 'guide', 'help', 'removecc']);
         assert.deepEqual(commands[1].options.map((sub) => sub.name), ['prices', 'invest', 'sell', 'buymax', 'sellall', 'holdings']);
         assert.deepEqual(commands[2].options.map((sub) => [sub.name, sub.options.map(({ name, required }) => `${name}${required ? '' : '?'}`)]), [
             ['mines', ['bet', 'mines?']], ['coinflip', ['bet', 'side?']], ['slots', ['bet']],
@@ -74,7 +74,7 @@ describe('standalone bourse guild boundary', () => {
         assert.deepEqual(commands[0].options.map(({ name }) => name), ['amount', 'user']);
         assert.deepEqual(commands[7].options.map(({ name }) => name), ['user', 'amount']);
         // `g`: the chat games' lobby buttons (src/games/engine/lobby.js).
-        assert.deepEqual([...client.buttons.keys()].sort(), ['bourse', 'bourseperk', 'casino', 'g']);
+        assert.deepEqual([...client.buttons.keys()].sort(), ['bourse', 'bourseperk', 'casino', 'g', 'guide']);
     });
     test('stock prefix aliases route without a prefix and accept multiword names', async () => {
         const calls = [];

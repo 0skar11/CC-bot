@@ -34,8 +34,8 @@ export function isCasinoChannel(channel, channelId) {
     return casinoChannelIds.has(channel?.id || channelId) || casinoChannelIds.has(channel?.parentId);
 }
 
-/** CC basics that also work in the casino rooms, where people need to top up, check and send CC (and see the games menu). */
-export const CASINO_ROOM_COMMANDS = new Set(['addcc', 'removecc', 'give', 'daily', 'cc', 'games']);
+/** CC basics that also work in the casino rooms, where people need to top up, check and send CC (and see the games menu and the guide). */
+export const CASINO_ROOM_COMMANDS = new Set(['addcc', 'removecc', 'give', 'daily', 'cc', 'games', 'guide']);
 export function isCommandChannel(commandName, channel, channelId) {
     return isAllowedChannel(channel, channelId) || (CASINO_ROOM_COMMANDS.has(commandName) && isCasinoChannel(channel, channelId));
 }
