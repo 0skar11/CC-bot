@@ -264,7 +264,7 @@ function endIdleGame(state, record, now, idleMs) {
  * Why a new game can't start (another game running, mines or chicken, or the balance under the bet, or an all-in
  * under the smallest bet: `bet` null), else null.
  */
-function refuseStart(state, record, bet) {
+export function refuseStart(state, record, bet) {
     if (record.ccCasino) return { ok: false, reason: 'active', game: readSavedGame(record.ccCasino) };
     if (bet === null || state.cc < bet) return { ok: false, reason: 'no_cc', balance: state.cc };
     return null;
@@ -764,6 +764,7 @@ export function casinoEdges() {
         blackjack: CASINO.blackjack.edgePercent,
         roulette: percent(1 - rouletteReturn),
         rocket: CASINO.crash.edgePercent,
+        horses: CASINO.horses.edgePercent,
     };
 }
 

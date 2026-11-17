@@ -443,7 +443,7 @@ describe('the games menu', () => {
         assert.match(casino.description, /`كراش`[\s\S]*`صاروخ`/u);
         assert.match(casino.description, /\*\*2\.7%\*\* في الروليت/u);
         assert.match(casino.description, /\*\*3%\*\* في الفرخة/u);
-        assert.match(guideEmbeds(GUILD)[0].description, /8 ألعاب/u);
+        assert.match(guideEmbeds(GUILD)[0].description, /9 ألعاب/u);
     });
 
     test('with casino rooms, the menu answers there and in the bot channels and names the rooms; the games stay in the rooms', () => {

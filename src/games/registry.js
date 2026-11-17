@@ -146,7 +146,11 @@ export function createRegistry({ reserved = reservedWords() } = {}) {
     return {
         register,
         load,
-        find: (word) => byWord.get(normalize(word)) || null,
+        find: (word) => {
+            const key = normalize(word);
+            if (key === 'روليت' || key === 'roulette') return games.get('roulette') || null;
+            return byWord.get(key) || null;
+        },
         get: (id) => games.get(id) || null,
         list: ({ kind = null } = {}) => [...games.values()].filter((game) => !kind || game.kind === kind),
         words: () => [...byWord.keys()],

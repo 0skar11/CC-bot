@@ -12,6 +12,7 @@ import {
     minesBoardPayload, chickenBoardPayload, blackjackBoardPayload, blackjackResultPayload, coinflipPayload, slotsPayload, dicePayload,
     casinoFailureText, casinoUsageText, gameUsageText, previousGameNote,
 } from '../../services/cc/casinoUi.js';
+import { playHorses, horsesPayload } from '../../services/cc/casinoHorses.js';
 import { onCasinoCooldown, withCasinoLock, scheduleIdleCashOut, closePreviousBoard } from '../../services/cc/casinoSessions.js';
 import { placeGroupBet } from '../../services/cc/casinoGroupSessions.js';
 import { commandLanguage } from '../../services/cc/lang.js';
@@ -35,7 +36,7 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 // src/config/casino.js) asks the game for the bet ALL_IN, and the game's own save turns it into the balance (up to
 // the max bet) as it takes it (casinoService.js betFor). The slash commands keep their whole-number `bet`.
 const SUBCOMMANDS = [...SOLO_GAMES, ...GROUP_GAMES];
-const NEWER_GAMES = ['dice', 'chicken', 'blackjack', 'roulette', 'rocket'];
+const NEWER_GAMES = ['dice', 'chicken', 'blackjack', 'roulette', 'rocket', 'horses'];
 // `!casino crash 100 2` is the rocket, like the typed `crash` / `كراش`.
 const SUB_ALIASES = { crash: 'rocket' };
 const isNumber = (word) => /^\d+$/u.test(String(word));
@@ -135,6 +136,19 @@ async function playDiceGame(interaction, client, reply, bet, lang) {
     return reply({ ...dicePayload(result, user, lang), content: result.previous ? previousGameNote(result.previous, lang) : '' });
 }
 
+/** `/casino horses`: fantasy horse racing. */
+async function playHorsesGame(interaction, client, reply, bet, lang) {
+    const { guildId, user, options } = interaction;
+    const horse = options.getInteger('horse') ?? 1;
+    if (onCasinoCooldown(user.id)) return reply(failure({ reason: 'cooldown' }, lang));
+    const result = await withCasinoLock(user.id, () => playHorses(client, guildId, user.id, { bet, horse }));
+    closePreviousBoard(client, result.previous, user.id);
+    if (!result.ok) return reply(failure(result, lang));
+    const payload = horsesPayload(result, user, lang);
+    if (result.previous) payload.content = previousGameNote(result.previous, lang);
+    return reply(payload);
+}
+
 /**
  * `/casino roulette` and `/casino rocket` (also typed `crash` / `كراش`): a bet on the room's round, opened by the
  * first bet. The round is per room and game, never per language: a member typing English and one typing Arabic
@@ -203,6 +217,13 @@ export default {
                 .setName('choice')
                 .setDescription('red, black, green or a number 0-36 (احمر، اسود، اخضر)')
                 .setRequired(true)))
+        .addSubcommand((sub) => sub.setName('horses').setDescription('Fantasy horse racing: pick horse 1-6 with distinct odds')
+            .addIntegerOption(betOption)
+            .addIntegerOption((option) => option
+                .setName('horse')
+                .setDescription('Horse number (1-6, default 1)')
+                .setMinValue(1)
+                .setMaxValue(6)))
         .addSubcommand((sub) => sub.setName('rocket').setDescription('Group crash: ride the rocket with the room and cash out before it blows up')
             .addIntegerOption(betOption)
             .addNumberOption(targetOption('Optional automatic cash-out multiplier'))),
@@ -222,8 +243,8 @@ export default {
         if (NEWER_GAMES.includes(sub)) {
             const read = readGameArgs(sub, rest);
             if (read.error) return { error: badAmount ? amountErrorText(lang) : gameUsageText(sub, lang) };
-            const { bet, target = null, direction = null, number = null, choice = null } = read.values;
-            return { options: typedOptions(sub, { bet, number }, { direction, choice }, target) };
+            const { bet, target = null, direction = null, number = null, choice = null, horse = null } = read.values;
+            return { options: typedOptions(sub, { bet, number, horse }, { direction, choice }, target) };
         }
         const usage = { error: SUBCOMMANDS.includes(sub) && badAmount ? amountErrorText(lang) : casinoUsageText(lang) };
         if (!SUBCOMMANDS.includes(sub) || !rest.length || rest.length > 2) return usage;
@@ -269,6 +290,7 @@ export default {
             if (onCasinoCooldown(user.id)) return reply(failure({ reason: 'cooldown' }, lang));
             return withCasinoLock(user.id, () => openBoard(interaction, client, reply, 'blackjack', { bet, channelId: roomId, lang }));
         }
+        if (sub === 'horses') return playHorsesGame(interaction, client, reply, bet, lang);
         if (sub === 'dice') return playDiceGame(interaction, client, reply, bet, lang);
         if (GROUP_GAMES.includes(sub)) return joinGroupGame(interaction, client, reply, sub, { bet, roomId, lang });
 

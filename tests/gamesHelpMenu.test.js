@@ -121,7 +121,7 @@ test('the categories: games from the registry with their words and pay, `قري�
     assert.match(single, /\*\*500\*\* CC[\s\S]*\*\*20,000\*\* CC/u);
     assert.match(all(embed('group')), /\*\*2,000\*\* CC/u);
     assert.match(all(embed('dual')), /قريبا[\s\S]*`شطرنج`/u);
-    assert.match(all(embed('group')), /قريبا[\s\S]*`مافيا`/u);
+    assert.match(all(embed('group')), /قريبا[\s\S]*`فعالية`/u);
     assert.match(all(embed('dual', 'en')), /Coming soon/u);
     // The game select lists every game a member may start: not the trusted-only sample game.
     const options = selects(helpMenuPayload({ token: 't', lang: 'ar', category: 'single', user: ALICE })).slice(1).flatMap((select) => select.options);

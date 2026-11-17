@@ -19,6 +19,7 @@ export const commandArgAliases = {
     blackjack: 'casino blackjack', bj: 'casino blackjack', بلاك: 'casino blackjack', بلاكجاك: 'casino blackjack', 'بلاك جاك': 'casino blackjack',
     roulette: 'casino roulette', روليت: 'casino roulette', الروليت: 'casino roulette',
     rocket: 'casino rocket', صاروخ: 'casino rocket', الصاروخ: 'casino rocket',
+    horses: 'casino horses', احصنة: 'casino horses', أحصنة: 'casino horses', خيول: 'casino horses',
     games: 'games', العاب: 'games', ألعاب: 'games', الالعاب: 'games', الألعاب: 'games',
     شراء: 'bourse invest', اشتري: 'bourse invest',
     اسعار: 'bourse prices', أسعار: 'bourse prices', الاسعار: 'bourse prices', الأسعار: 'bourse prices', prices: 'bourse prices',
@@ -36,7 +37,7 @@ export const commandArgAliases = {
 const isAmountWord = (arg) => /^\d+$/u.test(String(arg)) || parseAmount(arg) !== null;
 const isMentionOrId = (arg) => /^(?:<@!?\d{17,20}>|\d{17,20})$/u.test(String(arg));
 // The newer games whose words are also everyday chat (`كراش`, `صاروخ`, `فرخة`...): typed without the prefix they need a bet.
-const NEW_CASINO_GAMES = new Set(['casino dice', 'casino chicken', 'casino roulette', 'casino rocket', 'casino blackjack']);
+const NEW_CASINO_GAMES = new Set(['casino dice', 'casino chicken', 'casino roulette', 'casino rocket', 'casino blackjack', 'casino horses']);
 export function isBourseNameInvocation(typedCommand, args) {
     const target = commandArgAliases[typedCommand];
     if (target !== 'bourse invest' && target !== 'bourse sell') return false;
@@ -105,6 +106,7 @@ const OPTION_WORDS = {
     'casino dice': (word) => diceDirection(word) !== null,
     'casino roulette': (word) => rouletteChoice(word) !== null,
     'casino rocket': (word) => multiplierHundredths(word) !== null,
+    'casino horses': (word) => /^[1-6]$/u.test(word),
     // A mistyped amount (`5q @member تحويل`) still reaches the transfer, which answers `❌ المبلغ مش مفهوم`.
     give: looksLikeAmount,
     addcc: looksLikeAmount,
