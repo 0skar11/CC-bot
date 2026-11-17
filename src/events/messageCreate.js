@@ -7,7 +7,7 @@ import { handleStreakCommand, handleStreakMessage } from '../services/cc/streakS
 import { handleStreakBotMessage } from '../services/cc/streakBotService.js';
 import { handleGamesBotWin } from '../services/cc/gamesBotService.js';
 import { handleGuideCommand } from '../services/cc/guideUi.js';
-import { handleLevelUpMessage } from '../services/cc/inviteRewardService.js';
+import { handleChatMessage, handleLevelUpMessage } from '../services/cc/inviteRewardService.js';
 import { blackjackHelpPayload } from '../services/cc/casinoUi.js';
 import { casinoErrorText } from '../services/cc/casinoUi.js';
 import { wordLanguage } from '../services/cc/lang.js';
@@ -31,6 +31,9 @@ export default {
             return;
         }
         if (!isAllowedGuild(guildId)) return;
+        // The invite gift's 50 messages: an invited member's chat message is counted (in memory, written in batches:
+        // src/services/cc/chatCounter.js), in the background, so it never holds up the games or commands below.
+        void handleChatMessage(message, { client });
         // The chat games (src/games/router.js): only the PREFIX or a dot followed by a game word (`.اسرع`, `!توب`);
         // anything else, and every casino, bourse, CC and streak word, goes on below exactly as before.
         if (await handleGamesMessage(message, client)) return;

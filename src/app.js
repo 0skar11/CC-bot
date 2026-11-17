@@ -2,7 +2,9 @@ import { Client, GatewayIntentBits } from 'discord.js';
 import { validateConfig } from './config/runtime.js';
 import { validateGamesConfig } from './config/games.js';
 import { validateInviteConfig } from './config/invites.js';
+import { validateWelcomeConfig } from './config/welcome.js';
 import { inviteIntents } from './services/cc/inviteTracker.js';
+import { flushChatCounts } from './services/cc/chatCounter.js';
 import { PostgreSQLDatabase } from './utils/postgresDatabase.js';
 import loadCommands from './handlers/loaders/commands.js';
 import loadInteractions from './handlers/loaders/interactions.js';
@@ -12,8 +14,10 @@ import { abortAll } from './games/engine/session.js';
 validateConfig();
 validateGamesConfig();
 validateInviteConfig();
-// The invite gift adds GuildInvites, and GuildMembers only when the Server Members Intent is on in the developer
-// portal (asked before login: a privileged intent that is off would stop the login). See src/services/cc/inviteTracker.js.
+validateWelcomeConfig();
+// The invite gift adds GuildInvites; the welcome and the invite gift add GuildMembers, only when the Server Members
+// Intent is on in the developer portal (asked before login: a privileged intent that is off would stop the login).
+// See inviteIntents in src/services/cc/inviteTracker.js.
 const extraIntents = await inviteIntents(process.env.DISCORD_TOKEN);
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, ...extraIntents] });
 client.db = new PostgreSQLDatabase();
@@ -38,6 +42,8 @@ process.on('unhandledRejection', (reason) => {
 for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => {
     // Every running chat game ends (its timers and collectors are removed) before the client goes away.
     abortAll('shutdown');
+    // The chat messages counted for the invite gift and not written yet (src/services/cc/chatCounter.js).
+    await flushChatCounts(client);
     client.destroy();
     await client.db.close();
     process.exitCode = 0;

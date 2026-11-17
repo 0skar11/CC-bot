@@ -4,8 +4,9 @@ export const MAX_BACKUP_BYTES = 100 * 1024 * 1024;
 const FORMAT = 'cc-bot-bourse-backup';
 const VERSION = 1;
 // The market, a guild's configuration, a member's record, a casino group round of a room, a member's chat
-// games points (in one server, and across all servers), and who invited a member into a server (the invite gift).
-const RECORD_KEY = /^guild:\d{17,20}:(?:bourse|config|economy:\d{17,20}|casino:(?:roulette|rocket):\d{17,20}|games:(?:points|global):\d{17,20}|invites:\d{17,20})$/u;
+// games points (in one server, and across all servers), who invited a member into a server (the invite gift) and
+// how many chat messages a member wrote in a server (the invite gift's messages condition).
+const RECORD_KEY = /^guild:\d{17,20}:(?:bourse|config|economy:\d{17,20}|casino:(?:roulette|rocket):\d{17,20}|games:(?:points|global):\d{17,20}|invites:\d{17,20}|chat:\d{17,20})$/u;
 
 export class BackupError extends Error {
     constructor(message) { super(message); this.name = 'BackupError'; }

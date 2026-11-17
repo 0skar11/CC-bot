@@ -9,18 +9,22 @@
 // Each join is saved once, in `guild:<guildId>:invites:<memberId>` (getInviteRecordKey):
 //   { inviterId, code, source, status, reason, joinedAt }
 //   status 'pending'  — a real member's invite: the gift is paid when the level bot shows the member at the level
+//                       and the member wrote the messages (inviteRewardService.js); `level` is added once reached
 //   status 'excluded' — no gift ever: reason 'unknown' (no invite matched: vanity link, widget, discovery, a count
 //                       that could not be read), 'ambiguous' (two invites went up at once), 'vanity', 'no_inviter',
-//                       'self' (their own invite), 'bot_inviter' (an invite made by a bot) or 'rejoin' (the member
-//                       was in the server before, Discord's DidRejoin flag: not a new member)
+//                       'self' (their own invite), 'bot_inviter' (an invite made by a bot), 'rejoin' (the member
+//                       was in the server before, Discord's DidRejoin flag: not a new member) or 'fake' (an account
+//                       younger than CC.inviteReward.minAccountAgeDays days when it joined)
 // The first join of a member decides: a later join never rewrites the record. Bots joining are not saved.
 // Needs: the GuildInvites intent (src/app.js), the Server Members Intent switched on in the developer portal (for
 // guildMemberAdd; src/app.js checks it before login) and Manage Server in the tracked servers to read the invites.
 // Without them nothing breaks: a warning in the log (at most once an hour per server) and every join is 'unknown'.
 
-import { ApplicationFlags, GatewayIntentBits, GuildMemberFlags, REST, Routes } from 'discord.js';
+import { ApplicationFlags, GatewayIntentBits, GuildMemberFlags, REST, Routes, SnowflakeUtil } from 'discord.js';
+import { CC } from '../../config/cc.js';
 import { inviteRewardEnabled, levelChannelIds } from '../../config/invites.js';
 import { isAllowedGuild } from '../../config/runtime.js';
+import { welcomeEnabled } from '../../config/welcome.js';
 import { getInviteRecordKey } from '../../utils/database/keys.js';
 import { logger } from '../../utils/logger.js';
 import { Mutex } from '../../utils/mutex.js';
@@ -179,8 +183,20 @@ export function didRejoin(member) {
     return Number.isFinite(bits) && (bits & GuildMemberFlags.DidRejoin) !== 0;
 }
 
-/** The record saved for a join: who invited the member, and whether the gift can ever be paid (see the top). */
-export function joinRecord({ memberId, found, rejoined = false, vanityCode = null, now = Date.now() }) {
+const DAY_MS = 24 * 60 * 60_000;
+
+/** When the member's Discord account was made (its user ID tells it when the user object doesn't), or null. */
+export function accountCreatedAt(member) {
+    const at = member?.user?.createdTimestamp;
+    if (Number.isFinite(at)) return at;
+    try { return SnowflakeUtil.timestampFrom(String(member?.id ?? member?.user?.id ?? '')); } catch { return null; }
+}
+
+/**
+ * The record saved for a join: who invited the member, and whether the gift can ever be paid (see the top).
+ * `createdAt`: when the member's account was made (accountCreatedAt): younger than minAccountAgeDays is a fake.
+ */
+export function joinRecord({ memberId, found, rejoined = false, vanityCode = null, createdAt = null, now = Date.now() }) {
     const invite = found?.source === 'invite' ? found.invite : null;
     const base = { inviterId: invite?.inviterId ?? null, code: invite?.code ?? null, source: found?.source ?? 'unknown', joinedAt: now };
     const excluded = (reason) => ({ ...base, status: 'excluded', reason });
@@ -190,10 +206,15 @@ export function joinRecord({ memberId, found, rejoined = false, vanityCode = nul
     if (invite.inviterId === String(memberId)) return excluded('self');
     if (invite.inviterBot) return excluded('bot_inviter');
     if (rejoined) return excluded('rejoin');
+    if (Number.isFinite(createdAt) && now - createdAt < CC.inviteReward.minAccountAgeDays * DAY_MS) return excluded('fake');
     return { ...base, status: 'pending', reason: null };
 }
 
-/** guildMemberAdd: finds the invite used and saves the member's record once. Returns what happened. Never throws. */
+/**
+ * guildMemberAdd: finds the invite used and saves the member's record once. Returns what happened, with `join`: what
+ * this join is worth (the saved record; for a member already saved, this join read as a rejoin), for the notice
+ * under the welcome (inviteWelcomeNotice). Never throws.
+ */
 export async function handleMemberJoin(member, client, { now = Date.now() } = {}) {
     try {
         if (!inviteRewardEnabled()) return { status: 'disabled' };
@@ -217,11 +238,13 @@ export async function handleMemberJoin(member, client, { now = Date.now() } = {}
             const found = before && after ? findUsedInvite(before, after, recent, { vanity: Boolean(guild.vanityURLCode) }) : { source: 'unknown' };
             const key = getInviteRecordKey(guildId, member.id);
             const existing = await client.db.get(key, null);
-            if (existing) return { status: 'kept', record: existing };
-            const record = joinRecord({ memberId: member.id, found, rejoined: didRejoin(member), vanityCode: guild.vanityURLCode ?? null, now });
+            const facts = { memberId: member.id, found, vanityCode: guild.vanityURLCode ?? null, createdAt: accountCreatedAt(member), now };
+            // Saved before: this join is a rejoin, whoever's invite it used.
+            if (existing) return { status: 'kept', record: existing, join: joinRecord({ ...facts, rejoined: true }) };
+            const record = joinRecord({ ...facts, rejoined: didRejoin(member) });
             await client.db.set(key, record);
             logger.info(`[INVITES] ${member.id} joined ${guildId}: ${record.status === 'pending' ? `invited by ${record.inviterId} (${record.code})` : `no gift (${record.reason})`}`);
-            return { status: 'saved', record };
+            return { status: 'saved', record, join: record };
         });
     } catch (error) {
         logger.warn(`[INVITES] Could not record a join: ${errorText(error)}`);
@@ -236,17 +259,22 @@ export function membersIntentAllowed(flags) {
 }
 
 /**
- * The extra gateway intents the invite gift needs (src/app.js, before login): GuildInvites, and GuildMembers only when
- * the portal switch is on (Discord refuses a login asking for a privileged intent that is off). Never throws.
+ * The extra gateway intents that members joining need (src/app.js, before login): GuildInvites for the invite gift,
+ * and GuildMembers (guildMemberAdd: the welcome, src/services/welcomeService.js, and the invite gift) only when the
+ * portal switch is on (Discord refuses a login asking for a privileged intent that is off). Nothing when both the
+ * welcome (WELCOME_ENABLED) and the invite gift (INVITE_REWARD_ENABLED) are off. Never throws.
  */
-export async function inviteIntents(token, { rest = null } = {}) {
-    if (!inviteRewardEnabled()) return [];
-    const intents = [GatewayIntentBits.GuildInvites];
+export async function inviteIntents(token, { rest = null, env = process.env } = {}) {
+    const invites = inviteRewardEnabled(env);
+    const welcome = welcomeEnabled(env);
+    if (!invites && !welcome) return [];
+    const intents = invites ? [GatewayIntentBits.GuildInvites] : [];
+    const needs = [welcome ? 'the welcome' : null, invites ? 'invite gifts' : null].filter(Boolean).join(' and ');
     const api = rest ?? new REST({ version: '10', retries: 1, timeout: 10_000 }).setToken(String(token || ''));
     try {
         const app = await api.get(Routes.currentApplication());
         if (membersIntentAllowed(app?.flags)) intents.push(GatewayIntentBits.GuildMembers);
-        else logger.warn('[INVITES] Turn on the Server Members Intent (developer portal → Bot) so the bot sees members join: invite gifts need it');
+        else logger.warn(`[MEMBERS] Turn on the Server Members Intent (developer portal → Bot) so the bot sees members join: ${needs} need it`);
     } catch (error) {
         logger.warn(`[INVITES] Could not read the application flags, starting without the Server Members Intent: ${errorText(error)}`);
     } finally {

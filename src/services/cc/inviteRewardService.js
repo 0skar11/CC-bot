@@ -1,5 +1,12 @@
-// inviteRewardService.js — the invite gift (هدايا الانفايت): CC.inviteReward.amount CC (5000) to the member who invited
-// someone, the first time the level bot announces that invited member at CC.inviteReward.level (5) or higher.
+// inviteRewardService.js — the invite gift (هدايا الانفايت): CC.inviteReward.amount CC (5000, fixed: no event
+// multiplier) to the member who invited someone, once both are true, in either order:
+//   1. the level bot announced that invited member at CC.inviteReward.level (5) or higher (kept on the record as
+//      `level` when the messages are still missing, so the second condition can pay without a new announcement);
+//   2. the invited member wrote CC.inviteReward.messages (50) chat messages in that server (handleChatMessage:
+//      counted by src/services/cc/chatCounter.js while the gift is pending, in the tracked servers).
+// The payment is checked on each level-up announcement and when the member's 50th message is counted.
+// An account younger than CC.inviteReward.minAccountAgeDays (7) days when it joined is a fake: never counted
+// (inviteTracker.js). The notice under the welcome (inviteWelcomeNotice) tells who invited the member and the gift.
 // - Only the level bot (LEVEL_BOT_IDS) in its level-up rooms (LEVEL_CHANNEL_IDS, src/config/invites.js) of an
 //   allowed server counts; a webhook or another bot never does.
 // - Only a real level-up announcement counts, read from the message text, its embeds and components (parseLevel):
@@ -20,9 +27,12 @@
 //   inviter is still in the server (else the record becomes 'skipped': inviter_left / bot_inviter).
 // - Exactly once per invited member: the record turns 'paid' inside the same updateCCState save (one database
 //   transaction) that adds the CC, after reading it again there, so a repeated or edited announcement, a second
-//   bot process or a higher level later never pays again. Never counted in the games' daily cap.
-// - A short notice answers the announcement in its room, pinging only the inviter.
+//   bot process, a higher level later or the messages after the 50th never pay again. Never counted in the games'
+//   daily cap.
+// - A short notice pinging only the inviter answers the announcement in its room (or, paid by the 50th message, is
+//   sent in the server's level room).
 
+import { ChannelType, MessageType } from 'discord.js';
 import { toAsciiDigits } from '../../config/amount.js';
 import { CC, formatCC } from '../../config/cc.js';
 import { inviteRewardEnabled, levelBotIds, levelChannelIds } from '../../config/invites.js';
@@ -30,12 +40,15 @@ import { isAllowedGuild } from '../../config/runtime.js';
 import { getInviteRecordKey } from '../../utils/database/keys.js';
 import { logger } from '../../utils/logger.js';
 import { updateCCState } from './ccService.js';
+import { chatCount, countChatMessage } from './chatCounter.js';
+import { trackedGuildIds } from './inviteTracker.js';
 import { messageText } from './streakBotService.js';
 
 const MAX_LEVEL = 10_000;
 const HANDLED_MEMORY = 500;
 const handled = new Set();
 let unreadableLogged = 0;
+const snowflake = /^\d{17,20}$/u;
 
 // ─── Reading the announcement ───
 
@@ -251,50 +264,215 @@ function settleRecord(client, key, decided) {
     return client.db.transaction ? client.db.transaction(run) : run();
 }
 
+const savedLevel = (record) => (Number.isSafeInteger(record?.level) && record.level > 0 ? record.level : 0);
+
 /**
- * Pays the invite gift for `memberId` reaching `level` in `guildId`, at most once ever. `presence(inviterId)` says
- * whether the inviter is still in the server (inviterPresence). Returns `{ status }`: 'paid' (with inviterId, amount,
- * balance), 'low' (under the level), 'no_record', 'done' (decided before: paid, skipped or excluded), 'skipped' (with
- * reason) or 'retry' (the inviter could not be checked).
+ * Pays the invite gift for `memberId` in `guildId` once both conditions hold, at most once ever: the level (`level`
+ * just announced, or the one kept on the record) and the chat messages (`messages`, else read: chatCount).
+ * `presence(inviterId)` says whether the inviter is still in the server (inviterPresence). Returns `{ status }`:
+ * 'paid' (with inviterId, amount, balance, level, messages), 'low' (under the level), 'waiting' (the level is reached
+ * and kept on the record, the messages are missing: with messages), 'no_record', 'done' (decided before: paid,
+ * skipped or excluded), 'skipped' (with reason) or 'retry' (the inviter could not be checked).
  */
-export async function payInviteReward(client, guildId, memberId, { level, now = Date.now(), presence = async () => 'present' } = {}) {
-    const { amount, level: needed } = CC.inviteReward;
-    if (!(level >= needed)) return { status: 'low' };
+export async function payInviteReward(client, guildId, memberId, { level = null, messages = null, now = Date.now(), presence = async () => 'present' } = {}) {
+    const { amount, level: needed, messages: neededMessages } = CC.inviteReward;
+    // An announcement under the level changes nothing (no read).
+    if (level !== null && !(level >= needed)) return { status: 'low' };
     const key = getInviteRecordKey(guildId, memberId);
     const record = await client.db.get(key, null);
     if (!record || typeof record !== 'object' || Array.isArray(record)) return { status: 'no_record' };
     if (record.status !== 'pending') return { status: 'done', record };
     const inviterId = String(record.inviterId ?? '');
+    const reached = Math.max(Number.isSafeInteger(level) ? level : 0, savedLevel(record));
     const skip = async (reason) => {
-        await settleRecord(client, key, (current) => ({ ...current, status: 'skipped', reason, level, decidedAt: now }));
+        await settleRecord(client, key, (current) => ({ ...current, status: 'skipped', reason, level: reached || null, decidedAt: now }));
         return { status: 'skipped', reason, inviterId };
     };
     // A record that can't be right (no inviter, their own invite) never pays.
-    if (!/^\d{17,20}$/u.test(inviterId)) return skip('no_inviter');
+    if (!snowflake.test(inviterId)) return skip('no_inviter');
     if (inviterId === String(memberId)) return skip('self');
+    if (!(reached >= needed)) return { status: 'low' };
+    // The level is kept on the record (still pending): the 50th message pays later without a new announcement.
+    if (reached > savedLevel(record)) {
+        await settleRecord(client, key, (current) => ({ ...current, level: Math.max(reached, savedLevel(current)), levelAt: now }));
+    }
+    const written = Number.isSafeInteger(messages) ? messages : await chatCount(client, guildId, memberId);
+    if (written < neededMessages) return { status: 'waiting', inviterId, level: reached, messages: written };
     const here = await presence(inviterId);
     if (here === 'unknown') return { status: 'retry', inviterId };
     if (here === 'left') return skip('inviter_left');
     if (here === 'bot') return skip('bot_inviter');
     const result = await updateCCState(client, guildId, inviterId, async (state) => {
-        // Read again inside the save: another announcement (or bot process) may have paid it meanwhile.
+        // Read again inside the save: another announcement, message (or bot process) may have paid it meanwhile.
         const current = await client.db.get(key, null);
         if (!current || current.status !== 'pending' || String(current.inviterId) !== inviterId) return { skipSave: true, paid: false };
         const next = state.cc + amount;
         if (!Number.isSafeInteger(next)) throw new Error('CC balance overflow');
         // The record is marked first: without a transaction a failed balance save can lose a gift, never pay it twice.
-        if (await client.db.set(key, { ...current, status: 'paid', level, amount, paidAt: now }) === false) throw new Error('Failed to save the invite record');
+        const paid = { ...current, status: 'paid', level: Math.max(reached, savedLevel(current)), messages: written, amount, paidAt: now };
+        if (await client.db.set(key, paid) === false) throw new Error('Failed to save the invite record');
         state.cc = next;
         state.stats.earned += amount;
-        return { paid: true };
+        return { paid: true, level: paid.level };
     });
     if (!result?.paid) return { status: 'done' };
-    return { status: 'paid', inviterId, amount, balance: result.balance };
+    return { status: 'paid', inviterId, amount, balance: result.balance, level: result.level, messages: written };
 }
 
-/** The notice in the level room (Arabic, the server's language). */
+/** The notice of a paid gift (Arabic, the servers' language). */
 export const inviteRewardText = ({ inviterId, memberId, level, amount, balance }) =>
-    `🎁 <@${inviterId}> خدت ${formatCC(amount)} هدية انفايت: <@${memberId}> اللي دعيته وصل لفل **${level}** ・ رصيدك: ${formatCC(balance)}`;
+    `🎁 <@${inviterId}> خدت ${formatCC(amount)} هدية انفايت: <@${memberId}> اللي دعيته وصل لفل **${level}** وكتب **${CC.inviteReward.messages}** رسالة ・ رصيدك: ${formatCC(balance)}`;
+
+/** What the invited member has to do for the gift: `يوصل لفل 5 ويكتب 50 رسالة`. */
+export const inviteConditions = () => `يوصل لفل ${CC.inviteReward.level} ويكتب ${CC.inviteReward.messages} رسالة`;
+
+const WARNING = String.fromCharCode(0x26a0, 0xfe0f);
+
+/**
+ * The small notice under the welcome (src/services/welcomeService.js), from what the join is worth (`join`: the
+ * record handleMemberJoin saved, or its reading of a rejoin): who invited the member and the gift the inviter gets,
+ * or why this invite doesn't count (a fake account, a rejoin). null when nobody is known to have invited them
+ * (unknown, ambiguous, vanity), their own invite or a bot's.
+ */
+export function inviteWelcomeNotice(memberId, join) {
+    const inviterId = String(join?.inviterId ?? '');
+    if (!snowflake.test(inviterId) || inviterId === String(memberId)) return null;
+    const lines = [`-# 📨 دعاه <@${inviterId}>`];
+    if (join.status === 'pending') {
+        lines.push(`-# 🎁 <@${inviterId}> هياخد ${formatCC(CC.inviteReward.amount)} لما <@${memberId}> ${inviteConditions()}`);
+    } else if (join.reason === 'fake') {
+        lines.push(`-# ${WARNING} الدعوة دي مش محسوبة: الحساب عمره أقل من ${CC.inviteReward.minAccountAgeDays} أيام`);
+    } else if (join.reason === 'rejoin') {
+        lines.push(`-# ${WARNING} الدعوة دي مش محسوبة: <@${memberId}> كان في السيرفر قبل كده`);
+    } else {
+        return null;
+    }
+    return lines.join('\n');
+}
+
+// ─── The messages condition ───
+
+// Whose messages are counted: `${guildId}:${memberId}` → { pending: Promise<boolean> (the gift is still pending), at,
+// checkedAt (the last payment check from a message), checking }. Read from the record once per WATCH_MS per member.
+const WATCH_MS = 10 * 60_000;
+const WATCH_MEMORY = 20_000;
+// After a check from a message that could not pay yet (no level-up announced, the inviter not checkable), the next
+// message checks again only after this long: the level-up announcement pays by itself meanwhile.
+const RECHECK_MS = 10 * 60_000;
+const watched = new Map();
+// A member's own chat in the server: text channels, their threads and the voice channels' chats.
+const CHAT_CHANNELS = new Set([
+    ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.PublicThread, ChannelType.PrivateThread,
+    ChannelType.AnnouncementThread, ChannelType.GuildVoice, ChannelType.GuildStageVoice,
+]);
+// A message or a reply they typed (never a join, boost or pin notice Discord writes in their name).
+const CHAT_TYPES = new Set([MessageType.Default, MessageType.Reply]);
+
+function watch(guildId, memberId, entry) {
+    const name = `${guildId}:${memberId}`;
+    watched.delete(name);
+    watched.set(name, entry);
+    if (watched.size > WATCH_MEMORY) watched.delete(watched.keys().next().value);
+    return entry;
+}
+
+/** Whether the member's gift is pending (read from the record, cached WATCH_MS; a failed read is not cached). */
+function watchEntry(client, guildId, memberId, now) {
+    const name = `${guildId}:${memberId}`;
+    const cached = watched.get(name);
+    if (cached && now - cached.at < WATCH_MS) return cached;
+    const entry = { at: now, checkedAt: cached?.checkedAt ?? null, checking: false, pending: null };
+    entry.pending = Promise.resolve()
+        .then(() => client.db.get(getInviteRecordKey(guildId, memberId), null))
+        .then((record) => record?.status === 'pending', (error) => {
+            if (watched.get(name) === entry) watched.delete(name);
+            throw error;
+        });
+    return watch(guildId, memberId, entry);
+}
+
+const DECIDED = new Set(['paid', 'done', 'skipped', 'no_record']);
+
+/**
+ * After a payment check: a decided gift stops the counting. From a level-up (`levelUp`): a level kept while the
+ * messages are missing makes the next message that brings them check at once.
+ */
+function noteResult(guildId, memberId, result, now, { levelUp = false } = {}) {
+    const entry = watched.get(`${guildId}:${memberId}`);
+    if (DECIDED.has(result?.status)) {
+        watch(guildId, memberId, { at: now, checkedAt: null, checking: false, pending: Promise.resolve(false) });
+    } else if (levelUp && result?.status === 'waiting' && entry) {
+        entry.checkedAt = null;
+    }
+}
+
+/** guildMemberAdd (src/events/guildMemberAdd.js): what handleMemberJoin saved, so the member's messages count at once. */
+export function noteInviteJoin(member, result, { now = Date.now() } = {}) {
+    const guildId = String(member?.guild?.id ?? '');
+    if (!guildId || !member?.id || !result?.record) return;
+    watch(guildId, String(member.id), { at: now, checkedAt: null, checking: false, pending: Promise.resolve(result.record.status === 'pending') });
+}
+
+/** A member's own chat message in a server's text channel (not a bot's, a webhook's or a notice Discord writes). */
+export function isChatMessage(message) {
+    return Boolean(message?.author) && !message.author.bot && !message.webhookId && !message.system
+        && Boolean(message.guildId || message.guild?.id) && CHAT_TYPES.has(message.type) && CHAT_CHANNELS.has(message.channel?.type);
+}
+
+/** The server's level room the bot can see (where a gift paid by the 50th message is announced), or null. */
+function levelRoomOf(client, guildId) {
+    for (const id of levelChannelIds()) {
+        const channel = client?.channels?.cache?.get?.(id);
+        if (channel && String(channel.guildId || channel.guild?.id) === guildId && typeof channel.send === 'function') return channel;
+    }
+    return null;
+}
+
+/**
+ * messageCreate hook (src/events/messageCreate.js, in the background): counts the chat message of a member whose
+ * invite gift is pending, in a tracked server, and checks the gift when that makes their messages enough
+ * (CC.inviteReward.messages): paid at once when the level-up was announced before. Returns true when the message
+ * was counted. Never throws.
+ */
+export async function handleChatMessage(message, { client = message?.client, now = Date.now() } = {}) {
+    try {
+        if (!inviteRewardEnabled() || !isChatMessage(message) || !client?.db) return false;
+        const guildId = String(message.guildId || message.guild?.id);
+        if (!isAllowedGuild(guildId) || !trackedGuildIds(client).has(guildId)) return false;
+        const memberId = String(message.author.id);
+        const entry = watchEntry(client, guildId, memberId, now);
+        if (!(await entry.pending)) return false;
+        const counted = await countChatMessage(client, guildId, memberId, message.id, { now });
+        if (!counted) return false;
+        const due = counted.total >= CC.inviteReward.messages && !entry.checking && (entry.checkedAt === null || now - entry.checkedAt >= RECHECK_MS);
+        if (!due) return true;
+        entry.checking = true;
+        entry.checkedAt = now;
+        try {
+            const guild = message.guild ?? client.guilds?.cache?.get?.(guildId);
+            // The level kept on the record (a level-up announced before) pays now; without it ('low') the level-up
+            // announcement pays when it comes, and this checks again only after RECHECK_MS.
+            const result = await payInviteReward(client, guildId, memberId, { now, presence: (inviterId) => inviterPresence(guild, inviterId) });
+            noteResult(guildId, memberId, result, now);
+            if (result.status === 'skipped') logger.info(`[INVITES] No gift for ${memberId}'s inviter ${result.inviterId}: ${result.reason}`);
+            if (result.status === 'paid') {
+                logger.info(`[INVITES] Paid ${result.amount} CC to ${result.inviterId}: ${memberId} wrote ${result.messages} messages at level ${result.level} in ${guildId}`);
+                const room = levelRoomOf(client, guildId);
+                const content = inviteRewardText({ inviterId: result.inviterId, memberId, level: result.level, amount: result.amount, balance: result.balance });
+                if (room) {
+                    await Promise.resolve().then(() => room.send({ content, allowedMentions: { users: [result.inviterId] } }))
+                        .catch((error) => logger.warn(`[INVITES] Could not send the gift notice (check Send Messages): ${error?.code || error?.message || error}`));
+                }
+            }
+        } finally {
+            entry.checking = false;
+        }
+        return true;
+    } catch (error) {
+        logger.warn(`[INVITES] Could not count a chat message: ${error?.code || error?.message || error}`);
+        return false;
+    }
+}
 
 /**
  * messageCreate / messageUpdate hook for the level bot. Returns true when the message is the level bot's in a level
@@ -326,12 +504,15 @@ export async function handleLevelUpMessage(message, { now = Date.now() } = {}) {
         const result = await payInviteReward(client, guildId, update.userId, {
             level: update.level, now, presence: (inviterId) => inviterPresence(message.guild, inviterId),
         });
+        noteResult(guildId, update.userId, result, now, { levelUp: true });
         // Not decided (Discord could not be asked): a later announcement or an edit of this one tries again.
         if (result.status === 'retry') handled.delete(message.id);
         if (result.status === 'skipped') logger.info(`[INVITES] No gift for ${update.userId}'s inviter ${result.inviterId}: ${result.reason}`);
+        // The level is kept on the record: the member's 50th message pays it.
+        if (result.status === 'waiting') logger.info(`[INVITES] ${update.userId} reached level ${result.level} in ${guildId}; the gift waits for the messages (${result.messages}/${CC.inviteReward.messages})`);
         if (result.status !== 'paid') return true;
-        logger.info(`[INVITES] Paid ${result.amount} CC to ${result.inviterId}: ${update.userId} reached level ${update.level} in ${guildId}`);
-        const content = inviteRewardText({ inviterId: result.inviterId, memberId: update.userId, level: update.level, amount: result.amount, balance: result.balance });
+        logger.info(`[INVITES] Paid ${result.amount} CC to ${result.inviterId}: ${update.userId} reached level ${result.level} (${result.messages} messages) in ${guildId}`);
+        const content = inviteRewardText({ inviterId: result.inviterId, memberId: update.userId, level: result.level, amount: result.amount, balance: result.balance });
         const allowedMentions = { users: [result.inviterId], repliedUser: false };
         const sent = await Promise.resolve().then(() => message.reply({ content, allowedMentions })).catch(() => null);
         if (!sent) {
@@ -345,8 +526,9 @@ export async function handleLevelUpMessage(message, { now = Date.now() } = {}) {
     }
 }
 
-/** For tests: forgets the handled messages. */
+/** For tests: forgets the handled messages and whose messages are counted. */
 export function forgetLevelMessages() {
     handled.clear();
+    watched.clear();
     unreadableLogged = 0;
 }

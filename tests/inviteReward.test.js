@@ -1,24 +1,27 @@
-// The invite gift (src/services/cc/inviteTracker.js, inviteRewardService.js): which invite a joining member used, the
-// exclusions (self, bots, rejoins, vanity, unknown), reading only real level-up announcements of exactly one member
-// in Arabic and English (never rank cards, leaderboards, level lists or messages naming two members), paying the
-// inviter CC.inviteReward.amount exactly once through updateCCState (outside the games' daily cap), and the inviter
-// who left.
+// The invite gift (src/services/cc/inviteTracker.js, inviteRewardService.js, chatCounter.js): which invite a joining
+// member used, the exclusions (self, bots, rejoins, vanity, unknown, fake accounts), reading only real level-up
+// announcements of exactly one member in Arabic and English (never rank cards, leaderboards, level lists or messages
+// naming two members), counting the invited member's chat messages (batched, never twice), paying the inviter
+// CC.inviteReward.amount exactly once through updateCCState (outside the games' daily cap) when the level and the 50
+// messages are both there, in either order, and the inviter who left.
 import assert from 'node:assert/strict';
 import { afterEach, describe, test } from 'node:test';
-import { GatewayIntentBits, GuildMemberFlags } from 'discord.js';
+import { ChannelType, GatewayIntentBits, GuildMemberFlags, MessageType } from 'discord.js';
 import { createSnapshot } from '../scripts/lib/bourseBackup.js';
 import { CC } from '../src/config/cc.js';
 import { DEFAULT_LEVEL_BOT_ID, DEFAULT_LEVEL_CHANNEL_ID, levelBotIds, levelChannelIds, inviteRewardEnabled, validateInviteConfig } from '../src/config/invites.js';
 import messageCreate from '../src/events/messageCreate.js';
 import { getProfile, updateCCState } from '../src/services/cc/ccService.js';
+import { chatCount, countChatMessage, flushChatCounts, forgetChatCounts, unsavedChatMessages } from '../src/services/cc/chatCounter.js';
 import {
-    cachedInvites, didRejoin, findUsedInvite, forgetInvites, handleMemberJoin, inviteIntents, joinRecord, membersIntentAllowed,
+    accountCreatedAt, cachedInvites, didRejoin, findUsedInvite, forgetInvites, handleMemberJoin, inviteIntents, joinRecord, membersIntentAllowed,
     onInviteCreate, onInviteDelete, primeGuild, startInviteTracking, trackedGuildIds,
 } from '../src/services/cc/inviteTracker.js';
 import {
-    forgetLevelMessages, handleLevelUpMessage, parseLevel, parseLevelUp, payInviteReward,
+    forgetLevelMessages, handleChatMessage, handleLevelUpMessage, inviteConditions, inviteWelcomeNotice, isChatMessage, noteInviteJoin,
+    parseLevel, parseLevelUp, payInviteReward,
 } from '../src/services/cc/inviteRewardService.js';
-import { getEconomyKey, getInviteRecordKey } from '../src/utils/database/keys.js';
+import { getChatCountKey, getEconomyKey, getInviteRecordKey } from '../src/utils/database/keys.js';
 
 const GUILD = '100000000000000002';
 const SCOPE = '100000000000000001';
@@ -28,17 +31,24 @@ const OTHER = '200000000000000103';
 const NEWCOMER = '200000000000000104';
 const SOME_BOT = '200000000000000109';
 const T0 = Date.UTC(2026, 10, 16, 12);
+const DAY = 24 * 60 * 60_000;
 const AMOUNT = CC.inviteReward.amount;
+const NEEDED = CC.inviteReward.messages;
+const WARNING = String.fromCharCode(0x26a0, 0xfe0f);
 
 function fakeDb(records = {}) {
     const store = new Map(Object.entries(records));
+    const reads = [];
+    const writes = [];
     return {
-        store,
-        get: async (key, fallback = null) => (store.has(key) ? structuredClone(store.get(key)) : fallback),
-        set: async (key, value) => { store.set(key, structuredClone(value)); return true; },
+        store, reads, writes,
+        get: async (key, fallback = null) => { reads.push(key); return store.has(key) ? structuredClone(store.get(key)) : fallback; },
+        set: async (key, value) => { writes.push(key); store.set(key, structuredClone(value)); return true; },
         list: async (prefix) => [...store.keys()].filter((key) => key.startsWith(prefix)),
     };
 }
+/** A saved chat count of `count` messages for the member (the messages condition). */
+const chatted = (count, memberId = MEMBER, guildId = GUILD) => ({ [getChatCountKey(guildId, memberId)]: { count, lastId: '0' } });
 const invite = (code, uses, inviterId, { maxUses = 0, bot = false } = {}) => ({ code, uses, maxUses, inviter: inviterId ? { id: inviterId, bot } : null });
 
 /** A server whose invite list is `list()` (or throws `error`), with members `present` (the others: Unknown Member). */
@@ -55,13 +65,33 @@ function fakeGuild({ list = () => [], error = null, present = [INVITER], bots = 
         },
     };
 }
+/** A text channel of `guildId` that keeps what is sent in it (`sent`). */
+const room = (id, guildId = GUILD) => {
+    const sent = [];
+    return { id, guildId, sent, send: async (payload) => { sent.push(payload); return payload; } };
+};
 function fakeClient(guild, records = {}) {
     return {
         db: fakeDb(records),
-        channels: { cache: new Map([[DEFAULT_LEVEL_CHANNEL_ID, { id: DEFAULT_LEVEL_CHANNEL_ID, guildId: GUILD }]]) },
+        channels: { cache: new Map([[DEFAULT_LEVEL_CHANNEL_ID, room(DEFAULT_LEVEL_CHANNEL_ID)]]) },
         guilds: { cache: new Map(guild ? [[GUILD, guild]] : []) },
         options: { intents: { has: () => true } },
     };
+}
+const levelRoom = (client) => client.channels.cache.get(DEFAULT_LEVEL_CHANNEL_ID);
+const messageId = (n) => String(300000000000000000n + BigInt(n));
+/** A member's chat message `n` (its ID grows with n) in a text channel of `guildId`. */
+function chat(client, n, { author = MEMBER, guildId = GUILD, bot = false, type = MessageType.Default, channelType = ChannelType.GuildText, webhookId = null, system = false } = {}) {
+    return {
+        id: messageId(n), guildId, client, guild: client.guilds.cache.get(guildId) ?? { id: guildId }, type, webhookId, system, content: 'hello',
+        author: { id: author, bot }, channelId: '400000000000000009', channel: { id: '400000000000000009', type: channelType },
+    };
+}
+/** Counts the member's messages from..to (each handled in turn, as messageCreate does). */
+async function chatMessages(client, from, to, options = {}) {
+    const results = [];
+    for (let n = from; n <= to; n += 1) results.push(await handleChatMessage(chat(client, n, options), { now: options.now ?? T0 }));
+    return results;
 }
 const joining = (guild, id = MEMBER, { bot = false, rejoined = false } = {}) => ({ id, guild, user: { id, bot }, flags: { bitfield: rejoined ? GuildMemberFlags.DidRejoin : 0 } });
 const pending = (extra = {}) => ({ inviterId: INVITER, code: 'abc', source: 'invite', status: 'pending', reason: null, joinedAt: T0, ...extra });
@@ -82,23 +112,30 @@ function announcement(client, { content = '', embeds = [], id = `9${Math.random(
 afterEach(() => {
     forgetInvites();
     forgetLevelMessages();
-    for (const key of ['LEVEL_BOT_IDS', 'LEVEL_CHANNEL_IDS']) delete process.env[key];
+    forgetChatCounts();
+    for (const key of ['LEVEL_BOT_IDS', 'LEVEL_CHANNEL_IDS', 'WELCOME_ENABLED']) delete process.env[key];
     process.env.INVITE_REWARD_ENABLED = 'true'; // the tests' baseline (tests/env.js)
 });
 
 describe('the configuration', () => {
-    test('5000 CC at level 5, the level bot and room by default, overridable, checked at start', () => {
-        assert.deepEqual(CC.inviteReward, { amount: 5000, level: 5 });
+    test('5000 CC at level 5 and 50 messages, 7 days for an account, the level bot and room by default, overridable, checked at start', () => {
+        assert.deepEqual(CC.inviteReward, { amount: 5000, level: 5, messages: 50, minAccountAgeDays: 7 });
+        assert.equal(inviteConditions(), 'يوصل لفل 5 ويكتب 50 رسالة');
         assert.deepEqual([...levelBotIds()], ['1513858357142880346']);
         assert.deepEqual([...levelChannelIds()], ['1571798045580984360']);
         assert.deepEqual([...levelBotIds({ LEVEL_BOT_IDS: '300000000000000001, 300000000000000002' })], ['300000000000000001', '300000000000000002']);
         assert.doesNotThrow(() => validateInviteConfig({}));
         assert.throws(() => validateInviteConfig({ LEVEL_CHANNEL_IDS: 'abc' }), /LEVEL_CHANNEL_IDS/u);
-        // The backups accept the new records.
-        assert.doesNotThrow(() => createSnapshot([{ key: getInviteRecordKey(GUILD, MEMBER), value: pending(), updatedAt: new Date(T0).toISOString() }]));
+        // The backups accept the new records: who invited whom, and the chat counts.
+        const at = new Date(T0).toISOString();
+        assert.doesNotThrow(() => createSnapshot([
+            { key: getInviteRecordKey(GUILD, MEMBER), value: pending(), updatedAt: at },
+            { key: getChatCountKey(GUILD, MEMBER), value: { count: 12, lastId: messageId(12) }, updatedAt: at },
+        ]));
+        assert.equal(getChatCountKey(GUILD, MEMBER), `guild:${GUILD}:chat:${MEMBER}`);
     });
 
-    test('the Server Members Intent is asked only when the portal switch is on; the feature can be turned off', async () => {
+    test('the Server Members Intent is asked only when the portal switch is on; for the welcome too; nothing when both are off', async () => {
         assert.equal(membersIntentAllowed(1 << 14), true);
         assert.equal(membersIntentAllowed(1 << 15), true);
         assert.equal(membersIntentAllowed((1 << 18) | (1 << 19)), false);
@@ -109,8 +146,15 @@ describe('the configuration', () => {
         // Off unless switched on (DISbot already pays the invite reward: never two payers by default).
         assert.equal(inviteRewardEnabled({}), false);
         assert.equal(inviteRewardEnabled({ INVITE_REWARD_ENABLED: 'true' }), true);
+        // The welcome alone (the gift off) still needs to see members join: GuildMembers, never GuildInvites.
         process.env.INVITE_REWARD_ENABLED = 'false';
-        assert.deepEqual(await inviteIntents('t', { rest: rest(1 << 14) }), []);
+        assert.deepEqual(await inviteIntents('t', { rest: rest(1 << 14) }), [GatewayIntentBits.GuildMembers]);
+        assert.deepEqual(await inviteIntents('t', { rest: rest(0) }), [], 'the switch off: the bot still starts, without it');
+        assert.deepEqual(await inviteIntents('t', { rest: rest(1 << 14), env: { WELCOME_ENABLED: 'false' } }), []);
+        process.env.WELCOME_ENABLED = 'false';
+        let asked = false;
+        assert.deepEqual(await inviteIntents('t', { rest: { get: async () => { asked = true; return { flags: 1 << 14 }; } } }), []);
+        assert.equal(asked, false, 'Discord is not asked when nothing needs the intent');
     });
 });
 
@@ -176,9 +220,10 @@ describe('reading the level bot', () => {
 });
 
 describe('only a real level-up of one member pays', () => {
+    // The member wrote the 50 messages already: only the level-up is missing.
     const setup = () => {
         const guild = fakeGuild({ present: [INVITER] });
-        const client = fakeClient(guild, { [getInviteRecordKey(GUILD, MEMBER)]: pending(), [getInviteRecordKey(GUILD, OTHER)]: pending() });
+        const client = fakeClient(guild, { [getInviteRecordKey(GUILD, MEMBER)]: pending(), [getInviteRecordKey(GUILD, OTHER)]: pending(), ...chatted(NEEDED), ...chatted(NEEDED, OTHER) });
         return client;
     };
     const member = { id: MEMBER, bot: false };
@@ -402,7 +447,7 @@ describe('tracking who invited whom', () => {
 
 describe('paying the gift', () => {
     test('paid once to the inviter through updateCCState; again, higher, or at once never pays twice', async () => {
-        const client = fakeClient(fakeGuild(), { [getInviteRecordKey(GUILD, MEMBER)]: pending() });
+        const client = fakeClient(fakeGuild(), { [getInviteRecordKey(GUILD, MEMBER)]: pending(), ...chatted(NEEDED) });
         await updateCCState(client, GUILD, INVITER, (state) => { state.cc = 100; });
         assert.deepEqual(await payInviteReward(client, GUILD, MEMBER, { level: 4 }), { status: 'low' });
         const [first, second] = await Promise.all([
@@ -411,12 +456,13 @@ describe('paying the gift', () => {
         ]);
         assert.deepEqual([first.status, second.status].sort(), ['done', 'paid']);
         const paid = first.status === 'paid' ? first : second;
-        assert.deepEqual(paid, { status: 'paid', inviterId: INVITER, amount: AMOUNT, balance: 100 + AMOUNT });
+        assert.deepEqual(paid, { status: 'paid', inviterId: INVITER, amount: AMOUNT, balance: 100 + AMOUNT, level: 5, messages: NEEDED });
         assert.equal((await payInviteReward(client, GUILD, MEMBER, { level: 9 })).status, 'done');
+        assert.equal((await payInviteReward(client, GUILD, MEMBER)).status, 'done', 'nor from the messages');
         assert.equal(await balance(client, INVITER), 100 + AMOUNT);
         assert.equal(await balance(client, MEMBER), 0, 'the invited member gets nothing');
         const record = client.db.store.get(getInviteRecordKey(GUILD, MEMBER));
-        assert.deepEqual([record.status, record.level, record.amount, record.paidAt], ['paid', 5, AMOUNT, T0]);
+        assert.deepEqual([record.status, record.level, record.messages, record.amount, record.paidAt], ['paid', 5, NEEDED, AMOUNT, T0]);
         // Earned like any CC, never counted in the games' daily cap.
         const economy = client.db.store.get(getEconomyKey(SCOPE, INVITER));
         assert.equal(economy.ccStats.earned, AMOUNT);
@@ -435,7 +481,7 @@ describe('paying the gift', () => {
     });
 
     test('an inviter who left (or turned out a bot) is skipped for good; one that could not be checked waits', async () => {
-        const client = fakeClient(fakeGuild(), { [getInviteRecordKey(GUILD, MEMBER)]: pending(), [getInviteRecordKey(GUILD, OTHER)]: pending() });
+        const client = fakeClient(fakeGuild(), { [getInviteRecordKey(GUILD, MEMBER)]: pending(), [getInviteRecordKey(GUILD, OTHER)]: pending(), ...chatted(NEEDED), ...chatted(NEEDED, OTHER) });
         assert.deepEqual(await payInviteReward(client, GUILD, MEMBER, { level: 5, presence: async () => 'unknown' }), { status: 'retry', inviterId: INVITER });
         assert.equal(client.db.store.get(getInviteRecordKey(GUILD, MEMBER)).status, 'pending');
         assert.deepEqual(await payInviteReward(client, GUILD, MEMBER, { level: 5, presence: async () => 'left' }), { status: 'skipped', reason: 'inviter_left', inviterId: INVITER });
@@ -446,7 +492,7 @@ describe('paying the gift', () => {
 
     test('the level bot\'s announcement in its room pays and answers once; other bots, rooms and lower levels do not', async () => {
         const guild = fakeGuild({ present: [INVITER] });
-        const client = fakeClient(guild, { [getInviteRecordKey(GUILD, MEMBER)]: pending() });
+        const client = fakeClient(guild, { [getInviteRecordKey(GUILD, MEMBER)]: pending(), ...chatted(NEEDED) });
         const member = { id: MEMBER, bot: false };
         const low = announcement(client, { content: `GG <@${MEMBER}>, you just advanced to level 4!`, mentions: [member] });
         assert.equal(await handleLevelUpMessage(low), true);
@@ -460,7 +506,7 @@ describe('paying the gift', () => {
         assert.equal(await handleLevelUpMessage(five, { now: T0 }), true);
         assert.equal(await balance(client, INVITER), AMOUNT);
         assert.equal(five.replies.length, 1);
-        assert.match(five.replies[0].content, new RegExp(`^🎁 <@${INVITER}> خدت \\*\\*5,000\\*\\* 🌀 CC هدية انفايت: <@${MEMBER}> اللي دعيته وصل لفل \\*\\*5\\*\\*`, 'u'));
+        assert.match(five.replies[0].content, new RegExp(`^🎁 <@${INVITER}> خدت \\*\\*5,000\\*\\* 🌀 CC هدية انفايت: <@${MEMBER}> اللي دعيته وصل لفل \\*\\*5\\*\\* وكتب \\*\\*50\\*\\* رسالة`, 'u'));
         assert.deepEqual(five.replies[0].allowedMentions, { users: [INVITER], repliedUser: false });
         // The same message edited, through the event, and a later level: nothing more.
         assert.equal(await handleLevelUpMessage(five), true);
@@ -471,11 +517,270 @@ describe('paying the gift', () => {
 
     test('the inviter who left the server gets nothing and no notice', async () => {
         const guild = fakeGuild({ present: [] });
-        const client = fakeClient(guild, { [getInviteRecordKey(GUILD, MEMBER)]: pending() });
+        const client = fakeClient(guild, { [getInviteRecordKey(GUILD, MEMBER)]: pending(), ...chatted(NEEDED) });
         const message = announcement(client, { content: `<@${MEMBER}> has reached level **5**`, mentions: [{ id: MEMBER, bot: false }] });
         assert.equal(await handleLevelUpMessage(message), true);
         assert.equal(await balance(client, INVITER), 0);
         assert.deepEqual([message.replies.length, message.sent.length], [0, 0]);
         assert.deepEqual([client.db.store.get(getInviteRecordKey(GUILD, MEMBER)).status, client.db.store.get(getInviteRecordKey(GUILD, MEMBER)).reason], ['skipped', 'inviter_left']);
+    });
+});
+
+describe('fake accounts and the notice under the welcome', () => {
+    const found = { source: 'invite', invite: { code: 'abc', uses: 1, maxUses: 0, inviterId: INVITER, inviterBot: false } };
+
+    test('an account younger than 7 days when it joins is a fake: excluded, never pending', () => {
+        const decide = (createdAt, extra = {}) => { const { status, reason } = joinRecord({ memberId: MEMBER, found, createdAt, now: T0, ...extra }); return [status, reason]; };
+        assert.deepEqual(decide(T0 - DAY), ['excluded', 'fake']);
+        assert.deepEqual(decide(T0 - 7 * DAY + 1), ['excluded', 'fake']);
+        assert.deepEqual(decide(T0 - 7 * DAY), ['pending', null]);
+        assert.deepEqual(decide(null), ['pending', null], 'an unknown age is not called a fake');
+        // The other exclusions are read first.
+        assert.deepEqual(decide(T0, { rejoined: true }), ['excluded', 'rejoin']);
+        assert.deepEqual(decide(T0, { memberId: INVITER }), ['excluded', 'self']);
+        // The account's age: the user's, else read from its ID.
+        assert.equal(accountCreatedAt({ id: MEMBER, user: { id: MEMBER, createdTimestamp: T0 } }), T0);
+        assert.equal(accountCreatedAt({ id: MEMBER, user: { id: MEMBER } }), Date.UTC(2016, 6, 5, 21, 28, 35, 820));
+    });
+
+    test('a fake joining through a real invite is saved excluded, its notice says the invite does not count, and it never pays', async () => {
+        let invites = [invite('abc', 2, INVITER)];
+        const guild = fakeGuild({ list: () => invites });
+        const client = fakeClient(guild, chatted(500));
+        assert.equal(await primeGuild(guild), true);
+        invites = [invite('abc', 3, INVITER)];
+        const fresh = { ...joining(guild), user: { id: MEMBER, bot: false, createdTimestamp: T0 - 2 * DAY } };
+        const result = await handleMemberJoin(fresh, client, { now: T0 });
+        assert.deepEqual([result.status, result.record.status, result.record.reason, result.record.inviterId], ['saved', 'excluded', 'fake', INVITER]);
+        assert.equal(inviteWelcomeNotice(MEMBER, result.join), `-# 📨 دعاه <@${INVITER}>\n-# ${WARNING} الدعوة دي مش محسوبة: الحساب عمره أقل من 7 أيام`);
+        assert.equal((await payInviteReward(client, GUILD, MEMBER, { level: 9 })).status, 'done');
+        assert.equal(await handleChatMessage(chat(client, 1), { now: T0 }), false, 'its messages are not counted');
+        assert.equal(await balance(client, INVITER), 0);
+    });
+
+    test('the notice: who invited and the gift; a fake or a rejoin does not count; nothing for unknown, self or a bot', () => {
+        const record = (extra = {}) => ({ ...pending(), ...extra });
+        assert.equal(inviteWelcomeNotice(MEMBER, record()), [
+            `-# 📨 دعاه <@${INVITER}>`,
+            `-# 🎁 <@${INVITER}> هياخد **5,000** 🌀 CC لما <@${MEMBER}> يوصل لفل 5 ويكتب 50 رسالة`,
+        ].join('\n'));
+        assert.equal(inviteWelcomeNotice(MEMBER, record({ status: 'excluded', reason: 'rejoin' })), `-# 📨 دعاه <@${INVITER}>\n-# ${WARNING} الدعوة دي مش محسوبة: <@${MEMBER}> كان في السيرفر قبل كده`);
+        for (const reason of ['unknown', 'ambiguous', 'vanity', 'no_inviter', 'self', 'bot_inviter']) {
+            assert.equal(inviteWelcomeNotice(MEMBER, record({ status: 'excluded', reason })), null, reason);
+        }
+        assert.equal(inviteWelcomeNotice(MEMBER, record({ status: 'excluded', reason: 'unknown', inviterId: null })), null);
+        assert.equal(inviteWelcomeNotice(MEMBER, record({ inviterId: MEMBER })), null, 'their own invite');
+        assert.equal(inviteWelcomeNotice(MEMBER, null), null);
+        assert.equal(inviteWelcomeNotice(MEMBER, record({ inviterId: 'abc' })), null, 'not a Discord ID');
+    });
+
+    test('a member saved before who joins again: the first record stays, and this join reads as a rejoin', async () => {
+        let invites = [invite('abc', 1, INVITER), invite('xyz', 0, OTHER)];
+        const guild = fakeGuild({ list: () => invites });
+        const client = fakeClient(guild, { [getInviteRecordKey(GUILD, MEMBER)]: pending() });
+        assert.equal(await primeGuild(guild), true);
+        invites = [invite('abc', 1, INVITER), invite('xyz', 1, OTHER)];
+        const again = await handleMemberJoin(joining(guild), client, { now: T0 });
+        assert.equal(again.status, 'kept');
+        assert.equal(again.record.inviterId, INVITER);
+        assert.deepEqual([again.join.status, again.join.reason, again.join.inviterId], ['excluded', 'rejoin', OTHER]);
+        assert.match(inviteWelcomeNotice(MEMBER, again.join), /^-# 📨 دعاه <@200000000000000103>\n.*كان في السيرفر قبل كده$/u);
+        assert.equal(client.db.store.get(getInviteRecordKey(GUILD, MEMBER)).status, 'pending', 'nothing rewritten');
+    });
+});
+
+describe('counting the invited member\'s chat messages', () => {
+    test('only a member\'s own chat message counts: no bot, webhook, Discord notice, DM or other channel kind', () => {
+        const client = fakeClient(fakeGuild());
+        assert.equal(isChatMessage(chat(client, 1)), true);
+        assert.equal(isChatMessage(chat(client, 1, { type: MessageType.Reply })), true);
+        for (const channelType of [ChannelType.GuildAnnouncement, ChannelType.PublicThread, ChannelType.PrivateThread, ChannelType.GuildVoice]) {
+            assert.equal(isChatMessage(chat(client, 1, { channelType })), true, `channel type ${channelType}`);
+        }
+        assert.equal(isChatMessage(chat(client, 1, { bot: true })), false, 'a bot');
+        assert.equal(isChatMessage(chat(client, 1, { webhookId: '500000000000000001' })), false, 'a webhook');
+        assert.equal(isChatMessage(chat(client, 1, { system: true })), false, 'a system message');
+        assert.equal(isChatMessage(chat(client, 1, { type: MessageType.UserJoin })), false, 'the join notice in their name');
+        assert.equal(isChatMessage(chat(client, 1, { type: MessageType.GuildBoost })), false, 'a boost notice');
+        assert.equal(isChatMessage(chat(client, 1, { channelType: ChannelType.DM })), false, 'a DM');
+        assert.equal(isChatMessage({ ...chat(client, 1), guildId: null, guild: null }), false, 'no server');
+    });
+
+    test('counted in memory and written in batches: no write per message, one read and one write per member per flush', async () => {
+        const client = fakeClient(fakeGuild(), { [getInviteRecordKey(GUILD, MEMBER)]: pending() });
+        assert.deepEqual(await chatMessages(client, 1, 10), Array(10).fill(true));
+        assert.deepEqual(client.db.writes, [], 'nothing written yet');
+        assert.deepEqual(client.db.reads, [getInviteRecordKey(GUILD, MEMBER), getChatCountKey(GUILD, MEMBER)], 'the record and the saved count, read once');
+        assert.equal(unsavedChatMessages(GUILD, MEMBER), 10);
+        assert.equal(await flushChatCounts(client), 1);
+        assert.deepEqual(client.db.writes, [getChatCountKey(GUILD, MEMBER)]);
+        assert.deepEqual(client.db.store.get(getChatCountKey(GUILD, MEMBER)), { count: 10, lastId: messageId(10) });
+        assert.equal(await flushChatCounts(client), 0, 'nothing new: nothing written');
+        assert.equal(client.db.writes.length, 1);
+        assert.equal(await chatCount(client, GUILD, MEMBER), 10);
+        // The count read for a payment includes what is not written yet (written first).
+        await chatMessages(client, 11, 12);
+        assert.equal(await chatCount(client, GUILD, MEMBER), 12);
+        assert.equal(unsavedChatMessages(GUILD, MEMBER), 0);
+    });
+
+    test('a message is never counted twice: the same ID again, after it was written, or seen by a second bot process', async () => {
+        const client = fakeClient(fakeGuild(), { [getInviteRecordKey(GUILD, MEMBER)]: pending() });
+        await chatMessages(client, 1, 3);
+        assert.equal(await handleChatMessage(chat(client, 2), { now: T0 }), false, 'the same message again');
+        await flushChatCounts(client);
+        assert.equal(await handleChatMessage(chat(client, 3), { now: T0 }), false, 'already written');
+        assert.deepEqual(client.db.store.get(getChatCountKey(GUILD, MEMBER)), { count: 3, lastId: messageId(3) });
+        // A second process (a deploy) sees messages 2 to 5: only 4 and 5 are new.
+        forgetChatCounts();
+        forgetLevelMessages();
+        assert.deepEqual(await chatMessages(client, 2, 5), [false, false, true, true]);
+        await flushChatCounts(client);
+        assert.deepEqual(client.db.store.get(getChatCountKey(GUILD, MEMBER)), { count: 5, lastId: messageId(5) });
+        assert.equal(await countChatMessage(client, GUILD, MEMBER, 'not-an-id'), null);
+    });
+
+    test('only the members whose gift is pending, in a tracked server, with the gift on; also through messageCreate', async () => {
+        const client = fakeClient(fakeGuild(), {
+            [getInviteRecordKey(GUILD, MEMBER)]: pending(),
+            [getInviteRecordKey(GUILD, OTHER)]: pending({ status: 'excluded', reason: 'rejoin' }),
+            [getInviteRecordKey(GUILD, NEWCOMER)]: pending({ status: 'paid' }),
+            [getInviteRecordKey(SCOPE, MEMBER)]: pending(),
+        });
+        assert.equal(await handleChatMessage(chat(client, 1, { author: OTHER }), { now: T0 }), false, 'an excluded invite');
+        assert.equal(await handleChatMessage(chat(client, 2, { author: NEWCOMER }), { now: T0 }), false, 'paid already');
+        assert.equal(await handleChatMessage(chat(client, 3, { author: INVITER }), { now: T0 }), false, 'nobody invited them');
+        assert.equal(await handleChatMessage(chat(client, 4, { guildId: SCOPE }), { now: T0 }), false, 'a server without a level room');
+        assert.equal(await handleChatMessage(chat(client, 5, { bot: true }), { now: T0 }), false, 'a bot');
+        process.env.INVITE_REWARD_ENABLED = 'false';
+        assert.equal(await handleChatMessage(chat(client, 6), { now: T0 }), false, 'the gift off');
+        process.env.INVITE_REWARD_ENABLED = 'true';
+        assert.equal(await handleChatMessage(chat(client, 7), { now: T0 }), true);
+        // Through the event (in the background): the chat goes on to the games and commands as before.
+        await messageCreate.execute(chat(client, 8), client);
+        await new Promise((resolve) => { setImmediate(resolve); });
+        assert.equal(unsavedChatMessages(GUILD, MEMBER), 2);
+        await flushChatCounts(client);
+        assert.deepEqual([...client.db.store.keys()].filter((key) => key.includes(':chat:')), [getChatCountKey(GUILD, MEMBER)]);
+        assert.equal(client.db.store.get(getChatCountKey(GUILD, MEMBER)).count, 2);
+    });
+
+    test('the join noted by guildMemberAdd: the member\'s messages count at once, the record not read again', async () => {
+        const client = fakeClient(fakeGuild(), { [getInviteRecordKey(GUILD, MEMBER)]: pending() });
+        noteInviteJoin({ id: MEMBER, guild: { id: GUILD } }, { status: 'saved', record: pending() }, { now: T0 });
+        await chatMessages(client, 1, 1);
+        assert.deepEqual(client.db.reads, [getChatCountKey(GUILD, MEMBER)]);
+        noteInviteJoin({ id: OTHER, guild: { id: GUILD } }, { status: 'saved', record: pending({ status: 'excluded', reason: 'fake' }) }, { now: T0 });
+        assert.equal(await handleChatMessage(chat(client, 2, { author: OTHER }), { now: T0 }), false);
+    });
+});
+
+describe('the level and the 50 messages, in either order', () => {
+    const member = { id: MEMBER, bot: false };
+    const levelUp = (client, level = 5) => announcement(client, { content: `GG <@${MEMBER}>, you just advanced to level ${level}!`, mentions: [member] });
+    const setup = (records = {}) => fakeClient(fakeGuild({ present: [INVITER] }), { [getInviteRecordKey(GUILD, MEMBER)]: pending(), ...records });
+    const notice = new RegExp(`^🎁 <@${INVITER}> خدت \\*\\*5,000\\*\\* 🌀 CC هدية انفايت: <@${MEMBER}> اللي دعيته وصل لفل \\*\\*5\\*\\* وكتب \\*\\*50\\*\\* رسالة ・ رصيدك: \\*\\*5,000\\*\\* 🌀 CC$`, 'u');
+
+    test('level 5 first: kept on the record; nothing until the 50th message, which pays once with a notice in the level room', async () => {
+        const client = setup();
+        await chatMessages(client, 1, 10);
+        const five = levelUp(client);
+        assert.equal(await handleLevelUpMessage(five, { now: T0 }), true);
+        assert.equal(await balance(client, INVITER), 0, '10 messages: not yet');
+        assert.deepEqual([five.replies.length, five.sent.length], [0, 0]);
+        const waiting = client.db.store.get(getInviteRecordKey(GUILD, MEMBER));
+        assert.deepEqual([waiting.status, waiting.level, waiting.levelAt], ['pending', 5, T0], 'the level is kept, the gift still pending');
+        assert.equal((await payInviteReward(client, GUILD, MEMBER)).status, 'waiting');
+        await chatMessages(client, 11, NEEDED - 1);
+        assert.equal(await balance(client, INVITER), 0, '49 messages: not yet');
+        assert.deepEqual(await chatMessages(client, NEEDED, NEEDED), [true]);
+        assert.equal(await balance(client, INVITER), AMOUNT, 'the 50th message pays');
+        const record = client.db.store.get(getInviteRecordKey(GUILD, MEMBER));
+        assert.deepEqual([record.status, record.level, record.messages, record.amount], ['paid', 5, NEEDED, AMOUNT]);
+        assert.equal(levelRoom(client).sent.length, 1);
+        assert.match(levelRoom(client).sent[0].content, notice);
+        assert.deepEqual(levelRoom(client).sent[0].allowedMentions, { users: [INVITER] });
+        // More messages and a higher level: never again, and the member's messages are not counted any more.
+        assert.deepEqual(await chatMessages(client, NEEDED + 1, NEEDED + 5), Array(5).fill(false));
+        const six = levelUp(client, 6);
+        await handleLevelUpMessage(six, { now: T0 });
+        assert.equal(await balance(client, INVITER), AMOUNT);
+        assert.deepEqual([levelRoom(client).sent.length, six.replies.length], [1, 0]);
+        assert.equal(client.db.store.get(getEconomyKey(SCOPE, INVITER)).ccStats.earned, AMOUNT);
+    });
+
+    test('the 50 messages first: the level-up announcement pays at once', async () => {
+        const client = setup();
+        await chatMessages(client, 1, NEEDED + 3);
+        assert.equal(await balance(client, INVITER), 0, 'no level yet');
+        assert.equal(client.db.store.get(getInviteRecordKey(GUILD, MEMBER)).status, 'pending');
+        await handleLevelUpMessage(levelUp(client, 4), { now: T0 });
+        assert.equal(await balance(client, INVITER), 0, 'level 4: not yet');
+        const five = levelUp(client);
+        assert.equal(await handleLevelUpMessage(five, { now: T0 }), true);
+        assert.equal(await balance(client, INVITER), AMOUNT);
+        assert.equal(five.replies.length, 1);
+        assert.match(five.replies[0].content, notice);
+        const record = client.db.store.get(getInviteRecordKey(GUILD, MEMBER));
+        assert.deepEqual([record.status, record.level, record.messages], ['paid', 5, NEEDED + 3]);
+        await chatMessages(client, NEEDED + 4, NEEDED + 4);
+        await handleLevelUpMessage(levelUp(client, 7), { now: T0 });
+        assert.equal(await balance(client, INVITER), AMOUNT, 'once');
+        assert.equal(levelRoom(client).sent.length, 0);
+    });
+
+    test('the 50th message and the level-up at the same moment pay once', async () => {
+        const client = setup();
+        await chatMessages(client, 1, NEEDED - 1);
+        const announced = levelUp(client);
+        const results = await Promise.all([handleChatMessage(chat(client, NEEDED), { now: T0 }), handleLevelUpMessage(announced, { now: T0 })]);
+        assert.deepEqual(results, [true, true]);
+        assert.equal(await balance(client, INVITER), AMOUNT);
+        assert.equal(client.db.store.get(getEconomyKey(SCOPE, INVITER)).ccStats.earned, AMOUNT);
+        assert.equal(announced.replies.length + levelRoom(client).sent.length, 1, 'one notice');
+    });
+
+    test('a level kept by another bot process is found by a message 10 minutes later at most', async () => {
+        const client = setup();
+        await chatMessages(client, 1, NEEDED);
+        const key = getInviteRecordKey(GUILD, MEMBER);
+        client.db.store.set(key, { ...client.db.store.get(key), level: 5 });
+        await chatMessages(client, NEEDED + 1, NEEDED + 1, { now: T0 + 60_000 });
+        assert.equal(await balance(client, INVITER), 0, 'checked again only after 10 minutes');
+        await chatMessages(client, NEEDED + 2, NEEDED + 2, { now: T0 + 10 * 60_000 });
+        assert.equal(await balance(client, INVITER), AMOUNT);
+        assert.equal(client.db.store.get(key).messages, NEEDED + 2);
+    });
+
+    test('an inviter who left by the 50th message gets nothing, and the counting stops', async () => {
+        const client = fakeClient(fakeGuild({ present: [] }), { [getInviteRecordKey(GUILD, MEMBER)]: pending({ level: 5 }), ...chatted(NEEDED - 1) });
+        assert.deepEqual(await chatMessages(client, 1, 1), [true]);
+        assert.equal(await balance(client, INVITER), 0);
+        const record = client.db.store.get(getInviteRecordKey(GUILD, MEMBER));
+        assert.deepEqual([record.status, record.reason], ['skipped', 'inviter_left']);
+        assert.equal(levelRoom(client).sent.length, 0);
+        assert.deepEqual(await chatMessages(client, 2, 3), [false, false]);
+    });
+
+    test('another server\'s messages, or another member\'s, never count for this one', async () => {
+        const SECOND_ROOM = '400000000000000077';
+        process.env.LEVEL_CHANNEL_IDS = `${DEFAULT_LEVEL_CHANNEL_ID},${SECOND_ROOM}`;
+        const client = setup({ [getInviteRecordKey(SCOPE, MEMBER)]: pending(), ...chatted(NEEDED - 1) });
+        client.channels.cache.set(SECOND_ROOM, room(SECOND_ROOM, SCOPE));
+        client.guilds.cache.set(SCOPE, { ...fakeGuild({ present: [INVITER] }), id: SCOPE });
+        assert.deepEqual(trackedGuildIds(client), new Set([GUILD, SCOPE]));
+        // Level 5 and 49 messages in this server.
+        await handleLevelUpMessage(levelUp(client), { now: T0 });
+        assert.equal(await balance(client, INVITER), 0);
+        // The member's messages in the other server count there only, and another member's nowhere.
+        await chatMessages(client, 1, 5, { guildId: SCOPE });
+        assert.deepEqual(await chatMessages(client, 6, 8, { author: OTHER }), [false, false, false]);
+        assert.deepEqual([await chatCount(client, SCOPE, MEMBER), await chatCount(client, GUILD, MEMBER), await chatCount(client, GUILD, OTHER)], [5, NEEDED - 1, 0]);
+        assert.equal(await balance(client, INVITER), 0);
+        // One more here: paid here, announced in this server's level room; the other server's gift still waits.
+        await chatMessages(client, 9, 9);
+        assert.equal(await balance(client, INVITER), AMOUNT);
+        assert.deepEqual([levelRoom(client).sent.length, client.channels.cache.get(SECOND_ROOM).sent.length], [1, 0]);
+        assert.deepEqual([client.db.store.get(getInviteRecordKey(SCOPE, MEMBER)).status, client.db.store.get(getInviteRecordKey(SCOPE, MEMBER)).level], ['pending', undefined]);
     });
 });

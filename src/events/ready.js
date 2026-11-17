@@ -9,6 +9,7 @@ import { refreshGuildEmojis } from '../config/emojis.js';
 import { recoverCasinoGames } from '../services/cc/casinoSessions.js';
 import { recoverGroupGames } from '../services/cc/casinoGroupSessions.js';
 import { startInviteTracking } from '../services/cc/inviteTracker.js';
+import { startWelcome } from '../services/welcomeService.js';
 export default {
     name: 'clientReady', once: true,
     async execute(client) {
@@ -36,6 +37,8 @@ export default {
         // The invite gift: every invite's use count in the level room's server, to tell which one a new member used.
         const invites = await startInviteTracking(client);
         if (invites.status !== 'disabled') logger.info(`[INVITES] Tracking: ${invites.status} (${invites.read}/${invites.guilds} servers read)`);
+        // The welcome of every server (src/services/welcomeService.js): the intent check and the bot's own wave emoji.
+        void startWelcome(client).then((welcome) => { if (welcome.status === 'ok') logger.info(`[WELCOME] On, waving with ${welcome.emoji}`); });
         for (const guild of managedGuilds(client)) {
             try { logger.info(`Trader role in ${guild.id}: ${(await ensureTraderRole(client, guild)).status}`); }
             catch (error) { logger.warn(`Trader setup failed in ${guild.id}`, error.code || error.message); }

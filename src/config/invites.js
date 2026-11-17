@@ -1,10 +1,13 @@
 // invites.js — the invite gift (CC.inviteReward in src/config/cc.js: 5000 CC to the inviter once the invited member
-// reaches level 5). Who joined through whose invite is tracked by src/services/cc/inviteTracker.js; the level bot's
-// announcement that pays is read by src/services/cc/inviteRewardService.js.
+// reaches level 5 and wrote 50 chat messages in the server). Who joined through whose invite is tracked by
+// src/services/cc/inviteTracker.js; the level bot's announcement and the messages that pay are read by
+// src/services/cc/inviteRewardService.js (the messages counted by src/services/cc/chatCounter.js).
 // - LEVEL_BOT_IDS: the level bot's user ID(s), comma-separated. Empty or unset = DEFAULT_LEVEL_BOT_ID.
 // - LEVEL_CHANNEL_IDS: the room(s) where it announces level-ups, comma-separated. Empty or unset =
-//   DEFAULT_LEVEL_CHANNEL_ID. Invites are tracked only in the servers of these rooms.
-// - INVITE_REWARD_ENABLED=false turns the whole feature off (no invite tracking, no extra gateway intents).
+//   DEFAULT_LEVEL_CHANNEL_ID. Invites are tracked (and messages counted) only in the servers of these rooms: a
+//   server gets the gift when its level room is listed here.
+// - INVITE_REWARD_ENABLED: the whole feature is off unless `true` (no invite tracking, no message counting, no
+//   GuildInvites intent, no invite notice under the welcome). The welcome has its own switch (src/config/welcome.js).
 // The bot needs Manage Server in those servers to read the invites (missing: a warning, and no inviter is known),
 // and the Server Members Intent switched on in the developer portal to see members join (src/app.js asks Discord
 // whether it is on before it logs in, so a missing switch never stops the bot).
