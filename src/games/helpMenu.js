@@ -42,7 +42,8 @@ export const INVITE_PERMISSIONS = [
     PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AddReactions, PermissionFlagsBits.UseExternalEmojis,
 ].reduce((sum, bit) => sum | bit, 0n);
 
-// The two-player and group games planned in docs/GAMES_PLAN.md (phases 3-5): shown as `قريبا` until they exist.
+// The two-player and group games planned in docs/GAMES_PLAN.md (phases 3-5): shown as `قريبا` until they exist
+// (a planned word that is now a game of that kind, `xo` `حجره` `توصيل`, is listed with the games instead).
 const PLANNED = {
     dual: ['xo', 'حجره', 'توصيل', 'شطرنج'],
     group: ['فعالية', 'تصويت', 'كراسي', 'سباق', 'لغم', 'غميضة', 'خداع', 'ريبلكا', 'منتجات', 'دول', 'مافيا', 'بومب', 'سلسلة', 'الجاسوس', 'بحث', 'كلمات', 'كروت', 'شفرة', 'كودنيمز'],
@@ -94,7 +95,7 @@ const TEXT = {
         },
         kind: {
             single: { title: '🎯 الالعاب الفردية', how: '⚡ البوت بيسأل والأول اللي يجاوب صح يكسب.', pays: `💰 كل إجابة صح: **${number(CC.gamesBot.answer)}** ${CC.short} + نقطة ・ أقصى **${number(CC.gamesBot.dailyCap)}** ${CC.short} في اليوم من الألعاب الفردية والتحويل.` },
-            dual: { title: '⚔️ الالعاب الثنائية', how: '🤝 لاعب قصاد لاعب.', pays: `💰 الفايز: **${number(CC.gamesBot.answer)}** ${CC.short} + نقطة (من نفس حد الـ **${number(CC.gamesBot.dailyCap)}** ${CC.short} في اليوم).` },
+            dual: { title: '⚔️ الالعاب الثنائية', how: '🤝 لاعب قصاد لاعب: صاحب التحدي بيبدأ، والتاني يدخل بزرار ✅، وكل حركة ليها وقت ولو خلص بتخسر.', pays: `💰 الفايز: **${number(CC.gamesBot.answer)}** ${CC.short} + نقطة (من نفس حد الـ **${number(CC.gamesBot.dailyCap)}** ${CC.short} في اليوم).` },
             group: { title: '👥 الالعاب الجماعية', how: '🚪 اللعبة بتفتح لوبي ولازم يدخل أقل عدد لاعبين قبل ما تبدأ.', pays: `💰 الفايز: **${number(CC.gamesBot.win)}** ${CC.short} + ${GAMES.points.group} نقاط، من غير حد في اليوم.` },
         },
         games: '🎮 الألعاب',
@@ -154,7 +155,7 @@ const TEXT = {
         },
         kind: {
             single: { title: '🎯 Single games', how: '⚡ The bot asks, the first right answer wins.', pays: `💰 Each right answer: **${number(CC.gamesBot.answer)}** ${CC.short} + 1 point ・ at most **${number(CC.gamesBot.dailyCap)}** ${CC.short} a day from single games and conversions.` },
-            dual: { title: '⚔️ Two-player games', how: '🤝 One player against another.', pays: `💰 The winner: **${number(CC.gamesBot.answer)}** ${CC.short} + 1 point (within the same **${number(CC.gamesBot.dailyCap)}** ${CC.short} a day).` },
+            dual: { title: '⚔️ Two-player games', how: '🤝 One player against another: the challenger starts, the other joins with ✅, every move has a timer and running out loses.', pays: `💰 The winner: **${number(CC.gamesBot.answer)}** ${CC.short} + 1 point (within the same **${number(CC.gamesBot.dailyCap)}** ${CC.short} a day).` },
             group: { title: '👥 Group games', how: '🚪 The game opens a lobby and needs a minimum of players to start.', pays: `💰 The winner: **${number(CC.gamesBot.win)}** ${CC.short} + ${GAMES.points.group} points, no daily limit.` },
         },
         games: '🎮 Games',

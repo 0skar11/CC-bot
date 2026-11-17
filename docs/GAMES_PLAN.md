@@ -6,7 +6,7 @@ Goal: CC-bot runs every game itself (Arabic and English words), pays CC from its
 
 | Topic | Decision |
 |---|---|
-| Rewards | First correct answer (single and dual games) 500 CC, at most 20,000 CC per member per UTC day from answers and points conversions together (one cap shared with Clover, in `CC.gamesBot`). Group win 2,000 CC with no limit: never trimmed by the cap and not counted in it. |
+| Rewards | First correct answer (single games) and a two-player (dual) win (`GAMES.duel.winKind = 'answer'`, so two friends cannot farm past the cap) 500 CC, at most 20,000 CC per member per UTC day from answers and points conversions together (one cap shared with Clover, in `CC.gamesBot`). Group win 2,000 CC with no limit: never trimmed by the cap and not counted in it. |
 | Points (نقاط) | Every win adds points (answer 1, group win 5) kept per server and per member. `توب` = this server, `عالمي` = all servers CC-bot serves. `convert` turns points into CC. |
 | Coins | Coins are CC. `transfer` is the existing `تحويل`. |
 | Premium | No premium tier: the games marked premium are free for everyone. |
@@ -36,7 +36,7 @@ src/games/
 0. **Foundation**: registry, session, round, lobby, rewards, points, admin, text matching, typed-command routing, help menu, tests.
 1. **Text games, single**: اسرع، فكك، حروف، حرف، جمع، مفرد، ضد، رياضيات، عكس، ارقام، ترجم، رتب، عد، سؤال، لغز، كت، اعلام. **General**: اوامر، توب، عالمي، نقاط، convert.
 2. **Picture games, single**: خريطة، تمويه، شعار، لاعب، نادي.
-3. **Two players**: xo، حجره، توصيل، شطرنج.
+3. **Two players**: xo، حجره، توصيل، شطرنج. Built: `xo` (`.اكس` / `.xo`), `حجره` (`.rps`), `توصيل` (`.connect`) on engine/duel.js: the challenger opens a lobby of two (`GAMES.duel.joinSeconds`), the first to join plays, the challenger moves first, board buttons `g:duel:<boardId>:<move>` (and the connect-four column select) answer only the two players (only the player whose turn it is; حجره picks are hidden, answered privately), every move (every حجره round) has `GAMES.duel.moveSeconds` with the countdown line, running out forfeits, the win is paid once like a right answer (500 CC + 1 point, counted in the daily cap; at the cap the win line shows the limit notice) and shown with `announceWin` (play-again). Chess is still to come.
 4. **Group core**: فعالية، تصويت، روليت، كراسي، سباق، لغم، غميضة، xo/حجره/توصيل (bracket), خداع، ريبلكا، منتجات، دول، مافيا.
 5. **Group, premium list**: بومب، سلسلة، الجاسوس، بحث، كلمات، كروت، شفرة، كودنيمز.
 6. **Single, premium list**: ايموجي، ثعبان، متشابهات، زر، الوان، 2048. **Store**: store/shop, gift, transfer.

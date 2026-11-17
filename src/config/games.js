@@ -31,6 +31,14 @@ export const GAMES = {
     // Join lobbies (dual and group games): defaults when a game gives none. The time left is a live Discord
     // countdown (`<t:UNIX:R>`, src/games/engine/countdown.js), so the lobby message is never edited just for it.
     lobby: { joinSeconds: 60, minPlayers: 2, maxPlayers: 25 },
+    // Two-player board games (kind 'dual': xo, حجره, توصيل; src/games/engine/duel.js): the opponent joins within
+    // `joinSeconds`, each move (each round of حجره) has `moveSeconds`, and a player whose time runs out forfeits.
+    // `winKind`: how a dual win is paid: like a single game's right answer (rewardWin 'answer': rewards.answer =
+    // 500 CC + GAMES.points.answer, counted in and trimmed by rewards.dailyCap), so two friends playing each other
+    // over and over cannot farm more than the daily cap. At the cap the winner still gets the win line, with the
+    // limit notice instead of the CC (engine/rewards.js winPayload, like the single games).
+    // `rpsWins`: round wins of حجره that take the match (best of 3); `rpsMaxRounds`: tied rounds stop there.
+    duel: { joinSeconds: 60, moveSeconds: 30, winKind: 'answer', rpsWins: 2, rpsMaxRounds: 9 },
     // A room is never held longer than this, whatever a game does.
     maxLifetimeMs: 30 * 60_000,
     // The same short notice (not an admin, a game is running) is sent to one member at most this often.
