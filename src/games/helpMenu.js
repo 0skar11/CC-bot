@@ -96,7 +96,7 @@ const TEXT = {
         },
         kind: {
             single: { title: '🎯 الالعاب الفردية', how: '⚡ البوت بيسأل والأول اللي يجاوب صح يكسب.', pays: `💰 كل إجابة صح: **${number(CC.gamesBot.answer)}** ${CC.short} + نقطة ・ أقصى **${number(CC.gamesBot.dailyCap)}** ${CC.short} في اليوم من الألعاب الفردية والتحويل.` },
-            dual: { title: '⚔️ الالعاب الثنائية', how: '🤝 لاعب قصاد لاعب: صاحب التحدي بيبدأ، والتاني يدخل بزرار ✅، وكل حركة ليها وقت ولو خلص بتخسر.', pays: `💰 الفايز: **${number(CC.gamesBot.answer)}** ${CC.short} + نقطة (من نفس حد الـ **${number(CC.gamesBot.dailyCap)}** ${CC.short} في اليوم).` },
+            dual: { title: '⚔️ الالعاب الثنائية', how: '🤝 لاعب قصاد لاعب: صاحب التحدي بيبدأ، والتاني يدخل بزرار ✅، وكل حركة ليها وقت ولو خلص بتخسر.', pays: `💰 الفايز: **${number(CC.gamesBot.win)}** ${CC.short} + ${GAMES.points.group} نقاط، من غير حد في اليوم.` },
             group: { title: '👥 الالعاب الجماعية', how: '🚪 اللعبة بتفتح لوبي ولازم يدخل أقل عدد لاعبين قبل ما تبدأ.', pays: `💰 الفايز: **${number(CC.gamesBot.win)}** ${CC.short} + ${GAMES.points.group} نقاط، من غير حد في اليوم.` },
         },
         games: '🎮 الألعاب',
@@ -157,7 +157,7 @@ const TEXT = {
         },
         kind: {
             single: { title: '🎯 Single games', how: '⚡ The bot asks, the first right answer wins.', pays: `💰 Each right answer: **${number(CC.gamesBot.answer)}** ${CC.short} + 1 point ・ at most **${number(CC.gamesBot.dailyCap)}** ${CC.short} a day from single games and conversions.` },
-            dual: { title: '⚔️ Two-player games', how: '🤝 One player against another: the challenger starts, the other joins with ✅, every move has a timer and running out loses.', pays: `💰 The winner: **${number(CC.gamesBot.answer)}** ${CC.short} + 1 point (within the same **${number(CC.gamesBot.dailyCap)}** ${CC.short} a day).` },
+            dual: { title: '⚔️ Two-player games', how: '🤝 One player against another: the challenger starts, the other joins with ✅, every move has a timer and running out loses.', pays: `💰 The winner: **${number(CC.gamesBot.win)}** ${CC.short} + ${GAMES.points.group} points, no daily limit.` },
             group: { title: '👥 Group games', how: '🚪 The game opens a lobby and needs a minimum of players to start.', pays: `💰 The winner: **${number(CC.gamesBot.win)}** ${CC.short} + ${GAMES.points.group} points, no daily limit.` },
         },
         games: '🎮 Games',
@@ -272,7 +272,8 @@ function categoryFields(category, lang, guildId) {
     }
     if (PLAY_KINDS.includes(category)) {
         const kind = text.kind[category];
-        const games = listGames({ kind: category }).map((game) => describeGame(game, lang));
+        // Games for event hosts only (the `تجربة` sample, report #295) are listed on the admin page, not with the games.
+        const games = startableGames(category).map((game) => describeGame(game, lang));
         const planned = (PLANNED[category] || []).filter((word) => findGame(word)?.kind !== category);
         const fields = [...fieldsOf(`${KIND_EMOJI[category]} ${text.games}`, games)];
         if (planned.length) fields.push({ name: text.soon, value: planned.map((word) => `\`${word}\``).join(' ・ ').slice(0, 1024) });

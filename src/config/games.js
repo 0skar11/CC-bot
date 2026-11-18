@@ -33,12 +33,11 @@ export const GAMES = {
     lobby: { joinSeconds: 60, minPlayers: 2, maxPlayers: 25 },
     // Two-player board games (kind 'dual': xo, حجره, توصيل; src/games/engine/duel.js): the opponent joins within
     // `joinSeconds`, each move (each round of حجره) has `moveSeconds`, and a player whose time runs out forfeits.
-    // `winKind`: how a dual win is paid: like a single game's right answer (rewardWin 'answer': rewards.answer =
-    // 500 CC + GAMES.points.answer, counted in and trimmed by rewards.dailyCap), so two friends playing each other
-    // over and over cannot farm more than the daily cap. At the cap the winner still gets the win line, with the
-    // limit notice instead of the CC (engine/rewards.js winPayload, like the single games).
+    // `winKind`: how a dual win is paid: like a group win (rewardWin 'group': rewards.win = 2,000 CC + GAMES.points.group,
+    // never trimmed by the daily cap and not counted in it). Owner's order (2026-11-17, report #288). Two friends playing
+    // each other can farm this: set 'answer' (500 CC, counted in the cap) to stop that.
     // `rpsWins`: round wins of حجره that take the match (best of 3); `rpsMaxRounds`: tied rounds stop there.
-    duel: { joinSeconds: 60, moveSeconds: 30, winKind: 'answer', rpsWins: 2, rpsMaxRounds: 9 },
+    duel: { joinSeconds: 60, moveSeconds: 30, winKind: 'group', rpsWins: 2, rpsMaxRounds: 9 },
     // A room is never held longer than this, whatever a game does.
     maxLifetimeMs: 30 * 60_000,
     // The same short notice (not an admin, a game is running) is sent to one member at most this often.

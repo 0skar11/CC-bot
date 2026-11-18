@@ -6,7 +6,7 @@ Goal: CC-bot runs every game itself (Arabic and English words), pays CC from its
 
 | Topic | Decision |
 |---|---|
-| Rewards | First correct answer (single games) and a two-player (dual) win (`GAMES.duel.winKind = 'answer'`, so two friends cannot farm past the cap) 500 CC, at most 20,000 CC per member per UTC day from answers and points conversions together (one cap shared with Clover, in `CC.gamesBot`). Group win 2,000 CC with no limit: never trimmed by the cap and not counted in it. |
+| Rewards | First correct answer (single games) and 500 CC, at most 20,000 CC per member per UTC day from answers and points conversions together (one cap shared with Clover, in `CC.gamesBot`). Group win and two-player (dual) win (`GAMES.duel.winKind = 'group'`, owner's order, report #288) 2,000 CC with no limit: never trimmed by the cap and not counted in it. |
 | Points (نقاط) | Every win adds points (answer 1, group win 5) kept per server and per member. `توب` = this server, `عالمي` = all servers CC-bot serves. `convert` turns points into CC. |
 | Coins | Coins are CC. `transfer` is the existing `تحويل`. |
 | Premium | No premium tier: the games marked premium are free for everyone. |

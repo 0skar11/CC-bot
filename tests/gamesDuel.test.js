@@ -135,7 +135,7 @@ test('the three dual games are registered with their words, no clash, and listed
         const embed = payload.embeds[0];
         const all = [embed.title, embed.description, ...(embed.fields || []).flatMap((field) => [field.name, field.value])].join('\n');
         for (const word of ['.xo', '.اكس', '.حجره', '.rps', '.توصيل', '.connect']) assert.ok(all.includes(`\`${word}\``), `${lang}: ${word}`);
-        assert.match(all, /\*\*500\*\* CC[\s\S]*\*\*20,000\*\* CC/u, 'a dual win pays a right answer, within the daily cap');
+        assert.match(all, /\*\*2,000\*\* CC/u, 'a dual win pays like a group win (2,000, no daily limit)');
         assert.ok(!/`xo` ・|`حجره` ・|`توصيل` ・/u.test(all), 'no longer "coming soon"');
         assert.ok(all.includes('`شطرنج`'), 'chess stays planned');
         const options = json(payload).flatMap((row) => row.components).filter((part) => part.custom_id === 'g:help:t:play:0').flatMap((select) => select.options);
@@ -145,7 +145,7 @@ test('the three dual games are registered with their words, no clash, and listed
 
 // ─── xo: state machine, only the players, turns, win, reward once ───
 
-test('xo: challenger is ❌ and starts, only the players press, only on their turn; a line wins 500 once with play-again', async () => {
+test('xo: challenger is ❌ and starts, only the players press, only on their turn; a line wins 2000 once with play-again', async () => {
     const room = await start('اكس');
     assert.ok(room.board, 'the board is posted once the opponent joins');
     assert.equal(customIds(room.board.payload).length, 9);
@@ -163,40 +163,30 @@ test('xo: challenger is ❌ and starts, only the players press, only on their tu
     const winning = await move(room, ALICE, 2);
     assert.ok(json(winning.updates[0]).flatMap((row) => row.components).every((button) => button.disabled), 'the final board is locked');
     assert.match(winning.updates[0].content, new RegExp(`🏆 <@${ALICE.id}>`, 'u'));
-    assert.equal(await balance(room.client, ALICE.id), CC.gamesBot.answer);
+    assert.equal(await balance(room.client, ALICE.id), CC.gamesBot.win);
     assert.equal(await balance(room.client, BOB.id), 0);
     const win = winLine(room);
     assert.ok(win, 'the win is announced');
     assert.deepEqual(win.allowedMentions, { users: [ALICE.id] });
     assert.ok(customIds(win).includes('g:again:xo'), 'with play-again');
-    assert.match(win.content, /كسب اللعبة! \+\*\*500\*\* 🌀 CC/u);
-    assert.equal((await room.client.db.get(getEconomyKey(economyScopeId, ALICE.id))).ccGamesBot.earned, CC.gamesBot.answer, 'counted in the daily cap');
+    assert.match(win.content, /كسب اللعبة! \+\*\*2,000\*\* 🌀 CC/u);
+    assert.ok(!(await room.client.db.get(getEconomyKey(economyScopeId, ALICE.id))).ccGamesBot?.earned, 'a group-kind win is not counted in the daily cap');
     // Late presses do nothing and pay nothing.
     assert.match((await move(room, BOB, 8)).replies[0].content, /خلصت/u);
-    assert.equal(await balance(room.client, ALICE.id), CC.gamesBot.answer, 'paid once');
-    assert.equal((await room.client.db.get(getEconomyKey(economyScopeId, ALICE.id))).ccGamesBot.earned, CC.gamesBot.answer, 'counted once');
+    assert.equal(await balance(room.client, ALICE.id), CC.gamesBot.win, 'paid once');
+    assert.ok(!(await room.client.db.get(getEconomyKey(economyScopeId, ALICE.id))).ccGamesBot?.earned, 'still not counted');
     assert.equal(isBusy(room.channel.id), false, 'the room is free');
     assert.equal(openBoards().length, 0);
 });
 
-test('a dual win at the daily cap pays no CC: the winner still gets the win line with the limit notice and play-again', async () => {
+test('a dual win is not trimmed by the daily cap (it pays like a group win, owner report #288)', async () => {
     const room = await start('اكس');
     const today = new Date().toISOString().slice(0, 10);
-    await room.client.db.set(getEconomyKey(economyScopeId, ALICE.id), { cc: 0, ccGamesBot: { day: today, earned: CC.gamesBot.dailyCap - 100 } });
+    await room.client.db.set(getEconomyKey(economyScopeId, ALICE.id), { cc: 0, ccGamesBot: { day: today, earned: CC.gamesBot.dailyCap } });
     for (const [user, cell] of [[ALICE, 0], [BOB, 3], [ALICE, 1], [BOB, 4], [ALICE, 2]]) await move(room, user, cell);
-    assert.equal(await balance(room.client, ALICE.id), 100, 'trimmed to what is left of the cap');
-    const near = winLine(room);
-    assert.match(near.content, /كسب اللعبة! \+\*\*100\*\* 🌀 CC/u);
-
-    const capped = await start('اكس');
-    await capped.client.db.set(getEconomyKey(economyScopeId, ALICE.id), { cc: 0, ccGamesBot: { day: today, earned: CC.gamesBot.dailyCap } });
-    for (const [user, cell] of [[ALICE, 0], [BOB, 3], [ALICE, 1], [BOB, 4], [ALICE, 2]]) await move(capped, user, cell);
-    assert.equal(await balance(capped.client, ALICE.id), 0, 'no CC past the cap');
-    const line = winLine(capped);
-    assert.ok(line, 'the win is still announced');
-    assert.match(line.content, new RegExp(`<@${ALICE.id}> كسب اللعبة![\\s\\S]*وصلت لحد الـ CC من الألعاب النهارده`, 'u'));
-    assert.ok(customIds(line).includes('g:again:xo'));
-    assert.equal((await capped.client.db.get(getEconomyKey(economyScopeId, ALICE.id))).ccGamesBot.earned, CC.gamesBot.dailyCap);
+    assert.equal(await balance(room.client, ALICE.id), CC.gamesBot.win, 'the full win even when the cap is reached');
+    assert.match(winLine(room).content, /كسب اللعبة! \+\*\*2,000\*\* 🌀 CC/u);
+    assert.equal((await room.client.db.get(getEconomyKey(economyScopeId, ALICE.id))).ccGamesBot.earned, CC.gamesBot.dailyCap, 'the cap counter is untouched');
 });
 
 test('xo: a full board without a line is a draw: no reward, a draw line with play-again', async () => {
@@ -216,10 +206,10 @@ test('xo: the player whose time runs out forfeits, the other wins once', async (
     await room.clock.advance(GAMES.duel.moveSeconds * 1000 + 10);
     const last = lastBoard(room);
     assert.match(last.content, new RegExp(`<@${BOB.id}> وقته خلص`, 'u'));
-    assert.equal(await balance(room.client, ALICE.id), CC.gamesBot.answer);
+    assert.equal(await balance(room.client, ALICE.id), CC.gamesBot.win);
     assert.equal(await balance(room.client, BOB.id), 0);
     await room.clock.advance(GAMES.duel.moveSeconds * 1000 * 3);
-    assert.equal(await balance(room.client, ALICE.id), CC.gamesBot.answer, 'paid once');
+    assert.equal(await balance(room.client, ALICE.id), CC.gamesBot.win, 'paid once');
     assert.equal(isBusy(room.channel.id), false);
 });
 
@@ -249,7 +239,7 @@ test('a member who is not trusted starts a dual game only in the open channel', 
 
 // ─── connect four ───
 
-test('connect four: buttons and the select drop discs, a full column is refused, four in a row wins 500 once', async () => {
+test('connect four: buttons and the select drop discs, a full column is refused, four in a row wins 2000 once', async () => {
     const room = await start('توصيل');
     assert.equal(customIds(room.board.payload).filter((id) => /:[0-6]$/u.test(id)).length, 7);
     assert.ok(customIds(room.board.payload).some((id) => id.endsWith(':col')), 'the column select');
@@ -273,15 +263,15 @@ test('connect four: buttons and the select drop discs, a full column is refused,
     const winning = await move(room, ALICE, 3);
     assert.match(winning.updates[0].content, new RegExp(`🏆 <@${ALICE.id}>`, 'u'));
     assert.ok(!customIds(winning.updates[0]).some((id) => id.endsWith(':col')), 'the select goes away');
-    assert.equal(await balance(room.client, ALICE.id), CC.gamesBot.answer);
+    assert.equal(await balance(room.client, ALICE.id), CC.gamesBot.win);
     assert.ok(customIds(winLine(room)).includes('g:again:connect'));
     await move(room, BOB, 4);
-    assert.equal(await balance(room.client, ALICE.id), CC.gamesBot.answer, 'paid once');
+    assert.equal(await balance(room.client, ALICE.id), CC.gamesBot.win, 'paid once');
 });
 
 // ─── rock paper scissors ───
 
-test('rps: picks are hidden (private replies), the round shows once both picked, best of 3 wins 500 once', async () => {
+test('rps: picks are hidden (private replies), the round shows once both picked, best of 3 wins 2000 once', async () => {
     const room = await start('حجره');
     assert.deepEqual(customIds(room.board.payload).map((id) => id.split(':')[3]), ['rock', 'paper', 'scissors']);
     assert.match((await move(room, CAROL, 'rock')).replies[0].content, /اللاعبين الاتنين بس/u);
@@ -301,10 +291,10 @@ test('rps: picks are hidden (private replies), the round shows once both picked,
     await move(room, ALICE, 'scissors');
     await move(room, BOB, 'paper');
     assert.match(lastBoard(room).content, new RegExp(`🏆 <@${ALICE.id}>`, 'u'));
-    assert.equal(await balance(room.client, ALICE.id), CC.gamesBot.answer);
+    assert.equal(await balance(room.client, ALICE.id), CC.gamesBot.win);
     assert.ok(customIds(winLine(room)).includes('g:again:rps'));
     await move(room, BOB, 'rock');
-    assert.equal(await balance(room.client, ALICE.id), CC.gamesBot.answer, 'paid once');
+    assert.equal(await balance(room.client, ALICE.id), CC.gamesBot.win, 'paid once');
 });
 
 test('rps: the player who did not pick in time forfeits; nobody picking ends it without a reward', async () => {
@@ -312,7 +302,7 @@ test('rps: the player who did not pick in time forfeits; nobody picking ends it 
     await move(room, BOB, 'rock');
     await room.clock.advance(GAMES.duel.moveSeconds * 1000 + 10);
     assert.match(lastBoard(room).content, new RegExp(`<@${ALICE.id}> وقته خلص`, 'u'));
-    assert.equal(await balance(room.client, BOB.id), CC.gamesBot.answer);
+    assert.equal(await balance(room.client, BOB.id), CC.gamesBot.win);
     assert.equal(await balance(room.client, ALICE.id), 0);
 
     const idle = await start('حجره');

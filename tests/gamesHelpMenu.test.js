@@ -116,7 +116,8 @@ test('the categories: games from the registry with their words and pay, `قري�
     const embed = (category, lang = 'ar') => helpMenuPayload({ token: 't', lang, category, user: ALICE }).embeds[0];
     const all = (e) => [e.title, e.description, ...(e.fields || []).flatMap((field) => [field.name, field.value])].join('\n');
     const single = all(embed('single'));
-    for (const game of listGames({ kind: 'single' })) assert.ok(single.includes(`\`.${game.names.ar[0]}\``), game.id);
+    for (const game of startableGames('single')) assert.ok(single.includes(`\`.${game.names.ar[0]}\``), game.id);
+    assert.ok(!single.includes('`.تجربة`'), 'the host-only sample game is not listed with the games (report #295)');
     assert.match(single, /`\.سؤال` `\.quiz`/u);
     assert.match(single, /\*\*500\*\* CC[\s\S]*\*\*20,000\*\* CC/u);
     assert.match(all(embed('group')), /\*\*2,000\*\* CC/u);
