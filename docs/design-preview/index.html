@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>معرض تصاميم ألعاب CC-Bot — المقارنة الشاملة (Before vs After)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Tajawal', sans-serif;
+      background-color: #1e1f22;
+      color: #dbdee1;
+    }
+    .discord-chat {
+      background-color: #313338;
+    }
+    .discord-embed {
+      background-color: #2b2d31;
+      border-right: 4px solid #5865F2;
+    }
+    .discord-btn-primary { background-color: #5865F2; }
+    .discord-btn-primary:hover { background-color: #4752c4; }
+    .discord-btn-secondary { background-color: #4e5058; }
+    .discord-btn-secondary:hover { background-color: #6d6f78; }
+    .discord-btn-success { background-color: #248046; }
+    .discord-btn-success:hover { background-color: #1a6334; }
+    .discord-btn-danger { background-color: #da373c; }
+    .discord-btn-danger:hover { background-color: #a1282c; }
+  </style>
+</head>
+<body class="min-h-screen pb-16">
+
+  <!-- Top Navigation & Header -->
+  <header class="bg-[#2b2d31] border-b border-[#1f2023] px-6 py-4 sticky top-0 z-50 shadow-md">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <span class="text-3xl">🎮</span>
+        <div>
+          <h1 class="text-xl font-black text-white">معرض تحسين وتطوير أشكال الألعاب — CC-Bot</h1>
+          <p class="text-xs text-[#949ba4]">مقارنة حية تفاعلية بين التصميم الحالي (Before) والتصميم الجديد المقترح (After)</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs px-3 py-1.5 rounded-full font-bold">
+          ✓ جاهز للعرض والاعتماد
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Category Filter Bar -->
+  <nav class="max-w-7xl mx-auto px-6 py-4">
+    <div class="flex flex-wrap gap-2 border-b border-[#2b2d31] pb-4" id="navTabs">
+      <button onclick="filterCategory('all')" class="tab-btn px-4 py-2 rounded-lg text-sm font-bold bg-[#5865F2] text-white transition">🌟 عرض الكل</button>
+      <button onclick="filterCategory('menu')" class="tab-btn px-4 py-2 rounded-lg text-sm font-bold bg-[#2b2d31] text-[#949ba4] hover:text-white transition">📋 قائمة المساعدة (Help Menu)</button>
+      <button onclick="filterCategory('single')" class="tab-btn px-4 py-2 rounded-lg text-sm font-bold bg-[#2b2d31] text-[#949ba4] hover:text-white transition">🎯 الألعاب الفردية وكروت الصور</button>
+      <button onclick="filterCategory('dual')" class="tab-btn px-4 py-2 rounded-lg text-sm font-bold bg-[#2b2d31] text-[#949ba4] hover:text-white transition">⚔️ الألعاب الثنائية (XO والتوصيل)</button>
+      <button onclick="filterCategory('group')" class="tab-btn px-4 py-2 rounded-lg text-sm font-bold bg-[#2b2d31] text-[#949ba4] hover:text-white transition">👥 الألعاب الجماعية (كراسي ومافيا)</button>
+      <button onclick="filterCategory('casino')" class="tab-btn px-4 py-2 rounded-lg text-sm font-bold bg-[#2b2d31] text-[#949ba4] hover:text-white transition">🏇 سباق الخيول والكازينو</button>
+    </div>
+  </nav>
+
+  <!-- Main Content Container -->
+  <main class="max-w-7xl mx-auto px-6 space-y-12">
+
+    <!-- SURFACE 1: FANTASY HORSE RACING -->
+    <section class="surface-card bg-[#2b2d31] rounded-2xl p-6 border border-[#383a40]" data-category="casino">
+      <div class="flex items-center justify-between pb-4 border-b border-[#383a40] mb-6">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-2xl">🏇</span>
+            <h2 class="text-xl font-black text-amber-400">سباق الخيول الأسطوري (Fantasy Horse Racing)</h2>
+          </div>
+          <p class="text-xs text-[#949ba4] mt-1">تطوير شامل لشاشة السباق مع 6 خيول فانتسي، مضمار تفاعلي، وجدول نسب فوز دقيق 100% رياضياً.</p>
+        </div>
+        <span class="bg-amber-400/10 text-amber-300 text-xs px-3 py-1 rounded-full font-bold">كازينو & حظ</span>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Before -->
+        <div class="bg-[#1e1f22] p-4 rounded-xl border border-[#383a40]">
+          <div class="flex items-center justify-between pb-3 mb-3 border-b border-[#2b2d31]">
+            <span class="text-xs font-bold text-red-400">❌ قبل (الشكل الحالي)</span>
+            <span class="text-[11px] text-[#949ba4]">رسالة إمبيد نصية فقط بدون صورة للمضمار</span>
+          </div>
+          <div class="rounded-lg overflow-hidden border border-[#383a40] mb-3">
+            <img src="before/casino-horses.png" alt="Before Horses" class="w-full object-cover">
+          </div>
+          <p class="text-xs text-[#949ba4] leading-relaxed">
+            • قائمة نصية جافة في الإمبيد بدون أي تمثيل بصري للمضمار.<br>
+            • غياب شكل الخيول وحركتها أثناء السباق.<br>
+            • كانت ناقصة في قائمة الألعاب والكازينو الرئيسية.
+          </p>
+        </div>
+
+        <!-- After -->
+        <div class="bg-[#1e1f22] p-4 rounded-xl border-2 border-amber-500/40">
+          <div class="flex items-center justify-between pb-3 mb-3 border-b border-[#2b2d31]">
+            <span class="text-xs font-bold text-emerald-400">✅ بعد (التصميم المقترح الجديد)</span>
+            <span class="text-[11px] text-amber-300">مضمار ملون بتقنية SVG/Sharp عالي الدقة</span>
+          </div>
+          <div class="rounded-lg overflow-hidden border border-amber-500/30 mb-3 shadow-lg">
+            <img src="after/casino-horses.png" alt="After Horses" class="w-full object-cover">
+          </div>
+          <div class="space-y-2 text-xs text-[#dbdee1]">
+            <div class="p-2.5 bg-[#2b2d31] rounded-lg border-r-4 border-amber-400">
+              <span class="font-bold text-amber-300">🏇 6 خيول فانتسي بهويات بصرية أصلية:</span>
+              <div class="grid grid-cols-2 gap-1 mt-1 text-[11px]">
+                <span>⚡ 1. الرعد (×2.2)</span>
+                <span>🌩️ 2. البرق (×3.8)</span>
+                <span>🦅 3. الصقر (×6.5)</span>
+                <span>🐅 4. النمر (×12.0)</span>
+                <span>🌪️ 5. العاصفة (×20.0)</span>
+                <span>👻 6. الشبح (×38.0)</span>
+              </div>
+            </div>
+            <p class="text-emerald-400 text-[11px]">✓ تم إدراج اللعبة رسمياً في قائمة الألعاب (/games) وقائمة الكازينو مع زر اللعب من جديد.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SURFACE 2: SINGLE QUIZ CARDS -->
+    <section class="surface-card bg-[#2b2d31] rounded-2xl p-6 border border-[#383a40]" data-category="single">
+      <div class="flex items-center justify-between pb-4 border-b border-[#383a40] mb-6">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-2xl">🎯</span>
+            <h2 class="text-xl font-black text-emerald-400">كروت الأسئلة الفردية (Quiz Cards)</h2>
+          </div>
+          <p class="text-xs text-[#949ba4] mt-1">تحديث شكل بطاقة السؤال لتكون بستايل زمردي متناسق، خط تجوال عريض، وإطار مضيء واضح على الموبايل.</p>
+        </div>
+        <span class="bg-emerald-400/10 text-emerald-300 text-xs px-3 py-1 rounded-full font-bold">فردي</span>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Before -->
+        <div class="bg-[#1e1f22] p-4 rounded-xl border border-[#383a40]">
+          <div class="flex items-center justify-between pb-3 mb-3 border-b border-[#2b2d31]">
+            <span class="text-xs font-bold text-red-400">❌ قبل (الشكل الحالي)</span>
+            <span class="text-[11px] text-[#949ba4]">كارت بنفسجي قديم مع تشويش نقاط كثيف</span>
+          </div>
+          <div class="rounded-lg overflow-hidden border border-[#383a40] mb-3">
+            <img src="before/single-quiz.png" alt="Before Quiz" class="w-full object-cover">
+          </div>
+          <p class="text-xs text-[#949ba4] leading-relaxed">
+            • لون بنفسجي متكرر في كل الألعاب دون تمييز لنوع اللعبة.<br>
+            • غياب البادج العلوي الواضح لنوع السؤال.<br>
+            • الخط في بعض الأسئلة الطويلة يحتاج هوامش وتنفس أكبر.
+          </p>
+        </div>
+
+        <!-- After -->
+        <div class="bg-[#1e1f22] p-4 rounded-xl border-2 border-emerald-500/40">
+          <div class="flex items-center justify-between pb-3 mb-3 border-b border-[#2b2d31]">
+            <span class="text-xs font-bold text-emerald-400">✅ بعد (التصميم المقترح الجديد)</span>
+            <span class="text-[11px] text-emerald-300">كارت زمردي حديث متوافق مع شاشات الجوال</span>
+          </div>
+          <div class="rounded-lg overflow-hidden border border-emerald-500/30 mb-3 shadow-lg">
+            <img src="after/single-quiz.png" alt="After Quiz" class="w-full object-cover">
+          </div>
+          <div class="space-y-2 text-xs text-[#dbdee1]">
+            <p>• إطار مضيء بأركان تكنولوجية حديثة مع خلفية داكنة مريحة للعين.</p>
+            <p>• بادج علوي واضح <code class="bg-[#2b2d31] px-2 py-0.5 rounded text-emerald-300">🎯 سؤال ثقافي عام #14</code>.</p>
+            <p>• خط تجوال عربي عريض واضح جداً حتى على الشاشات الصغيرة مع شريط التايمر والجائزة بالأسفل.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SURFACE 3: DUAL 1v1 BOARDS (XO) -->
+    <section class="surface-card bg-[#2b2d31] rounded-2xl p-6 border border-[#383a40]" data-category="dual">
+      <div class="flex items-center justify-between pb-4 border-b border-[#383a40] mb-6">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-2xl">⚔️</span>
+            <h2 class="text-xl font-black text-sky-400">الألعاب الثنائية (XO & توصيل 4)</h2>
+          </div>
+          <p class="text-xs text-[#949ba4] mt-1">تمييز واضح لأزرار اللاعبين، إبراز خط الفوز الذهبي، وتايمر تنازلي مباشر على الديسكورد.</p>
+        </div>
+        <span class="bg-sky-400/10 text-sky-300 text-xs px-3 py-1 rounded-full font-bold">ثنائي 1v1</span>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Before -->
+        <div class="bg-[#1e1f22] p-4 rounded-xl border border-[#383a40]">
+          <div class="flex items-center justify-between pb-3 mb-3 border-b border-[#2b2d31]">
+            <span class="text-xs font-bold text-red-400">❌ قبل (الشكل الحالي)</span>
+            <span class="text-[11px] text-[#949ba4]">أزرار رمادية عادية دون تمييز لخط الفوز</span>
+          </div>
+          <div class="rounded-lg overflow-hidden border border-[#383a40] mb-3">
+            <img src="before/dual-xo.png" alt="Before XO" class="w-full object-cover">
+          </div>
+          <p class="text-xs text-[#949ba4] leading-relaxed">
+            • الأزرار تبدو رمادية خافتة عند انتهاء اللعبة.<br>
+            • لا يظهر للاعبين كيف تحقق الفوز بالضبط على اللوحة.<br>
+            • رسالة الدور غير بارزة في الشات المزدحم.
+          </p>
+        </div>
+
+        <!-- After -->
+        <div class="bg-[#1e1f22] p-4 rounded-xl border-2 border-sky-500/40">
+          <div class="flex items-center justify-between pb-3 mb-3 border-b border-[#2b2d31]">
+            <span class="text-xs font-bold text-emerald-400">✅ بعد (التصميم المقترح الجديد)</span>
+            <span class="text-[11px] text-sky-300">لوحة حيوية مع تمييز خط الفوز الذهبي</span>
+          </div>
+          <div class="rounded-lg overflow-hidden border border-sky-500/30 mb-3 shadow-lg">
+            <img src="after/dual-xo.png" alt="After XO" class="w-full object-cover">
+          </div>
+          <div class="space-y-2 text-xs text-[#dbdee1]">
+            <p>• أزرار ملونة واضحة: 🔴 لصاحب التحدي، 🔵 للمنافس.</p>
+            <p>• خط الفوز يظهر مضيئاً باللون الذهبي عند اكتمال 3 على صف أو خط مائل.</p>
+            <p>• زر <code class="bg-[#2b2d31] px-2 py-0.5 rounded text-sky-300">🔁 العب تاني</code> يظهر مباشرة أسفل النتيجة للتحدي الفوري.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SURFACE 4: CASINO MINES -->
+    <section class="surface-card bg-[#2b2d31] rounded-2xl p-6 border border-[#383a40]" data-category="casino">
+      <div class="flex items-center justify-between pb-4 border-b border-[#383a40] mb-6">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-2xl">💣</span>
+            <h2 class="text-xl font-black text-amber-400">كازينو الألغام (Mines 5x5)</h2>
+          </div>
+          <p class="text-xs text-[#949ba4] mt-1">واجهة بصرية أنيقة مع زر أخضر لسحب الأرباح يوضح المضاعف المباشر والمبلغ المكتسب.</p>
+        </div>
+        <span class="bg-amber-400/10 text-amber-300 text-xs px-3 py-1 rounded-full font-bold">كازينو</span>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Before -->
+        <div class="bg-[#1e1f22] p-4 rounded-xl border border-[#383a40]">
+          <div class="flex items-center justify-between pb-3 mb-3 border-b border-[#2b2d31]">
+            <span class="text-xs font-bold text-red-400">❌ قبل (الشكل الحالي)</span>
+            <span class="text-[11px] text-[#949ba4]">شبكة أزرار رمادية تقليدية</span>
+          </div>
+          <div class="p-6 bg-[#2b2d31] rounded-lg text-center space-y-2">
+            <p class="text-sm font-bold text-white">💣 مينز (Mines)</p>
+            <p class="text-xs text-[#949ba4]">شبكة 5 صفوف أزرار، كل زر مربع رمادي ⬛</p>
+            <p class="text-xs text-[#dbdee1]">زر سحب الأرباح رمادي خافت مع نص مقتضب</p>
+          </div>
+        </div>
+
+        <!-- After -->
+        <div class="bg-[#1e1f22] p-4 rounded-xl border-2 border-amber-500/40">
+          <div class="flex items-center justify-between pb-3 mb-3 border-b border-[#2b2d31]">
+            <span class="text-xs font-bold text-emerald-400">✅ بعد (التصميم المقترح الجديد)</span>
+            <span class="text-[11px] text-amber-300">أزرار جواهر زمردية وزر كاش آوت واضح</span>
+          </div>
+          <div class="rounded-lg overflow-hidden border border-amber-500/30 mb-3 shadow-lg">
+            <img src="after/casino-mines.png" alt="After Mines" class="w-full object-cover">
+          </div>
+          <p class="text-xs text-[#dbdee1]">
+            ✓ الجواهر المكتشفة تضيء باللون الأخضر الزمردي.<br>
+            ✓ زر سحب الأرباح بارز باللون الأخضر (Success) ويعرض المبلغ الدقيق المتاح للسحب لحظياً.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SURFACE 5: VISUAL CAMO & MAP -->
+    <section class="surface-card bg-[#2b2d31] rounded-2xl p-6 border border-[#383a40]" data-category="single">
+      <div class="flex items-center justify-between pb-4 border-b border-[#383a40] mb-6">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-2xl">🗺️</span>
+            <h2 class="text-xl font-black text-indigo-400">كروت الخريطة والتمويه البصري (Map & Camo)</h2>
+          </div>
+          <p class="text-xs text-[#949ba4] mt-1">تحديث صور الخرائط والكلمات المموهة لحماية السؤال من النسخ مع تباين ألوان عالي ومريح.</p>
+        </div>
+        <span class="bg-indigo-400/10 text-indigo-300 text-xs px-3 py-1 rounded-full font-bold">بصري</span>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-[#1e1f22] p-4 rounded-xl border border-sky-500/30">
+          <span class="text-xs font-bold text-sky-400 mb-2 block">🗺️ كارت الخريطة الجديد:</span>
+          <img src="after/single-map.png" alt="Map Card" class="rounded-lg w-full object-cover mb-2">
+          <p class="text-xs text-[#949ba4]">تحديد واضح لحدود الدولة وموقع العاصمة وقارة الدولة في شريط سفلي أنيق.</p>
+        </div>
+
+        <div class="bg-[#1e1f22] p-4 rounded-xl border border-indigo-500/30">
+          <span class="text-xs font-bold text-indigo-400 mb-2 block">🔍 كارت التمويه البصري الجديد:</span>
+          <img src="after/single-camo.png" alt="Camo Card" class="rounded-lg w-full object-cover mb-2">
+          <p class="text-xs text-[#949ba4]">تمويه ذكي يمنع بوتات النسخ والـ OCR التلقائي مع سهولة قراءته للاعب البشري.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- DISCORD LIVE EMBED SIMULATOR -->
+    <section class="surface-card bg-[#2b2d31] rounded-2xl p-6 border border-[#383a40]" data-category="menu">
+      <div class="flex items-center justify-between pb-4 border-b border-[#383a40] mb-6">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-2xl">💬</span>
+            <h2 class="text-xl font-black text-[#5865F2]">محاكاة رسالة الديسكورد الحية (Discord Message Simulator)</h2>
+          </div>
+          <p class="text-xs text-[#949ba4] mt-1">شكل الرسالة الحقيقية في شات الديسكورد مع الأزرار والقائمة المنسدلة.</p>
+        </div>
+        <span class="bg-[#5865F2]/10 text-[#5865F2] text-xs px-3 py-1 rounded-full font-bold">Discord UI</span>
+      </div>
+
+      <!-- Realistic Discord Chat Message -->
+      <div class="discord-chat p-4 rounded-xl border border-[#232428] max-w-3xl mx-auto space-y-4">
+        <!-- Message Header -->
+        <div class="flex items-start gap-3">
+          <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-400 to-indigo-600 flex items-center justify-center text-white font-bold text-lg shadow">
+            CC
+          </div>
+          <div class="flex-1">
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-white text-sm">CC Bot</span>
+              <span class="bg-[#5865F2] text-white text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase">BOT</span>
+              <span class="text-[#949ba4] text-xs">اليوم في 07:55 ص</span>
+            </div>
+
+            <!-- Discord Embed -->
+            <div class="discord-embed p-4 rounded-lg mt-2 space-y-3 max-w-xl">
+              <div class="flex items-center justify-between">
+                <span class="text-sm font-bold text-white">📖 قائمة أوامر وألعاب CC Bot</span>
+                <span class="text-xs text-[#949ba4]">v2.0</span>
+              </div>
+              <p class="text-xs text-[#dbdee1] leading-relaxed">
+                من هنا تقدر توصل لكل ألعاب الشات، الكازينو، البورصة، والألعاب الجماعية. اختار القائمة من السيلكت تحت أو اكتب الأمر مباشرة!
+              </p>
+              
+              <div class="bg-[#1e1f22] p-2.5 rounded-lg border border-[#383a40] space-y-1 text-xs">
+                <div class="flex justify-between items-center text-amber-300 font-bold">
+                  <span>🎰 العاب الكازينو الجديدة:</span>
+                  <span class="text-[10px] text-[#949ba4]">نسب فوز 2.58%</span>
+                </div>
+                <div class="text-[#949ba4] text-[11px] space-y-0.5">
+                  <p>🏇 <code class="text-amber-200">احصنة 100 1</code> ・ سباق الخيول الخيالي (جديد!)</p>
+                  <p>💣 <code class="text-amber-200">مينز 100 3</code> ・ 🪙 <code class="text-amber-200">عملة 100 ملك</code> ・ 🎰 <code class="text-amber-200">سلوت 100</code></p>
+                </div>
+              </div>
+
+              <!-- Embed Footer -->
+              <div class="flex items-center justify-between pt-2 border-t border-[#383a40] text-[11px] text-[#949ba4]">
+                <span>طلب بواسطة: @0skar</span>
+                <span>CC Economy 🌀</span>
+              </div>
+            </div>
+
+            <!-- Discord Select Menu -->
+            <div class="mt-3 max-w-xl">
+              <div class="bg-[#1e1f22] border border-[#383a40] rounded px-3 py-2 text-xs text-[#dbdee1] flex items-center justify-between cursor-pointer hover:border-[#5865F2]">
+                <span>اختر القائمة المطلوبة (الألعاب الفردية، الثنائية، الكازينو...)</span>
+                <span>▼</span>
+              </div>
+            </div>
+
+            <!-- Discord Buttons Row -->
+            <div class="flex flex-wrap gap-2 mt-3 max-w-xl">
+              <button class="discord-btn-primary text-white text-xs px-3.5 py-1.5 rounded font-bold flex items-center gap-1.5 shadow">
+                <span>🎰</span> العاب الكازينو
+              </button>
+              <button class="discord-btn-success text-white text-xs px-3.5 py-1.5 rounded font-bold flex items-center gap-1.5 shadow">
+                <span>🏇</span> سباق الخيول
+              </button>
+              <button class="discord-btn-secondary text-white text-xs px-3.5 py-1.5 rounded font-bold flex items-center gap-1.5 shadow">
+                <span>📖</span> شرح الأوامر
+              </button>
+              <button class="discord-btn-secondary text-white text-xs px-3.5 py-1.5 rounded font-bold flex items-center gap-1.5 shadow">
+                <span>🌐</span> الدعم الفني
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    function filterCategory(category) {
+      const cards = document.querySelectorAll('.surface-card');
+      const tabs = document.querySelectorAll('.tab-btn');
+
+      tabs.forEach(tab => {
+        tab.classList.remove('bg-[#5865F2]', 'text-white');
+        tab.classList.add('bg-[#2b2d31]', 'text-[#949ba4]');
+      });
+      event.target.classList.remove('bg-[#2b2d31]', 'text-[#949ba4]');
+      event.target.classList.add('bg-[#5865F2]', 'text-white');
+
+      cards.forEach(card => {
+        if (category === 'all' || card.dataset.category === category) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+  </script>
+</body>
+</html>
