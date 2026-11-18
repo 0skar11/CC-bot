@@ -54,17 +54,24 @@ export default {
         }
         // The CC words: the digits in ASCII (`٥k` → `5k`), an Arabic suffix word glued to its number (`5 الف` →
         // `5الف`), then the command word moved first when it was typed elsewhere (`5k @member تحويل`: commandFirst in
-        // src/config/commands/commandAliases.js). A dot stays no prefix of these commands (only of the chat games).
-        const [ccWord = '', ...ccRest] = joinAmountWords([typed, ...words].map(toAsciiDigits));
-        const ordered = commandFirst(ccWord, ccRest, prefixed);
-        const parsed = applyWordAliases(ordered.typed.toLowerCase(), ordered.words, prefixed);
+        // src/config/commands/commandAliases.js). A dot stays no prefix of these commands (only of the chat games, and .احصنة/.horses).
+        let effectiveTyped = typed;
+        let isHorsesDot = false;
+        if (['.horses', '.احصنة', '.أحصنة', '.خيول'].includes(effectiveTyped.toLowerCase())) {
+            effectiveTyped = effectiveTyped.slice(1);
+            isHorsesDot = true;
+        }
+        const [ccWord = '', ...ccRest] = joinAmountWords([effectiveTyped, ...words].map(toAsciiDigits));
+        const effectivePrefixed = prefixed || isHorsesDot;
+        const ordered = commandFirst(ccWord, ccRest, effectivePrefixed);
+        const parsed = applyWordAliases(ordered.typed.toLowerCase(), ordered.words, effectivePrefixed);
         // `help` is typed only as the exact guide words above, so `help me` and the like stay chat.
         if (!parsed || parsed.commandName === 'help' || !isBourseGuildCommand(parsed.commandName)) return;
         // The casino is typed in its own rooms (CASINO_CHANNEL_IDS), the games menu there or in the bot's
         // channels, everything else in the bot's channels.
         const casino = parsed.commandName === CASINO_COMMAND;
         const games = parsed.commandName === GAMES_COMMAND;
-        if (casino && !isCasinoChannel(message.channel, message.channelId)) return;
+        if (casino && !isCasinoChannel(message.channel, message.channelId) && !(isHorsesDot && isCommandChannel(GAMES_COMMAND, message.channel, message.channelId))) return;
         if (games && !isCommandChannel(GAMES_COMMAND, message.channel, message.channelId)) return;
         if (!casino && !games && !isAllowedChannel(message.channel, message.channelId)) return;
         const command = client.commands.get(parsed.commandName);

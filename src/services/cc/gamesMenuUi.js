@@ -48,13 +48,14 @@ function menuText(lang) {
                 block('🎲 **Dice**', 'it rolls 0.00-99.99: call over or under a number', ['dice 100 over 70', 'dice 100 under 30']),
                 block('🐔 **Chicken**', `press 🐔 Step to cross a lane (${chicken.chance}% chance each): the multiplier grows up to ${chicken.top} after ${chicken.lanes} lanes, cash out before a car hits it`, ['chicken 100']),
                 block('🃏 **Blackjack**', `beat the dealer to 21 without going over: a win pays ${blackjack.win}, a blackjack ${blackjack.natural}; hit, stand or double, the dealer stands on ${blackjack.stands}`, ['blackjack 100']),
+                block('🏇 **Horses**', 'fantasy horse racing: pick horse 1-6 with distinct odds up to ×38', ['horses 100 1', 'horses 100 3']),
             ],
             groupTitle: '👥 Group — one round for the whole room',
             group: [
                 block('🎡 **Roulette**', `🔴 red or ⚫ black ×${roulette.colorPays}, a number 0-36 ×${roulette.numberPays}; the wheel spins ${wait}s after the first bet`, ['roulette 100 red', 'roulette 50 17']),
                 block('🚀 **Rocket** (same as `crash`)', `everyone rides together: press 💰 Cash out before it crashes (up to ${multiplierText(crash.maxTarget)}), or add a target to cash out by itself`, ['rocket 100', 'rocket 100 2']),
             ],
-            footer: `⚖️ House edge: Mines ${edges.mines}% · Coinflip ${edges.coinflip}% · Slots ${edges.slots}% · Dice ${edges.dice}% · Chicken ${edges.chicken}% · Blackjack ${edges.blackjack}% · Roulette ${edges.roulette}% · Rocket ${edges.rocket}%  ・  Play for fun  ・  العربية: العاب`,
+            footer: `⚖️ House edge: Mines ${edges.mines}% · Coinflip ${edges.coinflip}% · Slots ${edges.slots}% · Dice ${edges.dice}% · Chicken ${edges.chicken}% · Blackjack ${edges.blackjack}% · Roulette ${edges.roulette}% · Rocket ${edges.rocket}% · Horses ${edges.horses}%  ・  Play for fun  ・  العربية: العاب`,
         };
     }
     return {
@@ -73,13 +74,14 @@ function menuText(lang) {
             block('🎲 **نرد**', 'رقم من 0.00 لـ 99.99: قول فوق أو تحت رقم', ['نرد 100 فوق 70', 'نرد 100 تحت 30']),
             block('🐔 **الفرخة**', `كل دوسة على 🐔 تقدّم بتعدّي حارة (فرصتها ${chicken.chance}%): المضاعف بيكبر لحد ${chicken.top} بعد ${chicken.lanes} حارة، واعمل كاش أوت قبل ما عربية تخبطها`, ['فرخة 100']),
             block('🃏 **بلاك جاك**', `قرّب من 21 أكتر من الموزع من غير ما تعدّيها: الكسب ${blackjack.win} والبلاك جاك ${blackjack.natural}؛ اسحب أو وقف أو دبل، والموزع بيقف عند ${blackjack.stands}`, ['بلاك جاك 100']),
+            block('🏇 **سباق الخيول**', 'سباق خيول فانتسي: اختار حصان من 1 لـ 6 بنسب فوز مختلفة لحد ×38', ['احصنة 100 1', 'احصنة 100 3']),
         ],
         groupTitle: '👥 جماعية — جولة واحدة للروم كله',
         group: [
             block('🎡 **روليت**', `🔴 أحمر أو ⚫ أسود ×${roulette.colorPays}، رقم 0-36 ×${roulette.numberPays}؛ العجلة بتلف بعد ${wait} ثانية من أول رهان`, ['روليت 100 احمر', 'روليت 50 17']),
             block('🚀 **صاروخ** (هو نفسه `كراش`)', `الكل بيركب مع بعض: دوس 💰 كاش أوت قبل ما ينفجر (لحد ${multiplierText(crash.maxTarget)}) أو حط هدف يخرّجك لوحده`, ['صاروخ 100', 'صاروخ 100 2']),
         ],
-        footer: `⚖️ نسبة البيت: ماينز ${edges.mines}% · عملة ${edges.coinflip}% · سلوت ${edges.slots}% · نرد ${edges.dice}% · فرخة ${edges.chicken}% · بلاك جاك ${edges.blackjack}% · روليت ${edges.roulette}% · صاروخ ${edges.rocket}%  ・  العب بمزاج  ・  English: games`,
+        footer: `⚖️ نسبة البيت: ماينز ${edges.mines}% · عملة ${edges.coinflip}% · سلوت ${edges.slots}% · نرد ${edges.dice}% · فرخة ${edges.chicken}% · بلاك جاك ${edges.blackjack}% · روليت ${edges.roulette}% · صاروخ ${edges.rocket}% · احصنة ${edges.horses}%  ・  العب بمزاج  ・  English: games`,
     };
 }
 

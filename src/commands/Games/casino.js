@@ -12,7 +12,8 @@ import {
     minesBoardPayload, chickenBoardPayload, blackjackBoardPayload, blackjackResultPayload, coinflipPayload, slotsPayload, dicePayload,
     casinoFailureText, casinoUsageText, gameUsageText, previousGameNote,
 } from '../../services/cc/casinoUi.js';
-import { playHorses, horsesPayload } from '../../services/cc/casinoHorses.js';
+import { playHorses, horsesPayload, renderRaceTrackPng } from '../../services/cc/casinoHorses.js';
+import { isRedesignEnabled } from '../../games/ui/theme.js';
 import { onCasinoCooldown, withCasinoLock, scheduleIdleCashOut, closePreviousBoard } from '../../services/cc/casinoSessions.js';
 import { placeGroupBet } from '../../services/cc/casinoGroupSessions.js';
 import { commandLanguage } from '../../services/cc/lang.js';
@@ -144,7 +145,11 @@ async function playHorsesGame(interaction, client, reply, bet, lang) {
     const result = await withCasinoLock(user.id, () => playHorses(client, guildId, user.id, { bet, horse }));
     closePreviousBoard(client, result.previous, user.id);
     if (!result.ok) return reply(failure(result, lang));
-    const payload = horsesPayload(result, user, lang);
+    let pngTrack = null;
+    if (isRedesignEnabled(guildId)) {
+        pngTrack = await renderRaceTrackPng(result.winningHorse.number);
+    }
+    const payload = horsesPayload(result, user, lang, { guildId, pngTrack });
     if (result.previous) payload.content = previousGameNote(result.previous, lang);
     return reply(payload);
 }

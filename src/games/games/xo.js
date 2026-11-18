@@ -5,6 +5,7 @@
 
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { duelCustomId, runDuel, statusLine } from '../engine/duel.js';
+import { isRedesignEnabled } from '../ui/theme.js';
 
 export const MARKS = ['❌', '⭕'];
 const EMPTY = '➖';
@@ -32,9 +33,19 @@ export function xoWinner(cells) {
     return null;
 }
 
+/** The 3 winning cell indices on `cells`, or null. */
+export function xoWinningLine(cells) {
+    for (const line of LINES) {
+        const [a, b, c] = line;
+        if (cells[a] !== null && cells[a] === cells[b] && cells[a] === cells[c]) return line;
+    }
+    return null;
+}
+
 /** The rules of one xo board (engine/duel.js playBoard). */
 export function xoRules(ctx) {
     const text = textOf(ctx.lang);
+    const redesign = isRedesignEnabled(ctx?.guildId);
     return {
         state: { cells: Array(9).fill(null) },
         move(board, index, move) {
@@ -47,11 +58,16 @@ export function xoRules(ctx) {
             return { next: true };
         },
         render(board) {
+            const winningLine = redesign && board.done ? xoWinningLine(board.state.cells) : null;
             const rows = [0, 1, 2].map((row) => new ActionRowBuilder().addComponents([0, 1, 2].map((col) => {
                 const cell = row * 3 + col;
                 const value = board.state.cells[cell];
+                const isWinningCell = winningLine ? winningLine.includes(cell) : false;
+                const style = isWinningCell
+                    ? ButtonStyle.Success
+                    : value === 0 ? ButtonStyle.Danger : value === 1 ? ButtonStyle.Primary : ButtonStyle.Secondary;
                 return new ButtonBuilder().setCustomId(duelCustomId(board.id, cell)).setEmoji(value === null ? EMPTY : MARKS[value])
-                    .setStyle(value === 0 ? ButtonStyle.Danger : value === 1 ? ButtonStyle.Primary : ButtonStyle.Secondary)
+                    .setStyle(style)
                     .setDisabled(board.done || value !== null);
             })));
             return {

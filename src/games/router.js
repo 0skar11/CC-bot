@@ -25,6 +25,7 @@ import { GAMES_COMMAND } from '../config/casino.js';
 import { ccEmbed } from '../config/cc.js';
 import { commandArgAliases } from '../config/commands/commandAliases.js';
 import { GAMES, isGamesChannel, isOpenGamesChannel } from '../config/games.js';
+import { getGameEmbedColor } from './ui/theme.js';
 import { isAllowedChannel, isAllowedGuild, isCommandChannel } from '../config/runtime.js';
 import { buttonLanguage, inLang, wordLanguage } from '../services/cc/lang.js';
 import { logger } from '../utils/logger.js';
@@ -96,7 +97,7 @@ export function buildContext({ client, message, game, session = null, args = [],
     const ctx = {
         client, message, channel, guild: message.guild ?? null, guildId, channelId: message.channelId || channel?.id || null,
         starter: message.author, member: message.member ?? null, args, lang, game, session, random, clock,
-        embed: (title, description = '', options = {}) => ccEmbed(title, description, { color: GAMES.color, ...options }),
+        embed: (title, description = '', options = {}) => ccEmbed(title, description, { color: getGameEmbedColor(game?.kind, guildId, GAMES.color), ...options }),
         send: (input) => postIn(channel, input),
     };
     ctx.askRound = (options) => askRound(ctx, options);

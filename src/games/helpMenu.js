@@ -73,7 +73,7 @@ const TEXT = {
         // The home page's casino field: every casino game and how it is typed.
         casinoHome: () => ['🎰 العاب الكازينو', [
             `💣 \`مينز 100 ${CASINO.mines.default}\` ・ 🪙 \`عملة 100 ملك\` ・ 🎰 \`سلوت 100\` ・ 🎲 \`نرد 100 فوق 70\``,
-            '🐔 `فرخة 100` ・ 🃏 `بلاك جاك 100` ・ 🎡 `روليت 100 احمر` ・ 🚀 `صاروخ 100`',
+            '🐔 `فرخة 100` ・ 🃏 `بلاك جاك 100` ・ 🎡 `روليت 100 احمر` ・ 🚀 `صاروخ 100` ・ 🏇 `احصنة 100 1`',
             '⬇️ دوس **🎰 العاب الكازينو** تحت للشرح كامل.',
         ].join('\n')],
         admin: {
@@ -134,7 +134,7 @@ const TEXT = {
         },
         casinoHome: () => ['🎰 Casino games', [
             `💣 \`mines 100 ${CASINO.mines.default}\` ・ 🪙 \`coinflip 100 heads\` ・ 🎰 \`slots 100\` ・ 🎲 \`dice 100 over 70\``,
-            '🐔 `chicken 100` ・ 🃏 `blackjack 100` ・ 🎡 `roulette 100 red` ・ 🚀 `rocket 100`',
+            '🐔 `chicken 100` ・ 🃏 `blackjack 100` ・ 🎡 `roulette 100 red` ・ 🚀 `rocket 100` ・ 🏇 `horses 100 1`',
             '⬇️ Press **🎰 Casino games** below for the full guide.',
         ].join('\n')],
         admin: {

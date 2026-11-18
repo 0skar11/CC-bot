@@ -14,6 +14,7 @@
 import { fileURLToPath } from 'node:url';
 import { AttachmentBuilder } from 'discord.js';
 import { logger } from '../../utils/logger.js';
+import { isRedesignEnabled, PALETTE } from '../ui/theme.js';
 
 export const CARD_FILE = 'q.png';
 export const MAX_CHARS = 220;
@@ -148,7 +149,8 @@ export const cardNote = (lang, extra = '') => [NOTE[lang === 'en' ? 'en' : 'ar']
  */
 export async function cardPayload(ctx, { title, heading = '', text = '', lines = null, hint = '', note = null, theme, footer = '', fallback = null } = {}) {
     try {
-        const png = await renderer({ title: heading, text, lines, hint, theme, random: ctx?.random || Math.random });
+        const activeTheme = theme ?? (isRedesignEnabled(ctx?.guildId) ? PALETTE.single.card : DEFAULT_THEME);
+        const png = await renderer({ title: heading, text, lines, hint, theme: activeTheme, random: ctx?.random || Math.random });
         if (!Buffer.isBuffer(png) || !png.length) throw new Error('the card renderer returned no image');
         const description = note ?? cardNote(ctx?.lang);
         const embed = { ...ctx.embed(title, description, footer ? { footer } : {}), image: { url: `attachment://${CARD_FILE}` } };

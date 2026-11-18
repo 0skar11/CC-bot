@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { AttachmentBuilder } from 'discord.js';
 import { logger } from '../../utils/logger.js';
 import { CARD_FILE, cardNote, plainText } from './card.js';
+import { isRedesignEnabled } from '../ui/theme.js';
 
 const FONT_DIR = fileURLToPath(new URL('../../../assets/fonts/', import.meta.url));
 export const FONT_BOLD = `${FONT_DIR}Tajawal-Bold.ttf`;
@@ -102,7 +103,10 @@ export function setPictureRenderer(fn) {
 export async function pictureCardPayload(ctx, { title, picture, heading = '', hint = '', note = null, footer = '', theme = 'dark', width, height, fallback = null } = {}) {
     try {
         const image = typeof picture === 'function' ? await picture() : picture;
-        const png = await renderer({ picture: image, title: heading, hint, theme, width, height, random: ctx?.random || Math.random });
+        const activeTheme = (theme === 'dark' && isRedesignEnabled(ctx?.guildId))
+            ? { from: '#0f172a', mid: '#1e293b', to: '#0b1120', panel: '#ffffff', panelOpacity: 0.08, title: '#7dd3fc', hint: '#bae6fd', dot: '#38bdf8' }
+            : theme;
+        const png = await renderer({ picture: image, title: heading, hint, theme: activeTheme, width, height, random: ctx?.random || Math.random });
         if (!Buffer.isBuffer(png) || !png.length) throw new Error('the picture renderer returned no image');
         const embed = { ...ctx.embed(title, note ?? cardNote(ctx?.lang), footer ? { footer } : {}), image: { url: `attachment://${CARD_FILE}` } };
         return { embeds: [embed], files: [new AttachmentBuilder(png, { name: CARD_FILE })] };
