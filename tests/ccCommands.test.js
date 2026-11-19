@@ -110,9 +110,39 @@ test('addcc is owner only and credits the CC bot balance; give moves CC with tax
     await messageCreate.execute(mk(`تحويل <@${OTHER.id}> 100`, SELF, replies), client);
     assert.equal((await client.db.get(getEconomyKey(economyScopeId, SELF.id))).cc, 40);
     assert.equal((await client.db.get(getEconomyKey(economyScopeId, OTHER.id))).cc, 196);
+
+    // Report #299: replying to someone works for transfer without a mention
+    replies = [];
+    const replyMsg = {
+        ...mk('تحويل 20', SELF, replies),
+        reference: { messageId: 'msg-99' },
+        fetchReference: async () => ({ author: OTHER }),
+    };
+    await messageCreate.execute(replyMsg, client);
+    assert.equal((await client.db.get(getEconomyKey(economyScopeId, SELF.id))).cc, 20);
+    assert.ok((await client.db.get(getEconomyKey(economyScopeId, OTHER.id))).cc > 196);
+
     replies = [];
     await messageCreate.execute(mk('تحويل', SELF, replies), client);
     assert.equal(replies.length, 0);
+});
+
+test('Report #299: cc and holdings work on reply without explicit mention', async () => {
+    const client = await setup();
+    const replies = [];
+    const replyMsg = (content) => ({
+        content, guildId: GUILD, author: SELF, channel: { send: async (p) => replies.push(p) },
+        reference: { messageId: 'msg-99' },
+        fetchReference: async () => ({ author: OTHER }),
+    });
+
+    // Replying to OTHER and typing cc shows OTHER's balance
+    await messageCreate.execute(replyMsg('cc'), client);
+    assert.match(replies.at(-1).embeds[0].description, new RegExp(`${OTHER.id}.*\\*\\*101\\*\\*`, 's'));
+
+    // Replying to OTHER and typing ممتلكات shows OTHER's holdings
+    await messageCreate.execute(replyMsg('ممتلكات'), client);
+    assert.ok(replies.at(-1).embeds[0].description.includes(OTHER.id));
 });
 
 test('daily gives 500 CC once per UTC day', async () => {

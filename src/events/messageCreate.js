@@ -98,20 +98,26 @@ export default {
             return execute(game.options);
         }
         // `addcc [@member] 500` and `give @member 100` (also `تحويل @member 5k`): a member and an amount (parseAmount:
-        // `5k`, `1.5m`, `5,000`, `٥٠٠`), in any order.
+        // `5k`, `1.5m`, `5,000`, `٥٠٠`), in any order. Replying to a message takes its author as the member (report #299).
         if (parsed.commandName === 'addcc' || parsed.commandName === 'removecc' || parsed.commandName === 'give') {
             const amountOf = (arg) => (userArgument.test(arg) ? null : parseAmount(arg, { max: MAX_TYPED_AMOUNT }));
             const amountWord = parsed.args.find((arg) => amountOf(arg) !== null);
             const userWord = parsed.args.find((arg) => userArgument.test(arg));
+            let replyUser = null;
+            if (!userWord && message.reference?.messageId) {
+                const referenced = typeof message.fetchReference === 'function' ? await message.fetchReference().catch(() => null) : null;
+                if (referenced?.author) replyUser = referenced.author;
+            }
             const usage = parsed.commandName === 'give' ? '❌ اكتب: `تحويل @عضو 100`' : `❌ اكتب: \`${parsed.commandName} 500\` أو \`${parsed.commandName} @عضو 500\``;
             // An amount that was meant as one but can't be read (`5q`, `1.0005k`, `0`, more than 10 digits).
             const badAmount = !amountWord && parsed.args.length <= 2 && parsed.args.some((arg) => !userArgument.test(arg))
                 && parsed.args.every((arg) => userArgument.test(arg) || looksLikeAmount(arg));
             if (badAmount) return send({ content: amountErrorText() });
+            const hasUser = Boolean(userWord || replyUser);
             const wellFormed = parsed.args.length === (amountWord ? 1 : 0) + (userWord ? 1 : 0) && parsed.args.length > 0 && amountWord;
-            if (!wellFormed || (parsed.commandName === 'give' && !userWord)) return prefixed ? send({ content: usage }) : undefined;
+            if (!wellFormed || (parsed.commandName === 'give' && !hasUser)) return prefixed ? send({ content: usage }) : undefined;
             const match = userWord ? userArgument.exec(userWord) : null;
-            const user = match ? await client.users.fetch(match[1] || match[2]).catch(() => null) : null;
+            const user = match ? await client.users.fetch(match[1] || match[2]).catch(() => null) : replyUser;
             if (match && !user) return send({ content: '❌ العضو مش موجود.' });
             const amount = amountOf(amountWord);
             return execute({ getUser: () => user, getInteger: () => amount });
@@ -125,6 +131,9 @@ export default {
             if (values.length !== 1 || !match) return;
             target = await client.users.fetch(match[1] || match[2]).catch(() => null);
             if (!target) return send({ content: '❌ العضو مش موجود.' });
+        } else if ((subcommand === 'holdings' || parsed.commandName === 'cc') && !values.length && message.reference?.messageId) {
+            const referenced = typeof message.fetchReference === 'function' ? await message.fetchReference().catch(() => null) : null;
+            if (referenced?.author) target = referenced.author;
         }
         if (!stock) {
             if ((parsed.commandName === 'cctop' || parsed.commandName === 'daily' || games) && values.length) return;

@@ -68,15 +68,16 @@ export function holdingsEmbed(user, { rows, totalValue, totalPaid, totalIfSold }
         : { title: `💼 ممتلكات ${user.displayName || user.username || ''}`.trim(), balance: '💰 رصيده', empty: 'معندوش حاجة في البورصة لسه.', paid: 'دفع', sold: 'لو باع', soldAll: 'لو باع كله' };
     // The member's CC balance (report #174), when given.
     const balanceField = balance === null ? [] : [{ name: words.balance, value: formatCC(balance), inline: true }];
+    const mention = user.id ? `<@${user.id}>` : `${user}`;
     if (!rows.length) {
-        return ccEmbed(words.title, `${user}\n\n${words.empty}`, { fields: balanceField });
+        return ccEmbed(words.title, `${mention}\n\n${words.empty}`, { fields: balanceField });
     }
     const lines = rows.map((row) => [
         `${row.asset.emoji} **${row.asset.name}** × ${row.qty}`,
         `> ${words.paid}: ${formatCC(row.paid)} ・ قيمتها دلوقتي: ${formatCC(row.value)}`,
         `> ${words.sold}: ${formatCC(row.ifSold)} ・ ${signedCC(row.profit)}`,
     ].join('\n'));
-    return ccEmbed(words.title, [`${user}`, '', lines.join('\n\n')].join('\n'), {
+    return ccEmbed(words.title, [mention, '', lines.join('\n\n')].join('\n'), {
         fields: [
             { name: `💵 ${words.paid}`, value: formatCC(totalPaid), inline: true },
             { name: '📊 قيمتها', value: formatCC(totalValue), inline: true },

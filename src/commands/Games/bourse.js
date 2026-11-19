@@ -81,9 +81,9 @@ export default {
         if (sub === 'holdings') {
             // `ممتلكات @member`: anyone's holdings in a configured guild.
             const other = interaction.options.getUser('user');
-            const whose = other && other.id !== user.id && isHomeGuild(guildId) ? other : user;
+            const whose = other && other.id !== user.id ? other : user;
             if (whose.bot) return reply({ content: '🤖 البوتات مالهاش ممتلكات.' });
-            const balance = isHomeGuild(guildId) ? (await getProfile(client, guildId, whose.id)).cc : null;
+            const balance = (await getProfile(client, guildId, whose.id))?.cc ?? null;
             return reply({ embeds: [holdingsEmbed(whose, await getHoldings(client, guildId, whose.id), { balance, own: whose.id === user.id })] });
         }
 
