@@ -30,6 +30,8 @@ const TEXT = {
         caughtList: (list) => `💥 **قفش الحرامية!** تم استبعاد:\n${list.map((id) => `• <@${id}>`).join('\n')}`,
         noneCaught: '💨 **ملقاش حد هناك!** كل اللي استخبوا هناك أذكياء.',
         remainingHiders: (count, list) => `🛡️ المتبقي من المستخبيين (${count}): ${list.map((id) => `<@${id}>`).join(' ، ')}`,
+        afkHiders: (ids) => `⌛ **تم إقصاء لانتهاء الوقت (AFK):**\n${ids.map((id) => `• <@${id}>`).join('\n')}`,
+        afkSeeker: (id) => `⌛ **انتهى وقت الباحث <@${id}> وتم إقصاؤه!**`,
         seekerWins: (id) => `🎉 <@${id}> قفش كل المستخبيين وفاز باللعبة!`,
         hidersWin: (id) => `🎉 <@${id}> استخبى بذكاء وعدى كل الجولات وفاز باللعبة!`,
         ended: '⌛ اللعبة دي خلصت.',
@@ -47,6 +49,8 @@ const TEXT = {
         caughtList: (list) => `💥 **Caught!** Eliminated:\n${list.map((id) => `• <@${id}>`).join('\n')}`,
         noneCaught: '💨 **Nobody was there!** They got away safely.',
         remainingHiders: (count, list) => `🛡️ Remaining hiders (${count}): ${list.map((id) => `<@${id}>`).join(', ')}`,
+        afkHiders: (ids) => `⌛ **Eliminated for timeout (AFK):**\n${ids.map((id) => `• <@${id}>`).join('\n')}`,
+        afkSeeker: (id) => `⌛ **Seeker <@${id}> timed out and was eliminated!**`,
         seekerWins: (id) => `🎉 <@${id}> caught all hiders and won the game!`,
         hidersWin: (id) => `🎉 <@${id}> survived all rounds and won the game!`,
         ended: '⌛ This game has ended.',
@@ -181,16 +185,22 @@ export default {
                 if (!h) { off(); resolve('timeout'); }
             });
 
-            // Assign random spots to hiders who didn't pick
-            for (const hider of hiders) {
-                if (!game.hiddenSpots.has(hider)) {
-                    const randomSpot = SPOTS[Math.floor(ctx.random() * SPOTS.length)].id;
-                    game.hiddenSpots.set(hider, randomSpot);
-                }
-            }
-
             if (hideMsg) {
                 hideMsg.edit({ components: buildSpotButtons(gameId, 'hide', ctx.lang, true) }).catch(() => {});
+            }
+
+            // GH-289: Hiders who didn't pick in time are eliminated for AFK
+            const idleHiders = hiders.filter((id) => !game.hiddenSpots.has(id));
+            if (idleHiders.length) {
+                hiders = hiders.filter((id) => !idleHiders.includes(id));
+                await ctx.send({
+                    embeds: [ctx.embed(text.title, `${text.afkHiders(idleHiders)}\n\n${text.remainingHiders(hiders.length, hiders)}`)],
+                });
+            }
+
+            if (hiders.length === 0) {
+                winnerId = seekerId;
+                break;
             }
             if (ctx.session.ended) break;
 
@@ -211,11 +221,17 @@ export default {
                 if (!h) { off(); resolve('timeout'); }
             });
 
-            if (!game.searchSpot) {
-                game.searchSpot = SPOTS[Math.floor(ctx.random() * SPOTS.length)].id;
-            }
             if (seekMsg) {
                 seekMsg.edit({ components: buildSpotButtons(gameId, 'seek', ctx.lang, true) }).catch(() => {});
+            }
+
+            // GH-289: Seeker who didn't pick in time forfeits
+            if (!game.searchSpot) {
+                await ctx.send({
+                    embeds: [ctx.embed(text.title, text.afkSeeker(seekerId))],
+                });
+                winnerId = hiders[Math.floor(ctx.random() * hiders.length)];
+                break;
             }
 
             const searchedSpotObj = SPOTS.find((s) => s.id === game.searchSpot);

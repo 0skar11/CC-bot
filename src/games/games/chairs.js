@@ -202,15 +202,9 @@ export default {
                 chairMsg.edit({ components: buildChairButtons(roundState) }).catch(() => {});
             }
 
-            // Determine who didn't get a chair
+            // Determine who didn't get a chair (GH-289: anyone who didn't sit in time is eliminated)
             const seated = roundState.seatedPlayers;
-            let unseated = alive.filter((id) => !seated.has(id));
-
-            // Failsafe: if everyone was idle, eliminate 1 random person
-            if (unseated.length === alive.length) {
-                const lucky = Math.floor(ctx.random() * alive.length);
-                unseated = [alive[lucky]];
-            }
+            const unseated = alive.filter((id) => !seated.has(id));
 
             alive = alive.filter((id) => !unseated.includes(id));
 
@@ -221,6 +215,11 @@ export default {
             await ctx.send({
                 embeds: [ctx.embed(text.title, `${elimMsg}\n\n${text.remaining(alive.length, alive)}`)],
             });
+
+            if (alive.length === 0) {
+                // Everyone was AFK/unseated
+                break;
+            }
 
             round += 1;
             if (alive.length > 1) {
