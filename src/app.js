@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits } from 'discord.js';
+import { Client, GatewayIntentBits, Routes } from 'discord.js';
 import { validateConfig } from './config/runtime.js';
 import { validateGamesConfig } from './config/games.js';
 import { validateInviteConfig } from './config/invites.js';
@@ -28,6 +28,14 @@ try {
     // The chat games (src/games/): a game word used twice fails the start here, never in a room.
     await loadGames();
     await loadEvents(client);
+    // Why a login can sit silent: Discord allows a limited number of logins a day (session start limit). Logged first, so a
+    // bot that never connects says how many logins are left and when they come back.
+    try {
+        const limit = (await client.rest.get(Routes.gatewayBot()))?.session_start_limit;
+        if (limit) console.log(`[GATEWAY] logins left ${limit.remaining}/${limit.total}, they reset in ${Math.round(limit.reset_after / 60_000)} min`);
+    } catch (error) {
+        console.warn(`[GATEWAY] Could not read the login limit: ${error?.code || error?.message || error}`);
+    }
     await client.login(process.env.DISCORD_TOKEN);
 } catch (error) {
     console.error('CC bot startup failed:', error.code || error.message);
