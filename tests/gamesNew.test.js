@@ -202,8 +202,17 @@ test('snake: arrow buttons move snake and eating apples wins', async () => {
 
     const snakeMsg = channel.sent[0];
     assert.ok(snakeMsg);
+    assert.equal(snakeMsg.payload.components.length, 2, 'should have 2 rows of controls (D-pad)');
     const buttonId = snakeMsg.payload.components[0].toJSON().components[0].custom_id;
     const [, , gameId] = buttonId.split(':');
+
+    // Snake starts facing right with head at [2,2], neck at [2,1].
+    // Pressing left (180° reverse move) is safely ignored
+    let deferred = false;
+    const pReverse = press(`g:snake:${gameId}:left`, ALICE, snakeMsg);
+    pReverse.deferUpdate = async () => { deferred = true; };
+    await handleSnakeButton(pReverse, [gameId, 'left']);
+    assert.equal(deferred, true, '180° move into neck should be safely ignored');
 
     // Move right
     const p1 = press(`g:snake:${gameId}:right`, ALICE, snakeMsg);

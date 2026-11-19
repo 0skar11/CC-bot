@@ -66,13 +66,17 @@ function renderBoard(snake, apple) {
 }
 
 function buildControls(gameId, disabled = false) {
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${GAMES_BUTTON_PREFIX}:snake:${gameId}:left`).setEmoji('⬅️').setStyle(ButtonStyle.Primary).setDisabled(disabled),
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${GAMES_BUTTON_PREFIX}:snake:${gameId}:blank1`).setLabel('·').setStyle(ButtonStyle.Secondary).setDisabled(true),
         new ButtonBuilder().setCustomId(`${GAMES_BUTTON_PREFIX}:snake:${gameId}:up`).setEmoji('⬆️').setStyle(ButtonStyle.Primary).setDisabled(disabled),
+        new ButtonBuilder().setCustomId(`${GAMES_BUTTON_PREFIX}:snake:${gameId}:blank2`).setLabel('·').setStyle(ButtonStyle.Secondary).setDisabled(true),
+    );
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${GAMES_BUTTON_PREFIX}:snake:${gameId}:left`).setEmoji('⬅️').setStyle(ButtonStyle.Primary).setDisabled(disabled),
         new ButtonBuilder().setCustomId(`${GAMES_BUTTON_PREFIX}:snake:${gameId}:down`).setEmoji('⬇️').setStyle(ButtonStyle.Primary).setDisabled(disabled),
         new ButtonBuilder().setCustomId(`${GAMES_BUTTON_PREFIX}:snake:${gameId}:right`).setEmoji('➡️').setStyle(ButtonStyle.Primary).setDisabled(disabled),
     );
-    return [row];
+    return [row1, row2];
 }
 
 const DIRECTIONS = {
@@ -100,6 +104,12 @@ export async function handleSnakeButton(interaction, [gameId, dir] = []) {
     const [headR, headC] = game.snake[0];
     const newHead = [headR + delta[0], headC + delta[1]];
 
+    // Disallow 180° reverse moves into the snake's neck
+    if (game.snake.length > 1 && newHead[0] === game.snake[1][0] && newHead[1] === game.snake[1][1]) {
+        await interaction.deferUpdate().catch(() => {});
+        return;
+    }
+
     // Wall collision
     if (newHead[0] < 0 || newHead[0] >= GRID_SIZE || newHead[1] < 0 || newHead[1] >= GRID_SIZE) {
         game.done = true;
@@ -112,8 +122,12 @@ export async function handleSnakeButton(interaction, [gameId, dir] = []) {
         return;
     }
 
-    // Self collision
-    if (game.snake.some(([r, c]) => r === newHead[0] && c === newHead[1])) {
+    // Check if apple eaten
+    const ateApple = Boolean(game.apple && newHead[0] === game.apple[0] && newHead[1] === game.apple[1]);
+
+    // Self collision (if not eating apple, the tail vacates its cell this turn)
+    const bodyToCheck = ateApple ? game.snake : game.snake.slice(0, -1);
+    if (bodyToCheck.some(([r, c]) => r === newHead[0] && c === newHead[1])) {
         game.done = true;
         game.outcome = 'self';
         await interaction.update({
@@ -126,7 +140,7 @@ export async function handleSnakeButton(interaction, [gameId, dir] = []) {
 
     // Move snake
     game.snake.unshift(newHead);
-    if (game.apple && newHead[0] === game.apple[0] && newHead[1] === game.apple[1]) {
+    if (ateApple) {
         game.apples += 1;
         if (game.apples >= TARGET_APPLES) {
             game.done = true;
