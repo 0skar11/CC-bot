@@ -20,7 +20,7 @@ import { isRedesignEnabled } from '../ui/theme.js';
 
 const FONT_DIR = fileURLToPath(new URL('../../../assets/fonts/', import.meta.url));
 export const FONT_BOLD = `${FONT_DIR}Tajawal-Bold.ttf`;
-const FONT_MEDIUM = `${FONT_DIR}Tajawal-Medium.ttf`;
+export const FONT_MEDIUM = `${FONT_DIR}Tajawal-Medium.ttf`;
 
 export const PICTURE_THEMES = Object.freeze({
     dark: Object.freeze({ from: '#1c0b2b', mid: '#4a2163', to: '#6d3590', panel: '#ffffff', panelOpacity: 0.06, title: '#dcc8f0', hint: '#c3a9dd', dot: '#c79bea' }),

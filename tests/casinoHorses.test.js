@@ -77,7 +77,7 @@ test('playHorses: takes bet, pays out on win, updates CC idempotently', async ()
 
 test('renderRaceTrack and horsesPayload produce valid Discord embeds', () => {
     const track = renderRaceTrack(1);
-    assert.ok(track.includes('🐎'));
+    assert.ok(track.includes('🏇'));
     assert.ok(track.includes('#1'));
     assert.ok(track.includes('#6'));
 

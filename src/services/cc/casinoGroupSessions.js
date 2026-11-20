@@ -1,6 +1,6 @@
 // casinoGroupSessions.js — the live side of the casino's group rounds (the rules and money are
-// casinoGroupService.js, the embeds casinoGroupUi.js): the round's timer (the bets close, then the wheel spins
-// or the rocket takes off), the rocket's flight (one message edit per tick, the automatic cash-outs it passes,
+// casinoGroupService.js, the embeds casinoGroupUi.js and casinoHorsesUi.js): the round's timer (the bets close, then
+// the wheel spins, the horses race (one edit every CASINO.horses.tickMs, then the result) or the rocket takes off), the rocket's flight (one message edit per tick, the automatic cash-outs it passes,
 // the crash and, graceMs later, the riders still on board), the round message (edited at most every
 // CASINO.groupRenderMs while people join) and the startup check that settles the rounds a restart or a crash
 // left behind. The timers live in memory only; the round and every stake are saved, so a lost timer never loses
@@ -14,12 +14,14 @@ import { getCasinoRoundPrefix, getEconomyPrefix } from '../../utils/database/key
 import { logger } from '../../utils/logger.js';
 import { secureRandomInt } from './casinoService.js';
 import {
-    attachRoundMessage, cashOutRocket, crashRocket, endDecision, finishRound, joinRound, launchRocket, loadRound,
+    attachRoundMessage, cashOutRocket, crashRocket, endDecision, finishRound, joinRound, launchRocket, loadRound, raceHorses,
     refundOrphanStakes, rocketMultiplierAt, rocketTimeTo, roundKey, settleRound, settleStaleRound, spinRoulette, withRoundLock,
 } from './casinoGroupService.js';
 import {
     groupRecoveryPayload, rocketEndPayload, rocketFlightPayload, rocketTablePayload, rouletteResultPayload, rouletteTablePayload,
 } from './casinoGroupUi.js';
+import { racePlan, renderRaceTrackPng } from './casinoHorses.js';
+import { horsesRacePayload, horsesRecoveryPayload, horsesResultPayload, horsesTablePayload } from './casinoHorsesUi.js';
 
 // key → the round this process plays in that room:
 //   { key, game, roundId, channelId, round (its latest saved copy), phase, edit, messageId, randomInt, results,
@@ -28,7 +30,8 @@ const live = new Map();
 
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, Math.max(0, ms)); });
 const isLive = (key, roundId) => live.get(key)?.roundId === roundId;
-const tablePayload = (round) => (round.game === 'roulette' ? rouletteTablePayload(round) : rocketTablePayload(round));
+const TABLES = { roulette: rouletteTablePayload, rocket: rocketTablePayload, horses: horsesTablePayload };
+const tablePayload = (round) => (TABLES[round.game] || rocketTablePayload)(round);
 
 async function tryEdit(edit, payload) {
     try {
@@ -132,6 +135,39 @@ async function spinTheWheel(client, entry) {
     if (round) await render(client, entry, rouletteResultPayload(round, entry.results), { final: true });
 }
 
+// ---- Horses ----
+
+/**
+ * The race: the winner is drawn and saved first (raceHorses), then the message shows CASINO.horses.frames frames,
+ * one every tickMs (each edit waits for the one before, so they never pile up), then every bet is settled and the
+ * result (with the PNG card) replaces the race. A failed settlement is tried again without running the race twice.
+ */
+async function runRace(client, entry) {
+    clearTimeout(entry.renderTimer);
+    const raced = await withRoundLock(entry.key, () => raceHorses(client, entry.key, entry.roundId, { randomInt: entry.randomInt }));
+    if (!raced) return end(entry);
+    entry.round = raced;
+    const { frames, tickMs } = CASINO.horses;
+    if (!entry.plan) entry.plan = racePlan(raced.winner, { frames });
+    if (entry.phase === 'open') {
+        entry.phase = 'racing';
+        for (const positions of entry.plan.slice(0, -1)) {
+            await render(client, entry, horsesRacePayload(raced, positions));
+            await sleep(tickMs);
+        }
+    }
+    const round = await withRoundLock(entry.key, async () => {
+        const saved = await loadRound(client, entry.key, entry.roundId);
+        if (saved) await settleAndFinish(client, entry, saved, endDecision(saved));
+        return saved;
+    });
+    end(entry);
+    if (!round) return undefined;
+    const positions = entry.plan.at(-1);
+    const png = await renderRaceTrackPng(round.winner, { lang: round.lang, positions });
+    return render(client, entry, horsesResultPayload(round, entry.results, { positions, png }), { final: true });
+}
+
 // ---- Rocket ----
 
 async function launch(client, entry) {
@@ -196,7 +232,8 @@ async function land(client, entry) {
 }
 
 function closeRound(client, entry) {
-    return entry.game === 'roulette' ? spinTheWheel(client, entry) : launch(client, entry);
+    if (entry.game === 'roulette') return spinTheWheel(client, entry);
+    return entry.game === 'horses' ? runRace(client, entry) : launch(client, entry);
 }
 
 // ---- Commands, buttons and the restart check ----
@@ -207,7 +244,8 @@ function closeRound(client, entry) {
  */
 async function showRecovered(client, { round, results }) {
     if (!results.length) return false;
-    return showOn(client, { edit: null, messageId: round.messageId, channelId: round.channelId }, groupRecoveryPayload(round, results), { final: true });
+    const payload = round.game === 'horses' ? horsesRecoveryPayload(round, results) : groupRecoveryPayload(round, results);
+    return showOn(client, { edit: null, messageId: round.messageId, channelId: round.channelId }, payload, { final: true });
 }
 
 /** The bet is placed whatever happens to its message: a reply that fails is only logged (a retry would bet twice). */
@@ -221,8 +259,8 @@ async function replySafely(reply, payload) {
 }
 
 /**
- * A member's bet on the room's round (`/casino roulette|rocket`, `روليت 100 احمر`, `صاروخ 100 2`, `rocket 100`,
- * `crash 100 2.5`): opens a round when none is open, whose message is the reply (`reply` sends it, `editFor(sent)`
+ * A member's bet on the room's round (`/casino roulette|rocket|horses`, `روليت 100 احمر`, `صاروخ 100 2`, `rocket 100`,
+ * `crash 100 2.5`, `احصنة 100 3`): opens a round when none is open, whose message is the reply (`reply` sends it, `editFor(sent)`
  * edits it later), or joins the open one silently. The round is the room's whatever the language: `lang` (the
  * member's, 'ar' or 'en') only picks the language of a round this bet opens, which its shared message keeps to
  * the end (a member typing the other language joins it as it is). A round left in the room by an earlier run is

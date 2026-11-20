@@ -12,8 +12,7 @@ import {
     minesBoardPayload, chickenBoardPayload, blackjackBoardPayload, blackjackResultPayload, coinflipPayload, slotsPayload, dicePayload,
     casinoFailureText, casinoUsageText, gameUsageText, previousGameNote,
 } from '../../services/cc/casinoUi.js';
-import { playHorses, horsesPayload, renderRaceTrackPng } from '../../services/cc/casinoHorses.js';
-import { isRedesignEnabled } from '../../games/ui/theme.js';
+import { parseHorseChoice } from '../../services/cc/casinoHorses.js';
 import { onCasinoCooldown, withCasinoLock, scheduleIdleCashOut, closePreviousBoard } from '../../services/cc/casinoSessions.js';
 import { placeGroupBet } from '../../services/cc/casinoGroupSessions.js';
 import { commandLanguage } from '../../services/cc/lang.js';
@@ -27,8 +26,8 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 // rooms (CASINO_CHANNEL_IDS). The rules and the house edge are src/config/casino.js. Coinflip, slots and dice are
 // played in one save; a mines board and a chicken are played with their buttons
 // (src/interactions/buttons/store/casino.js) and cash out by themselves when left alone
-// (src/services/cc/casinoSessions.js). Roulette and rocket (crash is the rocket) are group rounds shared by the
-// room (src/services/cc/casinoGroupSessions.js). Every game starts under the member's casino lock, after the
+// (src/services/cc/casinoSessions.js). Roulette, the horse race (`احصنة 100 3` / `horses 100 3`) and rocket (crash
+// is the rocket) are group rounds shared by the room (src/services/cc/casinoGroupSessions.js). Every game starts under the member's casino lock, after the
 // start cooldown.
 // Every answer is in the command's language (src/services/cc/lang.js): an English typed word in English, an
 // Arabic one in Arabic, a slash command in the member's Discord language. A group round stays the room's one
@@ -137,26 +136,9 @@ async function playDiceGame(interaction, client, reply, bet, lang) {
     return reply({ ...dicePayload(result, user, lang), content: result.previous ? previousGameNote(result.previous, lang) : '' });
 }
 
-/** `/casino horses`: fantasy horse racing. */
-async function playHorsesGame(interaction, client, reply, bet, lang) {
-    const { guildId, user, options } = interaction;
-    const horse = options.getInteger('horse') ?? 1;
-    if (onCasinoCooldown(user.id)) return reply(failure({ reason: 'cooldown' }, lang));
-    const result = await withCasinoLock(user.id, () => playHorses(client, guildId, user.id, { bet, horse }));
-    closePreviousBoard(client, result.previous, user.id);
-    if (!result.ok) return reply(failure(result, lang));
-    let pngTrack = null;
-    if (isRedesignEnabled(guildId)) {
-        pngTrack = await renderRaceTrackPng(result.winningHorse.number);
-    }
-    const payload = horsesPayload(result, user, lang, { guildId, pngTrack });
-    if (result.previous) payload.content = previousGameNote(result.previous, lang);
-    return reply(payload);
-}
-
 /**
- * `/casino roulette` and `/casino rocket` (also typed `crash` / `كراش`): a bet on the room's round, opened by the
- * first bet. The round is per room and game, never per language: a member typing English and one typing Arabic
+ * `/casino roulette`, `/casino horses` and `/casino rocket` (also typed `crash` / `كراش`): a bet on the room's round,
+ * opened by the first bet. `احصنة 100 3` alone opens the room's race (the countdown starts) or joins the one open. The round is per room and game, never per language: a member typing English and one typing Arabic
  * bet on the same round, whose message stays in the opener's language; this member's own answers (refusals,
  * cooldown) are in their `lang`.
  */
@@ -166,6 +148,10 @@ async function joinGroupGame(interaction, client, reply, sub, { bet, roomId, lan
     if (sub === 'roulette') {
         pick = rouletteChoice(options.getString('choice'));
         if (pick === null) return reply(failure({ reason: 'bad_choice' }, lang));
+    } else if (sub === 'horses') {
+        // No horse given: horse 1, as the solo race did.
+        pick = parseHorseChoice(options.getInteger('horse') ?? 1);
+        if (pick === null) return reply(failure({ reason: 'bad_horse' }, lang));
     } else {
         pick = targetHundredths(options.getNumber('target'));
         if (pick !== null && !isValidCrashTarget(pick)) return reply(failure({ reason: 'bad_target' }, lang));
@@ -222,7 +208,7 @@ export default {
                 .setName('choice')
                 .setDescription('red, black, green or a number 0-36 (احمر، اسود، اخضر)')
                 .setRequired(true)))
-        .addSubcommand((sub) => sub.setName('horses').setDescription('Fantasy horse racing: pick horse 1-6 with distinct odds')
+        .addSubcommand((sub) => sub.setName('horses').setDescription('Group horse race: the room bets on horses 1-6, one race for everybody')
             .addIntegerOption(betOption)
             .addIntegerOption((option) => option
                 .setName('horse')
@@ -295,7 +281,6 @@ export default {
             if (onCasinoCooldown(user.id)) return reply(failure({ reason: 'cooldown' }, lang));
             return withCasinoLock(user.id, () => openBoard(interaction, client, reply, 'blackjack', { bet, channelId: roomId, lang }));
         }
-        if (sub === 'horses') return playHorsesGame(interaction, client, reply, bet, lang);
         if (sub === 'dice') return playDiceGame(interaction, client, reply, bet, lang);
         if (GROUP_GAMES.includes(sub)) return joinGroupGame(interaction, client, reply, sub, { bet, roomId, lang });
 

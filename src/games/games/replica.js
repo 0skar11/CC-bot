@@ -18,7 +18,7 @@ function generatePattern(length = 5) {
 
 const TEXT = {
     ar: {
-        title: '📋 لعبة ريبلكا (نقل النمط)',
+        title: '📋 ريبلكا',
         rules: '👀 احفظ أو انقل الكود الموجود في الصورة بأسرع ما يمكن وبدقة في الشات!',
         round: (n) => `🎯 **الجولة ${n} من 3**`,
         ask: 'اكتب الكود ده بالضبط في الشات:',
@@ -28,7 +28,7 @@ const TEXT = {
         winner: (id) => `👑 <@${id}> فاز بلعبة ريبلكا!`,
     },
     en: {
-        title: '📋 Replica Pattern Game',
+        title: '📋 Replica',
         rules: '👀 Copy the code shown in the image card as fast and accurately as you can in chat!',
         round: (n) => `🎯 **Round ${n} of 3**`,
         ask: 'Type this exact code in chat:',

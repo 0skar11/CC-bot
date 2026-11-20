@@ -62,8 +62,9 @@ export const CASINO_BUTTON_PREFIX = 'casino';
 // `/games` and the typed `العاب`: the menu of every game (src/commands/Games/games.js).
 export const GAMES_COMMAND = 'games';
 // The `/casino` games played by one member against the house, and the ones played by the whole room.
-export const SOLO_GAMES = ['mines', 'coinflip', 'slots', 'dice', 'chicken', 'blackjack', 'horses'];
-export const GROUP_GAMES = ['roulette', 'rocket'];
+export const SOLO_GAMES = ['mines', 'coinflip', 'slots', 'dice', 'chicken', 'blackjack'];
+// The horse race is a group round since 2026-11-20: `احصنة 100 1` opens the room's race or joins it.
+export const GROUP_GAMES = ['roulette', 'rocket', 'horses'];
 
 export const CASINO = {
     minBet: CASINO_BET_LIMITS.min,
@@ -125,6 +126,14 @@ export const CASINO = {
     horses: {
         runners: 6,
         edgePercent: 2.58,
+        // A group race: the first bet opens a round that takes bets for joinMs, then one race for everybody.
+        joinMs: 15_000,
+        // The race message is edited once per tickMs (Discord's edit rate limit), `frames` times, then the result.
+        tickMs: 1_800,
+        frames: 6,
+        // Most bets in one round, and per member in one round (on the same horse or on different ones).
+        maxBets: 40,
+        maxBetsPerMember: 3,
     },
     roulette: {
         pockets: 37,

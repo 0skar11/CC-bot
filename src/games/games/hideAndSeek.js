@@ -18,7 +18,8 @@ const SPOTS = [
 
 const TEXT = {
     ar: {
-        title: '🙈 لعبة الغميضة (استغماية)',
+        title: '🙈 الغميضة',
+        roundOf: (round, max) => `(الجولة ${round}/${max})`,
         rules: '🔍 واحد بيبحث والباقي بيستخبوا في 5 أماكن سرية! الباحث ليه 3 محاولات يقفشهم.',
         seekerChosen: (id) => `👑 <@${id}> هو **الباحث**! الباقيين عندهم 15 ثانية يستخبوا!`,
         hidingPhase: '🤫 **وقت الاختباء!** دوس على الزرار عشان تستخبى في مكان سري:',
@@ -38,6 +39,7 @@ const TEXT = {
     },
     en: {
         title: '🙈 Hide and Seek',
+        roundOf: (round, max) => `(round ${round}/${max})`,
         rules: '🔍 1 seeker searches and others hide in 5 secret spots! Seeker has 3 rounds to catch them all.',
         seekerChosen: (id) => `👑 <@${id}> is the **Seeker**! Others have 15s to hide!`,
         hidingPhase: '🤫 **Hiding Phase!** Press a button to hide in a secret spot:',
@@ -170,7 +172,7 @@ export default {
 
             // 1. Hiding phase
             const hideMsg = await ctx.channel.send({
-                embeds: [ctx.embed(text.title, `${text.hidingPhase} (الجولة ${round}/${MAX_ROUNDS})`)],
+                embeds: [ctx.embed(text.title, `${text.hidingPhase} ${text.roundOf(round, MAX_ROUNDS)}`)],
                 components: buildSpotButtons(gameId, 'hide', ctx.lang),
             }).catch(() => null);
 

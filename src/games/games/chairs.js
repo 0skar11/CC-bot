@@ -9,7 +9,7 @@ import { GAMES_BUTTON_PREFIX } from '../../config/games.js';
 
 const TEXT = {
     ar: {
-        title: '🪑 لعبة الكراسي الموسيقية',
+        title: '🪑 الكراسي الموسيقية',
         rules: '🎵 الموسيقى بتشتغل وبعدين بتقف فجأة، احجز كرسي بسرعة واللي ملوش كرسي بيخرج!',
         musicPlaying: (round) => `🎶 **الموسيقى شغالة... استعدوا!** (الجولة ${round})`,
         musicStopped: '🪑 **الموسيقى وقفت!! احجز كرسي بسرعة!**',

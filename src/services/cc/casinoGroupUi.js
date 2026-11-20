@@ -1,5 +1,6 @@
 // casinoGroupUi.js — the embeds and the cash-out button of the casino's group rounds (roulette and rocket), for
-// casinoGroupSessions.js, the casino command and its buttons. Plain embed objects so the emojis stay; each Arabic
+// casinoGroupSessions.js, the casino command and its buttons. The horse race's messages are casinoHorsesUi.js; its
+// join button and form are here with the others. Plain embed objects so the emojis stay; each Arabic
 // line starts with Arabic or an emoji so Discord doesn't reorder it. Mentions are shown, never pinged.
 // Every text exists in Arabic and English (TEXT below). The round's message (table, flight, end, restart notice,
 // its buttons) is written in the round's own language (`round.lang`, its opener's), so a room that mixes
@@ -43,8 +44,11 @@ const TEXT = {
         amountHint: (min) => `الرقم بس، من ${min}`,
         choiceLabel: 'تراهن على إيه؟',
         choiceHint: 'احمر أو اسود أو رقم من 0 لـ 36',
+        horseLabel: 'رقم الحصان (1-6)',
+        horseHint: 'مثلًا 3',
         rouletteForm: () => `${P('roulette.icon')} راهن على الروليت`,
         rocketForm: '🚀 اركب الصاروخ',
+        horsesForm: '🏇 راهن على حصان',
         // Roulette
         rouletteTitle: () => `${P('roulette.icon')} روليت`,
         noBets: () => `${E('ui.empty')} لسه محدش راهن.`,
@@ -107,8 +111,11 @@ const TEXT = {
         amountHint: (min) => `Just the number, from ${min}`,
         choiceLabel: 'What do you bet on?',
         choiceHint: 'red, black or a number from 0 to 36',
+        horseLabel: 'Horse number (1-6)',
+        horseHint: 'for example 3',
         rouletteForm: () => `${P('roulette.icon')} Bet on the roulette`,
         rocketForm: '🚀 Ride the rocket',
+        horsesForm: '🏇 Bet on a horse',
         // Roulette
         rouletteTitle: () => `${P('roulette.icon')} Roulette`,
         noBets: () => `${E('ui.empty')} No bets yet.`,
@@ -196,7 +203,7 @@ export function wheelStrip(center = 0, side = 4) {
  * `head`, then as many of `items` as fit in an embed description with `tail` after them; the ones that don't fit
  * become one `more(count)` line (40 bets with long names and custom emojis can pass Discord's 4,096 characters).
  */
-function fitLines(head, items, more, tail = []) {
+export function fitLines(head, items, more, tail = []) {
     const fixed = [...head, ...tail].reduce((sum, line) => sum + line.length + 1, 0);
     const room = DESCRIPTION_LIMIT - fixed - more(items.length).length - 1;
     const shown = [];
@@ -213,22 +220,26 @@ function fitLines(head, items, more, tail = []) {
 // ---- The join button and its form ----
 
 /** The button under an open round (in the round's language): it opens a small form for the amount (and the pick). */
-function joinRow(round) {
-    const roulette = round.game === 'roulette';
+export function joinRow(round) {
     const text = say(roundLanguage(round));
+    const look = {
+        roulette: { label: text.betButton, emoji: E('roulette.icon') },
+        horses: { label: text.betButton, emoji: '🏇' },
+    }[round.game] || { label: text.rideButton, emoji: '🚀' };
     return new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(`${CASINO_BUTTON_PREFIX}:join:${round.game}:${round.id}`)
-            .setLabel(roulette ? text.betButton : text.rideButton)
-            .setEmoji(roulette ? E('roulette.icon') : '🚀')
+            .setLabel(look.label)
+            .setEmoji(look.emoji)
             .setStyle(ButtonStyle.Primary),
     );
 }
 
-/** The form a join button opens, in the language of the member who clicked: the amount, and for roulette the pick. */
+/** The form a join button opens, in the language of the member who clicked: the amount, and the pick (roulette, horses). */
 export function joinModal(game, roundId, lang) {
     const text = say(lang);
     const roulette = game === 'roulette';
+    const horses = game === 'horses';
     const amount = new TextInputBuilder()
         .setCustomId('amount')
         .setLabel(text.amountLabel)
@@ -248,10 +259,21 @@ export function joinModal(game, roundId, lang) {
             .setMaxLength(12)
             .setRequired(true)));
     }
+    if (horses) {
+        rows.push(new ActionRowBuilder().addComponents(new TextInputBuilder()
+            .setCustomId('choice')
+            .setLabel(text.horseLabel)
+            .setPlaceholder(text.horseHint)
+            .setStyle(TextInputStyle.Short)
+            .setMinLength(1)
+            .setMaxLength(12)
+            .setRequired(true)));
+    }
+    const title = roulette ? text.rouletteForm() : (horses ? text.horsesForm : text.rocketForm);
     return new ModalBuilder()
         .setCustomId(`${CASINO_BUTTON_PREFIX}:joinm:${game}:${roundId}`)
         // Discord caps a form's title at 45 characters: an unusually long emoji override is cut, never an error.
-        .setTitle(String(roulette ? text.rouletteForm() : text.rocketForm).slice(0, 45))
+        .setTitle(String(title).slice(0, 45))
         .addComponents(...rows);
 }
 

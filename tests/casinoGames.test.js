@@ -351,9 +351,9 @@ describe('the games menu', () => {
             assert.equal(menu.fields.length, 2);
             assert.match(menu.title, lang === 'ar' ? /ألعاب CC bot/u : /CC bot games/u);
             const [solo, group] = menu.fields;
-            // Mines, coinflip, slots, dice, chicken, blackjack, and horses.
-            assert.equal(solo.value.split('\n\n').length, 7);
-            assert.equal(group.value.split('\n\n').length, 2);
+            // Mines, coinflip, slots, dice, chicken and blackjack; roulette, the horse race and the rocket.
+            assert.equal(solo.value.split('\n\n').length, 6);
+            assert.equal(group.value.split('\n\n').length, 3);
             assert.ok(solo.value.length <= 1024 && group.value.length <= 1024);
             // Every game is two lines: what it does, then its typed example on a line of its own.
             for (const game of [...solo.value.split('\n\n'), ...group.value.split('\n\n')]) {

@@ -90,14 +90,15 @@ test('horses casino redesign: generates race track and embeds', async () => {
     assert.equal(redPayload.embeds[0].image.url, 'attachment://horses.png');
 });
 
-test('games menu UI includes horses in solo games and footer house edge', () => {
+test('games menu UI includes horses in the group games and footer house edge', () => {
     const [embedAr] = gamesMenuEmbeds('ar');
-    const soloField = embedAr.fields.find((f) => f.name.includes('فردية'));
-    assert.ok(soloField.value.includes('سباق الخيول'));
+    const groupField = embedAr.fields.find((f) => f.name.includes('جماعية'));
+    assert.ok(groupField.value.includes('سباق الخيول'));
+    assert.ok(!embedAr.fields.find((f) => f.name.includes('فردية')).value.includes('سباق الخيول'));
     assert.ok(embedAr.footer.text.includes('احصنة'));
 
     const [embedEn] = gamesMenuEmbeds('en');
-    const soloFieldEn = embedEn.fields.find((f) => f.name.includes('Solo'));
-    assert.ok(soloFieldEn.value.includes('Horses'));
+    const groupFieldEn = embedEn.fields.find((f) => f.name.includes('Group'));
+    assert.ok(groupFieldEn.value.includes('Horses'));
     assert.ok(embedEn.footer.text.includes('Horses'));
 });

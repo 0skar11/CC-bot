@@ -7,6 +7,8 @@ import { onCasinoCooldown, withCasinoLock, scheduleIdleCashOut, cancelIdleCashOu
 import { rocketCashOut, placeGroupBet, liveRound } from '../../../services/cc/casinoGroupSessions.js';
 import { playerLanguage, roundLanguage } from '../../../services/cc/casinoGroupService.js';
 import { rocketClickText, joinModal, parseFormAmount, choiceLabel } from '../../../services/cc/casinoGroupUi.js';
+import { parseHorseChoice } from '../../../services/cc/casinoHorses.js';
+import { horseLabel } from '../../../services/cc/casinoHorsesUi.js';
 import { buttonLanguage, inLang } from '../../../services/cc/lang.js';
 import { logger } from '../../../utils/logger.js';
 
@@ -112,7 +114,8 @@ async function rocketButton(interaction, client, roundId) {
     return followUp(interaction, await work);
 }
 
-// The join button of a group round (`casino:join:<game>:<roundId>`) opens a small form; its submit
+// The join button of a group round (`casino:join:<game>:<roundId>`, roulette, horses or rocket) opens a small form
+// (the amount, and the pick: the roulette's choice or the horse 1-6); its submit
 // (`casino:joinm:<game>:<roundId>`) puts the member's bet on that round, but only while it still takes bets. Its
 // amount is a whole number or an all-in word (`كل`, `all`...: src/config/casino.js), which bets what is left of
 // the balance, worked out in the save that takes it (casinoGroupService.js joinRound).
@@ -137,6 +140,9 @@ async function joinSubmit(interaction, client, game, roundId) {
     if (game === 'roulette') {
         pick = rouletteChoice(interaction.fields.getTextInputValue('choice'));
         if (pick === null) return privately(interaction, casinoFailureText({ reason: 'bad_choice' }, lang));
+    } else if (game === 'horses') {
+        pick = parseHorseChoice(parseFormAmount(interaction.fields.getTextInputValue('choice')) ?? interaction.fields.getTextInputValue('choice'));
+        if (pick === null) return privately(interaction, casinoFailureText({ reason: 'bad_horse' }, lang));
     }
     if (onCasinoCooldown(userId)) return privately(interaction, casinoFailureText({ reason: 'cooldown' }, lang));
     await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
@@ -148,7 +154,8 @@ async function joinSubmit(interaction, client, game, roundId) {
             editFor: (sent) => (payload) => sent.edit(payload),
         }));
         if (!result.ok) return followUp(interaction, casinoFailureText(result, lang));
-        const what = `${game === 'roulette' ? say(lang).on(choiceLabel(result.stake.choice, lang)) : ''}${result.stake.allIn ? say(lang).allIn : ''}`;
+        const on = { roulette: () => say(lang).on(choiceLabel(result.stake.choice, lang)), horses: () => say(lang).on(horseLabel(result.stake.horse, lang)) }[game];
+        const what = `${on ? on() : ''}${result.stake.allIn ? say(lang).allIn : ''}`;
         return followUp(interaction, say(lang).joined(result.stake.bet.toLocaleString('en-US'), what));
     } catch (error) {
         logger.error('Group join failed', error.code || error.message);

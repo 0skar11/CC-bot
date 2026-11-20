@@ -18,7 +18,7 @@ const ROLES = {
 
 const TEXT = {
     ar: {
-        title: '🕵️ لعبة المافيا الكلاسيكية',
+        title: '🕵️ المافيا',
         rules: '🎭 أدوار سرية! المافيا بتغتال بالليل، الدكتور بيعالج، المحقق بيكشف، وبالنهار المدينة بتصوّت على الإعدام.',
         rolesAssigned: '🎭 تم توزيع الأدوار سرًا! اضغط على الزرار تحت لمعرفة دورك:',
         checkRoleBtn: 'اعرف دورك 🎭',
@@ -45,7 +45,7 @@ const TEXT = {
         ended: '⌛ اللعبة دي خلصت.',
     },
     en: {
-        title: '🕵️ Classic Mafia Game',
+        title: '🕵️ Mafia',
         rules: '🎭 Secret roles! Mafia kills at night, Doctor heals, Detective investigates, Town votes by day.',
         rolesAssigned: '🎭 Roles assigned in secret! Click below to see your role:',
         checkRoleBtn: 'Check Role 🎭',
