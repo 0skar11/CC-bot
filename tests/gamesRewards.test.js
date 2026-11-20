@@ -55,7 +55,7 @@ test('a group win pays 2000 even at and after the daily cap, and is not trimmed'
     assert.equal((await payGamesBotWin(client, GUILD, ALICE.id, 'group', NOW)).amount, 2000, 'Clover group wins too');
     assert.equal(await balance(client, ALICE.id), 6100);
     assert.deepEqual((await client.db.get(getEconomyKey(economyScopeId, ALICE.id))).ccGamesBot, { day: '2026-11-15', earned: CC.gamesBot.dailyCap });
-    assert.match(winPayload('ar', ALICE.id, after, 'group').content, /كسب اللعبة! \+\*\*2,000\*\* 🌀 CC/u);
+    assert.match(winPayload('ar', ALICE.id, after, 'group').content, /كسب اللعبة!\n💰 \+\*\*2,000\*\* 🌀 CC/u);
 });
 
 test('the daily cap is shared with the Clover payout, and points still come once the CC cap is reached', async () => {
@@ -74,8 +74,8 @@ test('the daily cap is shared with the Clover payout, and points still come once
     assert.equal((await payGamesBotWin(client, GUILD, BOB.id, 'answer', NOW)).amount, 0);
     // The next UTC day pays again.
     assert.equal((await rewardWin(client, GUILD, BOB.id, 'answer', 'test', { now: NOW + 86_400_000 })).amount, 500);
-    assert.match(winPayload('ar', BOB.id, capped).content, /جاوب صح!.*وصلت لحد الـ CC من الألعاب النهارده \(20,000 CC\)/u);
-    assert.match(winPayload('ar', BOB.id, last).content, /جاوب صح! \+\*\*500\*\* 🌀 CC ・ \+\*\*1\*\* نقطة ・ رصيدك/u);
+    assert.match(winPayload('ar', BOB.id, capped).content, /جاوب صح![\s\S]*وصلت لحد الـ CC من الألعاب النهارده \(20,000 CC\)/u);
+    assert.match(winPayload('ar', BOB.id, last).content, /جاوب صح!\n💰 \+\*\*500\*\* 🌀 CC ・ ⭐ \+\*\*1\*\* نقطة\n💳 رصيدك/u);
     assert.match(winPayload('en', BOB.id, last).content, /got it right!/u);
     assert.deepEqual(winPayload('ar', BOB.id, last).allowedMentions, { parse: [] });
 });

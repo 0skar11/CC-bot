@@ -1,44 +1,63 @@
-// replica.js — `ريبلكا` / `replica`: pattern replication group game (kind 'group', engine/lobby.js).
-// Players join lobby (min 2, max 20). 3 rounds: each shows a pattern card.
-// First player to reproduce the exact pattern in chat wins the round.
-// The player with the most round wins takes the match and earns 2,000 CC + 5 points.
+// replica.js — `ريبلكا` / `replica`: the category game (kind 'group', engine/lobby.js). Players join a lobby (min 2,
+// max 20). 3 rounds: each shows a category (a human name, an animal, an object, a plant, a country) and a letter; the
+// first player to write a word of that category that starts with the letter wins the round (the words are listed in
+// src/games/data/categories.js). The player with the most round wins takes the match and earns 2,000 CC + 5 points.
 
 import { questionCard, timeLine } from './lib/typingRound.js';
-import { matches } from '../engine/text.js';
+import { askablePairs, CATEGORIES, wordsFor } from '../data/categories.js';
+import { matches, normalize } from '../engine/text.js';
 
-const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const ROUND_MS = 20_000;
+const MAX_ROUNDS = 3;
 
-function generatePattern(length = 5) {
-    let result = '';
-    for (let i = 0; i < length; i += 1) {
-        result += CHARS[Math.floor(Math.random() * CHARS.length)];
+/** `count` different { category, letter } pairs, drawn with `random` (never the same category twice in a row). */
+export function pickRounds(random, count = MAX_ROUNDS) {
+    const pool = askablePairs();
+    const out = [];
+    while (out.length < count && pool.length) {
+        const last = out[out.length - 1]?.category;
+        const options = pool.filter((pair) => pair.category !== last);
+        const choice = (options.length ? options : pool)[Math.floor(random() * (options.length || pool.length))];
+        out.push(choice);
+        pool.splice(pool.indexOf(choice), 1);
     }
-    return result;
+    return out;
+}
+
+/** The words of a round, written the plain way (the answers matches() compares with). */
+export const answersFor = ({ category, letter }) => wordsFor(category, letter).map((word) => normalize(word));
+
+/** Whether `content` is a word of the round: on the list, with or without the `ال` of the definite article. */
+export function isRoundWord(content, round) {
+    const plain = normalize(content);
+    const bare = plain.startsWith('ال') ? plain.slice(2) : plain;
+    return matches(plain, answersFor(round)) || matches(bare, answersFor(round));
 }
 
 const TEXT = {
     ar: {
         title: '📋 ريبلكا',
-        rules: '👀 احفظ أو انقل الكود الموجود في الصورة بأسرع ما يمكن وبدقة في الشات!',
-        round: (n) => `🎯 **الجولة ${n} من 3**`,
-        ask: 'اكتب الكود ده بالضبط في الشات:',
-        roundWon: (id, score) => `⚡ <@${id}> نقل الكود صح أول واحد! (مجموع نقاطه: ${score})`,
-        roundNobody: (code) => `⌛ الوقت خلص ومحدش كتب الكود صح! الكود كان: **${code}**`,
-        standings: (list) => `🏆 الترتيب الحالي:\n${list.map(([id, s]) => `• <@${id}>: ${s} جولة`).join('\n')}`,
-        winner: (id) => `👑 <@${id}> فاز بلعبة ريبلكا!`,
+        rules: '👀 هتتسأل 3 مرات عن إنسان أو حيوان أو جماد أو نبات أو دولة بيبدأ بحرف معين، وأسرع واحد يكتب كلمة صح في الشات يكسب الجولة!',
+        round: (n) => `🎯 **الجولة ${n} من ${MAX_ROUNDS}**`,
+        ask: (category, letter) => `اكتب **${category}** بيبدأ بحرف **${letter}**:`,
+        roundWon: (id, score) => `⚡ <@${id}> كتب كلمة صح أول واحد! (مجموع نقاطه: ${score})`,
+        roundNobody: (list) => `⌛ الوقت خلص ومحدش كتب كلمة صح! مثلًا: **${list}**`,
+        standings: (list) => `🏆 الترتيب الحالي:
+${list.map(([id, s]) => `• <@${id}>: ${s} جولة`).join('\n')}`,
     },
     en: {
         title: '📋 Replica',
-        rules: '👀 Copy the code shown in the image card as fast and accurately as you can in chat!',
-        round: (n) => `🎯 **Round ${n} of 3**`,
-        ask: 'Type this exact code in chat:',
+        rules: '👀 3 rounds: a human name, an animal, an object, a plant or a country that starts with a given letter. The first to write a right word in chat wins the round!',
+        round: (n) => `🎯 **Round ${n} of ${MAX_ROUNDS}**`,
+        ask: (category, letter) => `Write **${category}** that starts with **${letter}**:`,
         roundWon: (id, score) => `⚡ <@${id}> got it right first! (Score: ${score})`,
-        roundNobody: (code) => `⌛ Time ran out! The code was: **${code}**`,
-        standings: (list) => `🏆 Standings:\n${list.map(([id, s]) => `• <@${id}>: ${s} win(s)`).join('\n')}`,
-        winner: (id) => `👑 <@${id}> won the Replica game!`,
+        roundNobody: (list) => `⌛ Time ran out! For example: **${list}**`,
+        standings: (list) => `🏆 Standings:
+${list.map(([id, s]) => `• <@${id}>: ${s} win(s)`).join('\n')}`,
     },
 };
 const textOf = (lang) => TEXT[lang === 'en' ? 'en' : 'ar'];
+const categoryName = (category, lang) => (lang === 'en' ? CATEGORIES[category].en : CATEGORIES[category].ar);
 
 const delay = (ctx, ms) => new Promise((resolve) => {
     if (ctx.session?.ended) return resolve();
@@ -50,10 +69,10 @@ const delay = (ctx, ms) => new Promise((resolve) => {
 export default {
     id: 'replica',
     kind: 'group',
-    names: { ar: ['ريبلكا'], en: ['replica'] },
+    names: { ar: ['ريبلكا', 'ريبليكا'], en: ['replica'] },
     description: {
-        ar: 'ريبلكا: حفظ ونقل النمط بدقة وسرعة من الصورة',
-        en: 'replicate the pattern shown in the card as fast as you can',
+        ar: 'ريبلكا: إنسان حيوان جماد نبات دولة بحرف معين، أسرع واحد يكتب كلمة صح',
+        en: 'a human, animal, object, plant or country with a given letter: the fastest right word wins',
     },
     minPlayers: 2,
     maxPlayers: 20,
@@ -68,24 +87,29 @@ export default {
         if (lobby.cancelled || ctx.session.ended) return;
 
         const scores = new Map();
-        const MAX_ROUNDS = 3;
+        const rounds = pickRounds(ctx.random ?? Math.random);
 
-        for (let round = 1; round <= MAX_ROUNDS && !ctx.session.ended; round += 1) {
-            const pattern = generatePattern(4 + round); // gets slightly longer each round
+        for (let index = 0; index < rounds.length && !ctx.session.ended; index += 1) {
+            const round = rounds[index];
+            const letter = round.letter;
+            const ask = text.ask(categoryName(round.category, ctx.lang), letter);
+            const heading = `${text.title} - ${text.round(index + 1)}`;
 
             const prompt = questionCard(ctx, {
-                title: `${text.title} - ${text.round(round)}`,
-                ask: text.ask,
-                text: pattern,
-                fallback: ctx.embed(`${text.title} - ${text.round(round)}`, `${text.ask}\n\n**${pattern}**\n\n${timeLine(ctx.lang, 20_000)}`),
+                title: heading,
+                ask,
+                text: letter,
+                fallback: ctx.embed(heading, `${ask}
+
+${timeLine(ctx.lang, ROUND_MS)}`),
             });
 
             const startId = ctx.message?.id ?? null;
             const res = await ctx.askRound({
                 prompt,
-                validate: (content, message) => (startId === null || message?.id !== startId) && matches(content, pattern),
-                timeMs: 20_000,
-                reveal: pattern,
+                validate: (content, message) => (startId === null || message?.id !== startId) && isRoundWord(content, round),
+                timeMs: ROUND_MS,
+                reveal: wordsFor(round.category, letter).slice(0, 3).join('، '),
             });
 
             if (res.winner) {
@@ -94,15 +118,17 @@ export default {
 
                 const sorted = [...scores.entries()].sort((a, b) => b[1] - a[1]);
                 await ctx.send({
-                    embeds: [ctx.embed(text.title, `${text.roundWon(res.winner.id, current)}\n\n${text.standings(sorted)}`)],
+                    embeds: [ctx.embed(text.title, `${text.roundWon(res.winner.id, current)}
+
+${text.standings(sorted)}`)],
                 });
             } else {
                 await ctx.send({
-                    embeds: [ctx.embed(text.title, text.roundNobody(pattern))],
+                    embeds: [ctx.embed(text.title, text.roundNobody(wordsFor(round.category, letter).slice(0, 3).join('، ')))],
                 });
             }
 
-            if (round < MAX_ROUNDS && !ctx.session.ended) {
+            if (index < rounds.length - 1 && !ctx.session.ended) {
                 await delay(ctx, 3000);
             }
         }

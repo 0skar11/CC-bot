@@ -87,7 +87,7 @@ for (const { game, timeMs, title, answers, win, reveal, theme } of CASES) {
         channel.emit(typed(channel, win, BOB));
         await running;
         assert.equal(channel.replies.length, 1, 'the win is a reply to the winning answer');
-        assert.match(textOf({ payload: channel.replies.at(-1) }), new RegExp(`<@${BOB.id}> جاوب صح! \\+\\*\\*500\\*\\*`, 'u'));
+        assert.match(textOf({ payload: channel.replies.at(-1) }), new RegExp(`<@${BOB.id}> جاوب صح!\\n💰 \\+\\*\\*500\\*\\*`, 'u'));
         assert.equal(await balance(client, BOB.id), 500);
         assert.equal(await balance(client, ALICE.id), 0);
         assert.equal(await balance(client, CAROL.id), 0);

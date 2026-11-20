@@ -64,7 +64,7 @@ test('the win is a reply to the winning message that pings only the winner, with
     const clock = fakeClock();
     await playAndWin(room, client, clock);
     const win = room.replies.at(-1);
-    assert.match(win.content, new RegExp(`<@${BOB.id}> جاوب صح! \\+\\*\\*500\\*\\*`, 'u'));
+    assert.match(win.content, new RegExp(`<@${BOB.id}> جاوب صح!\\n💰 \\+\\*\\*500\\*\\*`, 'u'));
     assert.deepEqual(win.allowedMentions, { users: [BOB.id] });
     assert.deepEqual(buttonIds(win), ['g:again:again1']);
     const button = win.components[0].toJSON().components[0];

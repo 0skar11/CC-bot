@@ -68,8 +68,9 @@ const TEXT = {
     ar: {
         answer: (id) => `🎉 <@${id}> جاوب صح!`,
         group: (id) => `👑 <@${id}> كسب اللعبة!`,
-        paid: (reward) => `+${formatCC(reward.amount)} ・ +**${reward.points}** نقطة ・ رصيدك: ${formatCC(reward.balance)}`,
-        capped: (reward) => `+**${reward.points}** نقطة ・ وصلت لحد الـ CC من الألعاب النهارده (${number(CC.gamesBot.dailyCap)} ${CC.short}).`,
+        paid: (reward) => `💰 +${formatCC(reward.amount)} ・ ⭐ +**${reward.points}** نقطة
+💳 رصيدك: ${formatCC(reward.balance)}`,
+        capped: (reward) => `⭐ +**${reward.points}** نقطة ・ وصلت لحد الـ CC من الألعاب النهارده (${number(CC.gamesBot.dailyCap)} ${CC.short}).`,
         failed: '⚠️ حصلت مشكلة في الجايزة، كلّم الإدارة.',
         convertCapped: (cap) => `❌ وصلت لحد الـ CC من الألعاب النهارده (${number(cap)} ${CC.short})، والتحويل بيتحسب منه. نقاطك زي ما هي، جرّب بكرة.`,
         convertTrimmed: (result) => `ℹ️ اتحوّل **${number(result.points)}** نقطة بس من **${number(result.requested)}** عشان حد الـ CC من الألعاب النهارده (${number(CC.gamesBot.dailyCap)} ${CC.short})، والباقي لسه معاك.`,
@@ -77,8 +78,9 @@ const TEXT = {
     en: {
         answer: (id) => `🎉 <@${id}> got it right!`,
         group: (id) => `👑 <@${id}> won the game!`,
-        paid: (reward) => `+${formatCC(reward.amount)} ・ +**${reward.points}** point(s) ・ balance: ${formatCC(reward.balance)}`,
-        capped: (reward) => `+**${reward.points}** point(s) ・ you reached today's games CC limit (${number(CC.gamesBot.dailyCap)} ${CC.short}).`,
+        paid: (reward) => `💰 +${formatCC(reward.amount)} ・ ⭐ +**${reward.points}** point(s)
+💳 balance: ${formatCC(reward.balance)}`,
+        capped: (reward) => `⭐ +**${reward.points}** point(s) ・ you reached today's games CC limit (${number(CC.gamesBot.dailyCap)} ${CC.short}).`,
         failed: '⚠️ Something went wrong with the reward, tell the staff.',
         convertCapped: (cap) => `❌ You reached today's games CC limit (${number(cap)} ${CC.short}), and conversions count toward it. Your points are untouched, try again tomorrow.`,
         convertTrimmed: (result) => `ℹ️ Only **${number(result.points)}** of **${number(result.requested)}** points were converted because of today's games CC limit (${number(CC.gamesBot.dailyCap)} ${CC.short}); you keep the rest.`,
@@ -90,7 +92,8 @@ export function winPayload(lang, userId, reward, kind = 'answer') {
     const text = inLang(lang, TEXT);
     const head = kind === 'group' ? text.group(userId) : text.answer(userId);
     const tail = !reward?.ok ? text.failed : reward.amount > 0 ? text.paid(reward) : text.capped(reward);
-    return { content: `${head} ${tail}`, allowedMentions: { parse: [] } };
+    return { content: `${head}
+${tail}`, allowedMentions: { parse: [] } };
 }
 
 /**

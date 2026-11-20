@@ -261,3 +261,18 @@ test('colors: Stroop test asks for ink or word and accepts correct answer', asyn
     await running;
     assert.ok(session.ended);
 });
+
+test('replica: category rounds, words listed by letter, the article ال accepted, other words refused', async () => {
+    const { pickRounds, isRoundWord } = await import('../src/games/games/replica.js');
+    const { askablePairs, wordsFor, MIN_WORDS } = await import('../src/games/data/categories.js');
+    const rounds = pickRounds(() => 0.3);
+    assert.equal(rounds.length, 3);
+    assert.ok(rounds.every((round, i) => wordsFor(round.category, round.letter).length >= MIN_WORDS && (i === 0 || round.category !== rounds[i - 1].category)));
+    assert.ok(askablePairs().length >= 20);
+    assert.ok(isRoundWord('أسد', { category: 'animal', letter: 'ا' }));
+    assert.ok(isRoundWord('الأسد', { category: 'animal', letter: 'ا' }));
+    assert.ok(isRoundWord('بقرة', { category: 'animal', letter: 'ب' }));
+    assert.ok(!isRoundWord('كلب', { category: 'animal', letter: 'ا' }));
+    assert.ok(!isRoundWord('اااا', { category: 'animal', letter: 'ا' }));
+    assert.ok(isRoundWord('محمد', { category: 'human', letter: 'م' }));
+});

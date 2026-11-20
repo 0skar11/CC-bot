@@ -104,7 +104,7 @@ for (const { game, title, shown, answer, reveal } of CASES) {
         channel.emit(typed(channel, answer, BOB));
         await running;
         const win = textOf({ payload: channel.replies.at(-1) });
-        assert.match(win, new RegExp(`<@${BOB.id}> جاوب صح! \\+\\*\\*500\\*\\*`, 'u'));
+        assert.match(win, new RegExp(`<@${BOB.id}> جاوب صح!\\n💰 \\+\\*\\*500\\*\\*`, 'u'));
         assert.equal(await balance(client, BOB.id), 500);
         assert.equal(await balance(client, ALICE.id), 0);
         assert.equal(channel.live(), 0, 'the collector is stopped');

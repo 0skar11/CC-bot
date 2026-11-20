@@ -169,7 +169,7 @@ test('xo: challenger is ❌ and starts, only the players press, only on their tu
     assert.ok(win, 'the win is announced');
     assert.deepEqual(win.allowedMentions, { users: [ALICE.id] });
     assert.ok(customIds(win).includes('g:again:xo'), 'with play-again');
-    assert.match(win.content, /كسب اللعبة! \+\*\*2,000\*\* 🌀 CC/u);
+    assert.match(win.content, /كسب اللعبة!\n💰 \+\*\*2,000\*\* 🌀 CC/u);
     assert.ok(!(await room.client.db.get(getEconomyKey(economyScopeId, ALICE.id))).ccGamesBot?.earned, 'a group-kind win is not counted in the daily cap');
     // Late presses do nothing and pay nothing.
     assert.match((await move(room, BOB, 8)).replies[0].content, /خلصت/u);
@@ -185,7 +185,7 @@ test('a dual win is not trimmed by the daily cap (it pays like a group win, owne
     await room.client.db.set(getEconomyKey(economyScopeId, ALICE.id), { cc: 0, ccGamesBot: { day: today, earned: CC.gamesBot.dailyCap } });
     for (const [user, cell] of [[ALICE, 0], [BOB, 3], [ALICE, 1], [BOB, 4], [ALICE, 2]]) await move(room, user, cell);
     assert.equal(await balance(room.client, ALICE.id), CC.gamesBot.win, 'the full win even when the cap is reached');
-    assert.match(winLine(room).content, /كسب اللعبة! \+\*\*2,000\*\* 🌀 CC/u);
+    assert.match(winLine(room).content, /كسب اللعبة!\n💰 \+\*\*2,000\*\* 🌀 CC/u);
     assert.equal((await room.client.db.get(getEconomyKey(economyScopeId, ALICE.id))).ccGamesBot.earned, CC.gamesBot.dailyCap, 'the cap counter is untouched');
 });
 

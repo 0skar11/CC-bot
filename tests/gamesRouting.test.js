@@ -106,7 +106,7 @@ test('the sample game end to end: an admin starts it, the first right answer is 
     await session.running;
     assert.equal(isBusy(room.id), false);
     const win = textOf({ payload: room.replies.at(-1) });
-    assert.match(win, new RegExp(`<@${BOB.id}> جاوب صح! \\+\\*\\*500\\*\\* 🌀 CC ・ \\+\\*\\*1\\*\\* نقطة`, 'u'));
+    assert.match(win, new RegExp(`<@${BOB.id}> جاوب صح!\\n💰 \\+\\*\\*500\\*\\* 🌀 CC ・ ⭐ \\+\\*\\*1\\*\\* نقطة`, 'u'));
     assert.equal((await client.db.get(getEconomyKey(economyScopeId, BOB.id))).cc, 500);
     const points = await getPoints(client, GUILD, BOB.id);
     assert.deepEqual([points.server.points, points.server.byGame.test], [1, 1]);

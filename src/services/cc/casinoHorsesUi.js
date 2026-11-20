@@ -28,6 +28,7 @@ const TEXT = {
         oddsHead: '🐎 **الخيول**',
         betsHead: (count, max, cc) => `🎟️ **الرهانات** (${count}/${max}) ・ 💵 ${cc}`,
         noBets: '😶 لسه محدش راهن.',
+        taken: (names) => `🔒 اتاخد ・ ${names}`,
         moreBets: (count) => `🎟️ رهانات تانية: **${count}**`,
         tableFooter: (perMember, edge) => `🏇 لحد ${perMember} رهانات ليك ・ ⚖️ نسبة البيت ${edge}%`,
         racing: '### 🏁 الخيول بتجري!',
@@ -51,6 +52,7 @@ const TEXT = {
         oddsHead: '🐎 **Horses**',
         betsHead: (count, max, cc) => `🎟️ **Bets** (${count}/${max}) ・ 💵 ${cc}`,
         noBets: '😶 No bets yet.',
+        taken: (names) => `🔒 taken ・ ${names}`,
         moreBets: (count) => `🎟️ More bets: **${count}**`,
         tableFooter: (perMember, edge) => `🏇 Up to ${perMember} bets each ・ ⚖️ House edge ${edge}%`,
         racing: '### 🏁 They are off!',
@@ -84,6 +86,12 @@ function betLines(round, lang) {
     return round.bets.map((entry) => `${horseLabel(entry.horse, lang)} ・ <@${entry.userId}> ・ ${formatCC(entry.bet)}${allInTag(entry, lang)}`);
 }
 
+/** ` ・ 🔒 اتاخد ・ @a @b`: who already bet on this horse (shown, never pinged), or nothing. */
+function takenTag(round, number, text) {
+    const users = [...new Set(round.bets.filter((entry) => entry.horse === number).map((entry) => entry.userId))];
+    return users.length ? ` ・ ${text.taken(users.map((id) => `<@${id}>`).join(' '))}` : '';
+}
+
 /** The race taking bets: the countdown, the horses with their odds, every bet, the bet button. */
 export function horsesTablePayload(round) {
     const lang = roundLanguage(round);
@@ -94,7 +102,7 @@ export function horsesTablePayload(round) {
         text.howTo,
         '',
         text.oddsHead,
-        ...HORSES.map((h) => `${horseLabel(h.number, lang)} ・ ×${h.odds}`),
+        ...HORSES.map((h) => `${horseLabel(h.number, lang)} ・ ×${h.odds}${takenTag(round, h.number, text)}`),
         '',
         text.betsHead(round.bets.length, maxBets, formatCC(total(round.bets))),
     ];
