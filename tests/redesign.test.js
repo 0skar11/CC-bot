@@ -9,18 +9,18 @@ import { gamesMenuEmbeds } from '../src/services/cc/gamesMenuUi.js';
 test('theme controller: activates selectively for CHAOS guild 1155236281706627173', () => {
     assert.equal(CHAOS_GUILD_ID, '1155236281706627173');
     assert.equal(isRedesignEnabled('1155236281706627173'), true);
-    assert.equal(isRedesignEnabled('other_guild_999'), false);
-    assert.equal(isRedesignEnabled(null), false);
+    assert.equal(isRedesignEnabled('other_guild_999'), true);
+    assert.equal(isRedesignEnabled(null), true);
 });
 
-test('theme colors: returns modern palette for CHAOS guild and fallback for others', () => {
+test('theme colors: returns the modern palette in every server', () => {
     assert.equal(getGameEmbedColor('single', '1155236281706627173'), 0x2ecc71);
     assert.equal(getGameEmbedColor('dual', '1155236281706627173'), 0x3498db);
     assert.equal(getGameEmbedColor('group', '1155236281706627173'), 0x9b59b6);
     assert.equal(getGameEmbedColor('casino', '1155236281706627173'), 0xf1c40f);
 
-    // Other guilds retain legacy color
-    assert.equal(getGameEmbedColor('single', 'other_guild_999', 0x8e44ad), 0x8e44ad);
+    // Every server gets the redesign now
+    assert.equal(getGameEmbedColor('single', 'other_guild_999', 0x8e44ad), 0x2ecc71);
 });
 
 test('xo board redesign: highlights winning line with ButtonStyle.Success', () => {
@@ -59,7 +59,7 @@ test('xo board redesign: highlights winning line with ButtonStyle.Success', () =
     const rulesOther = xoRules(ctxOther);
     const renderedOther = rulesOther.render(board);
     const row0Other = renderedOther.components[0].components;
-    assert.equal(row0Other[0].data.style, ButtonStyle.Danger);
+    assert.equal(row0Other[0].data.style, ButtonStyle.Success);
 });
 
 test('horses casino redesign: generates race track and embeds', async () => {

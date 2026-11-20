@@ -66,7 +66,7 @@ for (const { game, timeMs, title, answers, win, reveal, theme } of CASES) {
         assert.equal(cards.length, before + 1, 'one card');
         const card = cards.at(-1);
         assert.ok(Buffer.isBuffer(card.picture) || /^<svg /u.test(card.picture), 'a picture (PNG or SVG)');
-        assert.equal(card.theme, theme);
+        assert.equal(card.theme?.from ?? card.theme, theme === 'dark' ? '#0f172a' : theme); // the dark picture theme is the redesigned palette in every server
         const prompt = payload.embeds[0];
         assert.equal(prompt.title, title);
         assert.equal(prompt.image.url, `attachment://${CARD_FILE}`);

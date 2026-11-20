@@ -1,6 +1,5 @@
 // theme.js — Shared UI theme, palette, and guild rollout controller for CC-bot games redesign.
-// Enables the modern visual theme selectively for server 1155236281706627173 (and any test servers),
-// while preserving legacy styling for other servers until the owner approves full rollout.
+// Enables the modern visual theme in every server (REDESIGN_ALL=false switches it off).
 
 export const CHAOS_GUILD_ID = '1155236281706627173';
 
@@ -13,13 +12,11 @@ export const REDESIGN_GUILD_IDS = new Set([CHAOS_GUILD_ID, ...envGuilds]);
 
 /**
  * Checks whether the redesign visual system is active for a given guild.
- * Defaults to true for CHAOS_GUILD_ID (1155236281706627173) and any configured test guilds.
- * Set REDESIGN_ALL=true in environment to activate across all servers.
+ * On for every server unless REDESIGN_ALL=false.
  */
-export function isRedesignEnabled(guildId) {
-    if (process.env.REDESIGN_ALL === 'true') return true;
-    if (!guildId) return false;
-    return REDESIGN_GUILD_IDS.has(String(guildId));
+export function isRedesignEnabled(_guildId) {
+    // Owner's rule (2026-11-17): every change applies to all servers. REDESIGN_ALL=false is the only way to turn it off.
+    return String(process.env.REDESIGN_ALL ?? '').trim().toLowerCase() !== 'false';
 }
 
 export const PALETTE = Object.freeze({
