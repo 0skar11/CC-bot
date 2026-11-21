@@ -1,7 +1,7 @@
 import { isAllowedGuild, isAllowedChannel, isCasinoChannel, isCommandChannel, prefix, streakEnabled } from '../config/runtime.js';
 import { isBourseGuildCommand } from '../config/bourseGuild.js';
 import { CASINO_COMMAND, GAMES_COMMAND } from '../config/casino.js';
-import { applyWordAliases, commandFirst } from '../config/commands/commandAliases.js';
+import { applyWordAliases, commandFirst, HORSES_DOT_WORDS } from '../config/commands/commandAliases.js';
 import { amountErrorText, joinAmountWords, looksLikeAmount, parseAmount, toAsciiDigits } from '../config/amount.js';
 import { handleStreakCommand, handleStreakMessage } from '../services/cc/streakService.js';
 import { handleStreakBotMessage } from '../services/cc/streakBotService.js';
@@ -57,7 +57,7 @@ export default {
         // src/config/commands/commandAliases.js). A dot stays no prefix of these commands (only of the chat games, and .احصنة/.horses).
         let effectiveTyped = typed;
         let isHorsesDot = false;
-        if (['.horses', '.احصنة', '.أحصنة', '.خيول'].includes(effectiveTyped.toLowerCase())) {
+        if (HORSES_DOT_WORDS.includes(effectiveTyped.toLowerCase())) {
             effectiveTyped = effectiveTyped.slice(1);
             isHorsesDot = true;
         }

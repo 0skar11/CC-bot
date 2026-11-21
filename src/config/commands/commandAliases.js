@@ -19,7 +19,8 @@ export const commandArgAliases = {
     blackjack: 'casino blackjack', bj: 'casino blackjack', بلاك: 'casino blackjack', بلاكجاك: 'casino blackjack', 'بلاك جاك': 'casino blackjack',
     roulette: 'casino roulette', روليت: 'casino roulette', الروليت: 'casino roulette',
     rocket: 'casino rocket', صاروخ: 'casino rocket', الصاروخ: 'casino rocket',
-    horses: 'casino horses', احصنة: 'casino horses', أحصنة: 'casino horses', خيول: 'casino horses',
+    horses: 'casino horses', احصنة: 'casino horses', أحصنة: 'casino horses', احصنه: 'casino horses', أحصنه: 'casino horses', خيول: 'casino horses',
+    حصان: 'casino horses', الاحصنة: 'casino horses', الاحصنه: 'casino horses', خيل: 'casino horses',
     games: 'games', العاب: 'games', ألعاب: 'games', الالعاب: 'games', الألعاب: 'games',
     شراء: 'bourse invest', اشتري: 'bourse invest',
     اسعار: 'bourse prices', أسعار: 'bourse prices', الاسعار: 'bourse prices', الأسعار: 'bourse prices', prices: 'bourse prices',
@@ -33,6 +34,8 @@ export const commandArgAliases = {
     رصيد: 'cc', رصيدي: 'cc', رصيدى: 'cc', فلوس: 'cc', كريدت: 'cc',
     'top cc': 'cctop', 'توب cc': 'cctop', 'توب كريدت': 'cctop',
 };
+/** The words that open the horse race typed with a dot (`.احصنه 100 2`, `.حصان 200 4`): every spelling in the aliases. */
+export const HORSES_DOT_WORDS = Object.keys(commandArgAliases).filter((word) => commandArgAliases[word] === 'casino horses').map((word) => `.${word}`);
 // A typed amount: plain digits, or what parseAmount (src/config/amount.js) reads (`5k`, `5,000`, `1.5m`, `٥٠٠`).
 const isAmountWord = (arg) => /^\d+$/u.test(String(arg)) || parseAmount(arg) !== null;
 const isMentionOrId = (arg) => /^(?:<@!?\d{17,20}>|\d{17,20})$/u.test(String(arg));

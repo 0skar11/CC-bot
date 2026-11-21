@@ -91,3 +91,14 @@ test('renderRaceTrack and horsesPayload produce valid Discord embeds', () => {
     assert.ok(payload.embeds.length > 0);
     assert.ok(payload.embeds[0].description.includes('الرعد'));
 });
+
+test('the horse race is typed with any spelling: احصنة / احصنه / أحصنه / حصان / خيول, with or without a dot', async () => {
+    const { applyWordAliases, HORSES_DOT_WORDS, isGameInvocation } = await import('../src/config/commands/commandAliases.js');
+    for (const word of ['horses', 'احصنة', 'احصنه', 'أحصنة', 'أحصنه', 'حصان', 'خيول', 'خيل']) {
+        const parsed = applyWordAliases(word, ['100', '2'], false);
+        assert.equal(parsed?.commandName, 'casino', word);
+        assert.deepEqual(parsed?.args?.slice(0, 1), ['horses'], word);
+        assert.ok(isGameInvocation(word, ['100', '2']), word);
+        assert.ok(HORSES_DOT_WORDS.includes(`.${word}`), word);
+    }
+});
