@@ -14,7 +14,7 @@ import { getCasinoRoundPrefix, getEconomyPrefix } from '../../utils/database/key
 import { logger } from '../../utils/logger.js';
 import { secureRandomInt } from './casinoService.js';
 import {
-    attachRoundMessage, cashOutRocket, crashRocket, endDecision, finishRound, joinRound, launchRocket, loadRound, raceHorses,
+    attachRoundMessage, cashOutRocket, crashRocket, endDecision, finishRound, joinRound, launchRocket, loadRound, raceHorses, roundFinish,
     refundOrphanStakes, rocketMultiplierAt, rocketTimeTo, roundKey, settleRound, settleStaleRound, spinRoulette, withRoundLock,
 } from './casinoGroupService.js';
 import {
@@ -138,7 +138,7 @@ async function spinTheWheel(client, entry) {
 // ---- Horses ----
 
 /**
- * The race: the winner is drawn and saved first (raceHorses), then the message shows CASINO.horses.frames frames,
+ * The race: the finishing order is drawn and saved first (raceHorses), then the message shows CASINO.horses.frames frames,
  * one every tickMs (each edit waits for the one before, so they never pile up), then every bet is settled and the
  * result (with the PNG card) replaces the race. A failed settlement is tried again without running the race twice.
  */
@@ -148,7 +148,7 @@ async function runRace(client, entry) {
     if (!raced) return end(entry);
     entry.round = raced;
     const { frames, tickMs } = CASINO.horses;
-    if (!entry.plan) entry.plan = racePlan(raced.winner, { frames });
+    if (!entry.plan) entry.plan = racePlan(roundFinish(raced), { frames });
     if (entry.phase === 'open') {
         entry.phase = 'racing';
         for (const positions of entry.plan.slice(0, -1)) {
@@ -164,7 +164,7 @@ async function runRace(client, entry) {
     end(entry);
     if (!round) return undefined;
     const positions = entry.plan.at(-1);
-    const png = await renderRaceTrackPng(round.winner, { lang: round.lang, positions });
+    const png = await renderRaceTrackPng(roundFinish(round), { lang: round.lang, positions });
     return render(client, entry, horsesResultPayload(round, entry.results, { positions, png }), { final: true });
 }
 

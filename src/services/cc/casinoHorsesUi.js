@@ -1,7 +1,7 @@
 // casinoHorsesUi.js — the messages of the room's horse race (a group round, casinoGroupService.js /
-// casinoGroupSessions.js): the table while it takes bets (countdown, the horses and their odds, every bet), the race
-// frames (the lanes, who is in front), the result (the winner, every bet paid or lost, the PNG card) and the restart
-// notice. Everything is in the round's language (its opener's, `round.lang`). Mentions are shown, never pinged. The
+// casinoGroupSessions.js): the table while it takes bets (countdown, what the first 3 places pay, the horses, all
+// equally likely, every bet), the race frames (the lanes, who is in front), the result (the winner, the
+// first 3 with their multipliers, every bet paid or lost, the PNG card) and the restart notice. Everything is in the round's language (its opener's, `round.lang`). Mentions are shown, never pinged. The
 // winner is never shown before the race ends (the race frames only show where the horses are). Colours: the casino
 // gold of src/games/ui/theme.js (PALETTE.casino), green when the race paid somebody, red when nobody won.
 
@@ -9,9 +9,11 @@ import { AttachmentBuilder } from 'discord.js';
 import { ccEmbed, formatCC } from '../../config/cc.js';
 import { CASINO, CASINO_COLORS } from '../../config/casino.js';
 import { getGameEmbedColor } from '../../games/ui/theme.js';
-import { roundLanguage } from './casinoGroupService.js';
+import { roundFinish, roundLanguage } from './casinoGroupService.js';
 import { fitLines, joinRow } from './casinoGroupUi.js';
-import { HORSES, horseByNumber, houseEdgePercent, leaderOf, raceLanes } from './casinoHorses.js';
+import {
+    HORSES, horseByNumber, houseEdgePercent, leaderOf, medalOf, placeMultiplier, placeOf, placesLine, raceLanes,
+} from './casinoHorses.js';
 import { inLang } from './lang.js';
 
 export const RACE_FILE = 'horses.png';
@@ -25,17 +27,20 @@ const TEXT = {
         title: '🏇 سباق الخيول',
         startsAt: (at) => `⏳ السباق بيبدأ <t:${at}:R>`,
         howTo: '🎟️ دوس 🏇 **راهن** أو اكتب `احصنة 100 3`',
-        oddsHead: '🐎 **الخيول**',
+        places: (line) => `🏆 أول 3 بيكسبوا: ${line} ・ الباقي بيخسر`,
+        oddsHead: '🐎 **الخيول** ・ كل الأحصنة فرصتها متساوية',
         betsHead: (count, max, cc) => `🎟️ **الرهانات** (${count}/${max}) ・ 💵 ${cc}`,
         noBets: '😶 لسه محدش راهن.',
         taken: (names) => `🔒 اتاخد ・ ${names}`,
         moreBets: (count) => `🎟️ رهانات تانية: **${count}**`,
-        tableFooter: (perMember, edge) => `🏇 لحد ${perMember} رهانات ليك ・ ⚖️ نسبة البيت ${edge}%`,
+        tableFooter: (perMember, edge) => `🏇 حصان واحد بس ليك، لحد ${perMember} رهانات عليه ・ ⚖️ نسبة البيت ${edge}%`,
         racing: '### 🏁 الخيول بتجري!',
         leader: (horse) => `🥇 في المقدمة: ${horse}`,
         betsCount: (count, cc) => `🎟️ ${count} رهان ・ 💵 ${cc}`,
-        won: (horse, odds) => `🏆 ${horse} كسب السباق ・ ×${odds}`,
-        stakeWon: (userId, horse, bet, cc) => `🏆 <@${userId}> على ${horse} ・ راهن ${bet} ← كسب ${cc}`,
+        won: (horse, multiplier) => `🏆 ${horse} كسب السباق ・ ×${multiplier}`,
+        podiumHead: '🏁 **أول 3**',
+        podium: (medal, horse, multiplier) => `${medal} ${horse} ・ ×${multiplier}`,
+        stakeWon: (userId, horse, bet, cc, place) => `🏆 <@${userId}> على ${horse} (${place}) ・ راهن ${bet} ← كسب ${cc}`,
         stakeLost: (userId, horse, cc) => `💸 <@${userId}> على ${horse} ・ خسر ${cc}`,
         stakeBack: (userId, horse, cc) => `↩️ <@${userId}> على ${horse} ・ رجعله ${cc}`,
         nobodyBet: '😶 محدش كان راهن.',
@@ -49,17 +54,20 @@ const TEXT = {
         title: '🏇 Horse Race',
         startsAt: (at) => `⏳ The race starts <t:${at}:R>`,
         howTo: '🎟️ Press 🏇 **Bet** or type `horses 100 3`',
-        oddsHead: '🐎 **Horses**',
+        places: (line) => `🏆 The first 3 pay: ${line} ・ the rest lose`,
+        oddsHead: '🐎 **Horses** ・ every horse has the same chance',
         betsHead: (count, max, cc) => `🎟️ **Bets** (${count}/${max}) ・ 💵 ${cc}`,
         noBets: '😶 No bets yet.',
         taken: (names) => `🔒 taken ・ ${names}`,
         moreBets: (count) => `🎟️ More bets: **${count}**`,
-        tableFooter: (perMember, edge) => `🏇 Up to ${perMember} bets each ・ ⚖️ House edge ${edge}%`,
+        tableFooter: (perMember, edge) => `🏇 One horse each, up to ${perMember} bets on it ・ ⚖️ House edge ${edge}%`,
         racing: '### 🏁 They are off!',
         leader: (horse) => `🥇 In front: ${horse}`,
         betsCount: (count, cc) => `🎟️ ${count} bets ・ 💵 ${cc}`,
-        won: (horse, odds) => `🏆 ${horse} won the race ・ ×${odds}`,
-        stakeWon: (userId, horse, bet, cc) => `🏆 <@${userId}> on ${horse} ・ bet ${bet} → won ${cc}`,
+        won: (horse, multiplier) => `🏆 ${horse} won the race ・ ×${multiplier}`,
+        podiumHead: '🏁 **Top 3**',
+        podium: (medal, horse, multiplier) => `${medal} ${horse} ・ ×${multiplier}`,
+        stakeWon: (userId, horse, bet, cc, place) => `🏆 <@${userId}> on ${horse} (${place}) ・ bet ${bet} → won ${cc}`,
         stakeLost: (userId, horse, cc) => `💸 <@${userId}> on ${horse} ・ lost ${cc}`,
         stakeBack: (userId, horse, cc) => `↩️ <@${userId}> on ${horse} ・ got back ${cc}`,
         nobodyBet: '😶 Nobody bet.',
@@ -92,7 +100,7 @@ function takenTag(round, number, text) {
     return users.length ? ` ・ ${text.taken(users.map((id) => `<@${id}>`).join(' '))}` : '';
 }
 
-/** The race taking bets: the countdown, the horses with their odds, every bet, the bet button. */
+/** The race taking bets: the countdown, what the places pay, the horses (all equally likely), every bet, the bet button. */
 export function horsesTablePayload(round) {
     const lang = roundLanguage(round);
     const text = say(lang);
@@ -100,9 +108,10 @@ export function horsesTablePayload(round) {
     const head = [
         text.startsAt(seconds(round.closesAt)),
         text.howTo,
+        text.places(placesLine()),
         '',
         text.oddsHead,
-        ...HORSES.map((h) => `${horseLabel(h.number, lang)} ・ ×${h.odds}${takenTag(round, h.number, text)}`),
+        ...HORSES.map((h) => `${horseLabel(h.number, lang)}${takenTag(round, h.number, text)}`),
         '',
         text.betsHead(round.bets.length, maxBets, formatCC(total(round.bets))),
     ];
@@ -127,8 +136,17 @@ export function horsesRacePayload(round, positions) {
     ].join('\n'), { color: color(round) })]);
 }
 
-/** One line per settled stake (winners first, biggest payout first), or "nobody bet". */
-function stakeLines(results, lang) {
+/** `🥈 ×2`: the paid place of horse `number` in `finish`, or '' (not placed). */
+function placeTag(finish, number) {
+    const place = placeOf(finish, number);
+    return placeMultiplier(place) ? `${medalOf(place)} ×${placeMultiplier(place)}` : '';
+}
+
+/**
+ * One line per settled stake (winners first, biggest payout first), or "nobody bet". `finish` (the finishing order)
+ * names the place each winning bet was paid for.
+ */
+function stakeLines(results, lang, finish = []) {
     const text = say(lang);
     const lines = [];
     for (const result of results) {
@@ -136,7 +154,7 @@ function stakeLines(results, lang) {
             const horse = horseLabel(stake.horse, lang);
             const tag = allInTag(stake, lang);
             if (stake.refunded) lines.push({ rank: 1, payout: stake.payout, line: text.stakeBack(result.userId, horse, formatCC(stake.bet)) + tag });
-            else if (stake.payout > 0) lines.push({ rank: 0, payout: stake.payout, line: text.stakeWon(result.userId, horse, formatCC(stake.bet), formatCC(stake.payout)) + tag });
+            else if (stake.payout > 0) lines.push({ rank: 0, payout: stake.payout, line: text.stakeWon(result.userId, horse, formatCC(stake.bet), formatCC(stake.payout), placeTag(finish, stake.horse)) + tag });
             else lines.push({ rank: 2, payout: 0, line: text.stakeLost(result.userId, horse, formatCC(stake.bet)) + tag });
         }
     }
@@ -149,22 +167,34 @@ function paidLine(results, lang) {
     return say(lang).paid(formatCC(stakes.reduce((sum, stake) => sum + stake.payout, 0)), formatCC(total(stakes)));
 }
 
+/** The paid places of `finish`, 1st first: `🥇 \`#3\` 🦅 الصقر ・ ×4` (fewer when the race had fewer horses). */
+function podiumLines(finish, lang) {
+    const text = say(lang);
+    return finish.map((number, place) => (placeMultiplier(place) && horseByNumber(number)
+        ? text.podium(medalOf(place), horseLabel(number, lang), placeMultiplier(place))
+        : null)).filter(Boolean);
+}
+
 /**
- * The finished race: the winner in big letters, the final lanes, every bet won or lost (winners first) and what was
- * paid. `png` (renderRaceTrackPng) is attached as the embed's image when given.
+ * The finished race: the winner in big letters, the first 3 with their multipliers, the final lanes, every bet won
+ * or lost (winners first, with the place they were paid for) and what was paid. `png` (renderRaceTrackPng) is
+ * attached as the embed's image when given.
  */
 export function horsesResultPayload(round, results, { positions = null, png = null } = {}) {
     const lang = roundLanguage(round);
     const text = say(lang);
-    const winner = horseByNumber(round.winner);
+    const finish = roundFinish(round);
     const paidSomebody = results.some((result) => result.payout > 0);
     const head = [
         `# 🏆 ${horseLabel(round.winner, lang)}`,
-        text.won(horseLabel(round.winner, lang), winner?.odds ?? ''),
+        text.won(horseLabel(round.winner, lang), placeMultiplier(0)),
         '',
-        ...(positions ? [raceLanes(positions, { lang, winner: round.winner }), ''] : []),
+        text.podiumHead,
+        ...podiumLines(finish, lang),
+        '',
+        ...(positions ? [raceLanes(positions, { lang, winner: round.winner, order: finish }), ''] : []),
     ];
-    const embed = ccEmbed(text.title, fitLines(head, stakeLines(results, lang), text.moreBets, ['', `> ${paidLine(results, lang)}`]), {
+    const embed = ccEmbed(text.title, fitLines(head, stakeLines(results, lang, finish), text.moreBets, ['', `> ${paidLine(results, lang)}`]), {
         color: color(round, results.length ? (paidSomebody ? 'win' : 'loss') : null),
         footer: text.resultFooter,
     });
@@ -176,10 +206,12 @@ export function horsesResultPayload(round, results, { positions = null, png = nu
     return quiet([embed], [], files);
 }
 
-/** A race finished by the restart check: every bet given back (it never ran) or paid by its saved winner. */
+/** A race finished by the restart check: every bet given back (it never ran) or paid by its saved places. */
 export function horsesRecoveryPayload(round, results) {
     const lang = roundLanguage(round);
     const text = say(lang);
-    const head = round.status === 'raced' ? text.recoveryRaced(horseLabel(round.winner, lang)) : text.recoveryOpen;
-    return quiet([ccEmbed(text.title, fitLines([head, ''], stakeLines(results, lang), text.moreBets, ['', paidLine(results, lang)]), { color: color(round) })]);
+    const raced = round.status === 'raced';
+    const finish = raced ? roundFinish(round) : [];
+    const head = raced ? [text.recoveryRaced(horseLabel(round.winner, lang)), ...podiumLines(finish, lang)] : [text.recoveryOpen];
+    return quiet([ccEmbed(text.title, fitLines([...head, ''], stakeLines(results, lang, finish), text.moreBets, ['', paidLine(results, lang)]), { color: color(round) })]);
 }

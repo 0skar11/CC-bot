@@ -153,8 +153,8 @@ test('/guide answers with the contents page in its language option or the member
 });
 
 test('the help menu lists the guide in both languages', async () => {
-    const { readFile } = await import('node:fs/promises');
-    const source = await readFile(new URL('../src/games/helpMenu.js', import.meta.url), 'utf8');
-    assert.match(source, /`شرح` `help` `\/guide` — الشرح: CC وتكسبه ازاي/u);
-    assert.match(source, /`help` `شرح` `\/guide` — the guide: CC and how to earn it/u);
+    const { helpEmbed } = await import('../src/games/helpMenu.js');
+    const page = (lang) => helpEmbed({ lang, category: 'general' }).fields.map((field) => field.value).join('\n');
+    assert.match(page('ar'), /\*\*الشرح\*\* — CC وتكسبه ازاي[^\n]*\n╰ `شرح` ・ `help` ・ `\/guide`/u);
+    assert.match(page('en'), /\*\*Guide\*\* — CC and how to earn it[^\n]*\n╰ `help` ・ `شرح` ・ `\/guide`/u);
 });

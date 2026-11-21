@@ -19,13 +19,14 @@
 
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { CC, ccEmbed, formatCC } from '../../config/cc.js';
-import { CASINO, CASINO_BUTTON_PREFIX, COIN_SIDES, DICE_DIRECTIONS, casinoColor, outcomeOf } from '../../config/casino.js';
+import { CASINO, CASINO_BUTTON_PREFIX, COIN_SIDES, DICE_DIRECTIONS, HORSES_COUNT, casinoColor, outcomeOf } from '../../config/casino.js';
 import { SLOT_SYMBOL_KEYS, casinoEmoji as E, plainEmoji as P } from '../../config/emojis.js';
 import {
     blackjackPayout, chickenMultiplierHundredths, chickenPayout, chickenSurvivePercent, diceMultiplierHundredths, diceWins,
     handScore, isNaturalBlackjack, isSoftHand, minesPayout, minesMultiplierHundredths,
 } from './casinoService.js';
 import { multiplierText } from './casinoGroupUi.js';
+import { placesLine } from './casinoHorses.js';
 import { inLang, readLang } from './lang.js';
 
 const number = (value) => Number(value || 0).toLocaleString('en-US');
@@ -140,7 +141,7 @@ const TEXT = {
             roulette: () => `🎡 \`روليت 100 احمر\` أو \`روليت 100 17\` ・ روليت جماعي: 🔴 / ⚫ ×${CASINO.roulette.colorPays}، رقم من 0 لـ 36 ×${CASINO.roulette.numberPays}`,
             rocket: () => `🚀 \`صاروخ 100\` أو \`صاروخ 100 2\` (أو \`كراش 100 2.5\`) ・ صاروخ (كراش جماعي): اركب مع الروم واعمل كاش أوت قبل ما ينفجر`,
             blackjack: () => '🃏 `بلاك جاك 100` ・ بلاك جاك: العب ضد الموزع للوصول لـ 21، سحب ووقف ودبل، ومكسب البلاك جاك ×2.50',
-            horses: () => `🏇 \`احصنة 100 3\` ・ سباق جماعي: راهن على حصان من 1 لـ 6 (لحد ×38)، والسباق بيبدأ بعد ${Math.round(CASINO.horses.joinMs / 1000)} ثانية`,
+            horses: () => `🏇 \`احصنة 100 3\` ・ سباق جماعي: راهن على حصان واحد من 1 لـ ${HORSES_COUNT}، وأول 3 بيكسبوا (${placesLine()})، والسباق بيبدأ بعد ${Math.round(CASINO.horses.joinMs / 1000)} ثانية`,
         },
         casinoHead: () => `🎰 **الكازينو** ・ الرهان من ${number(CASINO.minBet)} ${CC.short} لحد رصيدك${CASINO.unlimited ? '' : ` (أقصى رهان ${number(CASINO.maxBet)})`}`,
         allInHint: () => `🔥 اكتب \`كل\` مكان الرهان وتدخل بكل فلوسك${CASINO.unlimited ? '' : ` (لحد ${number(CASINO.maxBet)})`}: \`صاروخ كل\` ・ \`مينز كل 3\` ・ \`نرد كل فوق 70\``,
@@ -157,12 +158,13 @@ const TEXT = {
         badTarget: () => `❌ المضاعف لازم يكون من **${multiplierText(CASINO.crash.minTarget)}** لـ **${multiplierText(CASINO.crash.maxTarget)}** (مثلًا \`2.5\`).`,
         badDice: (minChance, maxChance) => `❌ اختار \`تحت\` رقم من ${minChance} لـ ${maxChance} أو \`فوق\` رقم من ${100 - maxChance} لـ ${100 - minChance} (مثلًا \`نرد 100 فوق 70\`).`,
         tooMany: (max) => `❌ أقصى حاجة ${max} رهانات ليك في الجولة الواحدة.`,
+        otherHorse: (horse) => `❌ إنت راهنت على الحصان \`#${horse}\` خلاص: حصان واحد بس في السباق، تقدر تزود على نفس الحصان.`,
         failures: {
             bad_mines: `❌ عدد الألغام لازم يكون من ${CASINO.mines.min} لـ ${CASINO.mines.max}.`,
             bad_side: '❌ اختار `ملك` أو `كتابة`.',
             cooldown: '⏳ استنى ثانية قبل اللعبة الجاية.',
             bad_choice: '❌ اختار 🔴 `احمر` أو ⚫ `اسود` أو 🟢 `اخضر` أو رقم من 0 لـ 36.',
-            bad_horse: '❌ اختار حصان من 1 لـ 6 (مثلًا `احصنة 100 3`).',
+            bad_horse: `❌ اختار حصان من 1 لـ ${HORSES_COUNT} (مثلًا \`احصنة 100 3\`).`,
             busy: '⏳ فيه جولة شغالة في الروم دلوقتي، استنى لما تخلص وابدأ اللي بعدها.',
             full: '❌ الجولة دي اتملت، استنى اللي بعدها.',
             joined: '🧑‍🚀 انت راكب الصاروخ ده خلاص، استنى الإقلاع.',
@@ -268,7 +270,7 @@ const TEXT = {
             roulette: () => `🎡 \`roulette 100 red\` or \`roulette 100 17\` ・ Group roulette: 🔴 / ⚫ ×${CASINO.roulette.colorPays}, a number from 0 to 36 ×${CASINO.roulette.numberPays}`,
             rocket: () => '🚀 `rocket 100` or `rocket 100 2` (or `crash 100 2.5`) ・ Rocket (group crash): ride with the room and cash out before it blows up',
             blackjack: () => '🃏 `blackjack 100` ・ Blackjack: beat the dealer to 21, hit, stand or double, pays ×2.50',
-            horses: () => `🏇 \`horses 100 3\` ・ Group race: bet on horse 1-6 (up to ×38), the race starts ${Math.round(CASINO.horses.joinMs / 1000)}s after the first bet`,
+            horses: () => `🏇 \`horses 100 3\` ・ Group race: bet on one horse 1-${HORSES_COUNT}, the first 3 pay (${placesLine()}), the race starts ${Math.round(CASINO.horses.joinMs / 1000)}s after the first bet`,
         },
         casinoHead: () => `🎰 **Casino** ・ Bets from ${number(CASINO.minBet)} ${CC.short} up to your balance${CASINO.unlimited ? '' : ` (max bet ${number(CASINO.maxBet)})`}`,
         allInHint: () => `🔥 Type \`all\` instead of the bet to go all-in${CASINO.unlimited ? '' : ` (up to ${number(CASINO.maxBet)})`}: \`rocket all\` ・ \`mines all 3\` ・ \`dice all over 70\``,
@@ -284,12 +286,13 @@ const TEXT = {
         badTarget: () => `❌ The multiplier must be from **${multiplierText(CASINO.crash.minTarget)}** to **${multiplierText(CASINO.crash.maxTarget)}** (for example \`2.5\`).`,
         badDice: (minChance, maxChance) => `❌ Pick \`under\` a number from ${minChance} to ${maxChance} or \`over\` a number from ${100 - maxChance} to ${100 - minChance} (for example \`dice 100 over 70\`).`,
         tooMany: (max) => `❌ At most ${max} bets each in one round.`,
+        otherHorse: (horse) => `❌ You already bet on horse \`#${horse}\`: one horse per race, you can only add to that same horse.`,
         failures: {
             bad_mines: `❌ The number of mines must be from ${CASINO.mines.min} to ${CASINO.mines.max}.`,
             bad_side: '❌ Pick `heads` or `tails`.',
             cooldown: '⏳ Wait a second before the next game.',
             bad_choice: '❌ Pick 🔴 `red`, ⚫ `black`, 🟢 `green` or a number from 0 to 36.',
-            bad_horse: '❌ Pick a horse from 1 to 6 (for example `horses 100 3`).',
+            bad_horse: `❌ Pick a horse from 1 to ${HORSES_COUNT} (for example \`horses 100 3\`).`,
             busy: '⏳ A round is being played in this room right now: wait for it to end and start the next one.',
             full: '❌ This round is full, wait for the next one.',
             joined: '🧑‍🚀 You are already on this rocket, wait for take-off.',
@@ -856,6 +859,7 @@ export function casinoFailureText(result, lang) {
     if (result.reason === 'bad_target') return text.badTarget();
     if (result.reason === 'bad_dice') return text.badDice(CASINO.dice.minChance, CASINO.dice.maxChance);
     if (result.reason === 'too_many') return text.tooMany(result.max ?? CASINO.roulette.maxBetsPerMember);
+    if (result.reason === 'other_horse') return text.otherHorse(result.horse ?? '?');
     return text.failures[result.reason] || text.unknown;
 }
 

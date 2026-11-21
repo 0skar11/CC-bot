@@ -16,7 +16,7 @@
 
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 import { ccEmbed, formatCC } from '../../config/cc.js';
-import { CASINO, CASINO_BUTTON_PREFIX, CASINO_COLORS, ROULETTE_COLORS, casinoColor } from '../../config/casino.js';
+import { CASINO, CASINO_BUTTON_PREFIX, CASINO_COLORS, HORSES_COUNT, ROULETTE_COLORS, casinoColor } from '../../config/casino.js';
 import { casinoEmoji as E, plainEmoji as P } from '../../config/emojis.js';
 import { pocketColor, roundLanguage } from './casinoGroupService.js';
 import { inLang } from './lang.js';
@@ -44,7 +44,7 @@ const TEXT = {
         amountHint: (min) => `الرقم بس، من ${min}`,
         choiceLabel: 'تراهن على إيه؟',
         choiceHint: 'احمر أو اسود أو رقم من 0 لـ 36',
-        horseLabel: 'رقم الحصان (1-6)',
+        horseLabel: `رقم الحصان (1-${HORSES_COUNT})`,
         horseHint: 'مثلًا 3',
         rouletteForm: () => `${P('roulette.icon')} راهن على الروليت`,
         rocketForm: '🚀 اركب الصاروخ',
@@ -111,7 +111,7 @@ const TEXT = {
         amountHint: (min) => `Just the number, from ${min}`,
         choiceLabel: 'What do you bet on?',
         choiceHint: 'red, black or a number from 0 to 36',
-        horseLabel: 'Horse number (1-6)',
+        horseLabel: `Horse number (1-${HORSES_COUNT})`,
         horseHint: 'for example 3',
         rouletteForm: () => `${P('roulette.icon')} Bet on the roulette`,
         rocketForm: '🚀 Ride the rocket',

@@ -1,6 +1,7 @@
 // The help menu (src/games/helpMenu.js, router handleHelpSelect): the builder within Discord's limits for every
 // category with the real registry, the banner, the links, the select that edits the same message, the requester-only
-// rule, the 5 minute lifetime, starting a game from a category, the bound on live menus and the `/games` path.
+// rule, the casino games on their own page only, a short explanation on every page and the copy-friendly two-line
+// entries of every game and command, the 5 minute lifetime, starting a game from a category, the bound on live menus and the `/games` path.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { afterEach, test } from 'node:test';
@@ -12,8 +13,8 @@ import loadInteractions from '../src/handlers/loaders/interactions.js';
 import { forgetAgain } from '../src/games/engine/again.js';
 import { abortAll, getSession, isBusy, realClock } from '../src/games/engine/session.js';
 import {
-    BANNER_PATH, HELP_CATEGORIES, HELP_LIFETIME_MS, HELP_MAX, armHelpMenu, embedLength, forgetHelpMenus, helpMenuPayload, helpMenuState,
-    inviteUrl, liveHelpMenus, startableGames,
+    BANNER_PATH, HELP_CATEGORIES, HELP_LIFETIME_MS, HELP_MAX, armHelpMenu, codeList, embedLength, forgetHelpMenus, gameEntry, helpEntry, helpMenuPayload,
+    helpMenuState, inviteUrl, liveHelpMenus, pageAbout, startableGames,
 } from '../src/games/helpMenu.js';
 import { listGames, loadGames } from '../src/games/registry.js';
 import { handleGamesMessage, handleHelpSelect } from '../src/games/router.js';
@@ -86,20 +87,21 @@ test('every category, in both languages, fits Discord: 6,000 characters, 25 fiel
     assert.equal(selects(helpMenuPayload({ token: 'abc', lang: 'en', category: null, user: ALICE }))[0].options[0].label, 'Casino games');
 });
 
-test('the casino games section: its own page with every casino game, a field on the home page and a button everywhere else', () => {
+test('the casino games: listed on the casino page only (not the home page nor the game pages), a button everywhere else', () => {
     const all = (e) => [e.title, e.description, ...(e.fields || []).flatMap((field) => [field.name, field.value])].join('\n');
     const games = {
-        ar: ['مينز 100 3', 'عملة 100 ملك', 'سلوت 100', 'نرد 100 فوق 70', 'فرخة 100', 'بلاك جاك 100', 'روليت 100 احمر', 'صاروخ 100'],
-        en: ['mines 100 3', 'coinflip 100 heads', 'slots 100', 'dice 100 over 70', 'chicken 100', 'blackjack 100', 'roulette 100 red', 'rocket 100'],
+        ar: ['مينز 100 3', 'عملة 100 ملك', 'سلوت 100', 'نرد 100 فوق 70', 'فرخة 100', 'بلاك جاك 100', 'روليت 100 احمر', 'صاروخ 100', 'احصنة 100 1'],
+        en: ['mines 100 3', 'coinflip 100 heads', 'slots 100', 'dice 100 over 70', 'chicken 100', 'blackjack 100', 'roulette 100 red', 'rocket 100', 'horses 100 1'],
     };
     for (const lang of ['ar', 'en']) {
         const page = helpMenuPayload({ token: 'abc', lang, category: 'casino', user: ALICE });
         assert.equal(page.embeds[0].title, lang === 'ar' ? '🎰 العاب الكازينو' : '🎰 Casino games');
-        const home = helpMenuPayload({ token: 'abc', lang, category: null, user: ALICE }).embeds[0];
-        assert.equal(home.fields[0].name, lang === 'ar' ? '🎰 العاب الكازينو' : '🎰 Casino games');
-        for (const example of games[lang]) {
-            assert.ok(all(page.embeds[0]).includes(`\`${example}`), `${lang} page: ${example}`);
-            assert.ok(home.fields[0].value.includes(`\`${example}\``), `${lang} home: ${example}`);
+        for (const example of games[lang]) assert.ok(all(page.embeds[0]).includes(`\`${example}\``), `${lang} page: ${example}`);
+        // The home page and every other page: no casino section, no casino example.
+        for (const category of [null, ...HELP_CATEGORIES.filter((id) => id !== 'casino')]) {
+            const other = helpMenuPayload({ token: 'abc', lang, category, user: ALICE }).embeds[0];
+            assert.ok(!(other.fields || []).some((field) => /كازينو|Casino/u.test(field.name)), `${lang} ${category}: a casino field`);
+            for (const example of games[lang]) assert.ok(!all(other).includes(example), `${lang} ${category}: ${example}`);
         }
         // The button that opens the casino page: on every page but the casino's own (where it would do nothing).
         for (const category of [null, ...HELP_CATEGORIES]) {
@@ -118,7 +120,7 @@ test('the categories: games from the registry with their words and pay, `قري�
     const single = all(embed('single'));
     for (const game of startableGames('single')) assert.ok(single.includes(`\`.${game.names.ar[0]}\``), game.id);
     assert.ok(!single.includes('`.تجربة`'), 'the host-only sample game is not listed with the games (report #295)');
-    assert.match(single, /`\.سؤال` `\.quiz`/u);
+    assert.match(single, /\*\*سؤال\*\* — [^\n]+\n╰ `\.سؤال` ・ `\.quiz`/u);
     assert.match(single, /\*\*500\*\* CC[\s\S]*\*\*20,000\*\* CC/u);
     assert.match(all(embed('group')), /\*\*2,000\*\* CC/u);
     assert.match(all(embed('dual')), /قريبا[\s\S]*`شطرنج`/u);
@@ -136,6 +138,49 @@ test('the categories: games from the registry with their words and pay, `قري�
     assert.ok(all(embed('casino')).includes('`مينز 100'), 'the casino games');
     assert.match(all(embed('casino')), /نسبة البيت/u);
     assert.match(all(embed('economy')), /البورصة[\s\S]*ممتلكاتي/u);
+});
+
+test('every page opens with a short explanation, and the home page lists every page with its explanation', () => {
+    for (const lang of ['ar', 'en']) {
+        for (const category of HELP_CATEGORIES) {
+            const { description } = helpMenuPayload({ token: 't', lang, category, user: ALICE }).embeds[0];
+            assert.equal(description.split('\n')[0], pageAbout(category, lang), `${lang} ${category}`);
+            assert.ok(pageAbout(category, lang).length > 'ℹ️ '.length + 10, `${lang} ${category}: an explanation`);
+        }
+        const home = helpMenuPayload({ token: 't', lang, category: null, user: ALICE }).embeds[0];
+        const pages = home.fields.map((field) => field.value).join('\n').split('\n');
+        assert.equal(pages.length, HELP_CATEGORIES.length);
+        HELP_CATEGORIES.forEach((category, i) => assert.ok(pages[i].endsWith(` — ${pageAbout(category, lang).replace('ℹ️ ', '')}`), `${lang} home: ${category}`));
+        assert.match(home.description, lang === 'ar' ? /📋/u : /copy/u, 'the home page says how to copy');
+    }
+});
+
+test('every game and command is an entry: its name and what it does, then `╰` and its words, each in its own inline code', () => {
+    const entry = /^\S+ \*\*[^*]+\*\* — \S[^\n]*\n╰ `[^`\n]+`(?: ・ `[^`\n]+`)*$/u;
+    for (const lang of ['ar', 'en']) {
+        for (const game of listGames()) {
+            const text = gameEntry(game, lang);
+            assert.match(text, entry, `${lang} ${game.id}`);
+            const words = text.split('\n')[1].slice(2).split(' ・ ').map((word) => word.slice(1, -1));
+            assert.deepEqual(new Set(words), new Set([...game.names.ar, ...game.names.en].map((word) => `.${word}`)), `${lang} ${game.id}: every word, with the dot`);
+        }
+        // Every game and command appears on its page, whole (nothing cut by the embed limits).
+        const pageText = (category) => helpMenuPayload({ token: 't', lang, category, user: ALICE }).embeds[0].fields.map((field) => field.value).join('\n');
+        for (const kind of ['single', 'dual', 'group']) for (const game of startableGames(kind)) assert.ok(pageText(kind).includes(gameEntry(game, lang)), `${lang} ${game.id}`);
+        for (const game of listGames({ kind: 'general' })) assert.ok(pageText('general').includes(gameEntry(game, lang)), `${lang} ${game.id}`);
+        // The admin, general and economy commands use the same two-line shape.
+        for (const category of ['admin', 'general', 'economy']) {
+            const lines = pageText(category).split('\n');
+            const examples = lines.filter((line) => line.startsWith('╰ '));
+            assert.ok(examples.length >= 3, `${lang} ${category}`);
+            for (const line of examples) {
+                assert.match(line, /^╰ `[^`\n]+`(?: ・ `[^`\n]+`)*$/u, `${lang} ${category}: ${line}`);
+                assert.match(lines[lines.indexOf(line) - 1], / — \S/u, `${lang} ${category}: an explanation above ${line}`);
+            }
+        }
+    }
+    assert.equal(codeList(['a 1', 'b']), '`a 1` ・ `b`');
+    assert.equal(helpEntry('🎁 **Daily**', 'every day', ['daily']), '🎁 **Daily** — every day\n╰ `daily`');
 });
 
 test('the link buttons: support only with SUPPORT_URL, the invite from DISCORD_CLIENT_ID or INVITE_URL', () => {

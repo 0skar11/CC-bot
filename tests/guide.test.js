@@ -166,7 +166,7 @@ test('every bourse subcommand is explained and the embeds stay inside Discord li
     for (const embed of embeds) assert.ok(embed.description.length < 4096 && embed.title.length <= 256);
     const total = embeds.reduce((sum, embed) => sum + embed.title.length + embed.description.length + (embed.footer?.text.length || 0), 0);
     assert.ok(total < 6000, `the guide is ${total} characters`);
-    assert.deepEqual(casinoEdges(), { mines: 3, coinflip: 3, slots: 4, crash: 3, dice: 3, chicken: 3, blackjack: 1.5, roulette: 2.7, horses: 2.58, rocket: 3 });
+    assert.deepEqual(casinoEdges(), { mines: 3, coinflip: 3, slots: 4, crash: 3, dice: 3, chicken: 3, blackjack: 1.5, roulette: 2.7, horses: 6.25, rocket: 3 });
 });
 
 test('the guide numbers come from the settings, so changing a constant changes the guide', () => {

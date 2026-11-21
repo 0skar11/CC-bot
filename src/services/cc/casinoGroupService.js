@@ -1,5 +1,5 @@
 // casinoGroupService.js — the casino's group games, rules and money: roulette, rocket (a group crash) and the
-// horse race (casinoHorses.js: the horses, their odds and the draw), one shared round per game per room. The payouts and the house edge are explained in src/config/casino.js; the
+// horse race (casinoHorses.js: the horses and the draw), one shared round per game per room. The payouts and the house edge are explained in src/config/casino.js; the
 // live side (timers, the round message, the restart check) is casinoGroupSessions.js, the embeds casinoGroupUi.js.
 // The callers hold the round's lock (withRoundLock) around every function that writes the round.
 //
@@ -9,13 +9,14 @@
 //   room, whatever the language the members type in (`rocket`, `crash`, `صاروخ` and `كراش` all join it):
 //     { id, game, status, guildId, channelId, messageId, lang, openedAt, closesAt,
 //       bets: [{ userId, bet, choice | target | horse, lang? }],
-//       pocket, spunAt (roulette) | crash, capped, flightAt, crashedAt (rocket) | winner, racedAt (horses) }
+//       pocket, spunAt (roulette) | crash, capped, flightAt, crashedAt (rocket) | winner, order, racedAt (horses) }
 //   `lang` ('ar' | 'en') is the language of the round's one shared message: the language of the member who
 //   opened it, kept for every later edit (rounds saved before it existed read as 'ar'). So a room that mixes
 //   languages sees the opener's language on the shared message; a bet's own `lang` is only saved when it differs
 //   from the round's, and makes that member's private answers (their cash-out clicks) follow their own command.
-//   status 'open' (taking bets) → roulette 'spun' (the pocket is drawn) / horses 'raced' (the winner is drawn and
-//   saved before the race is shown) / rocket 'flying' (the crash point is drawn, never shown before the crash) →
+//   status 'open' (taking bets) → roulette 'spun' (the pocket is drawn) / horses 'raced' (the whole finishing order
+//   is drawn and saved before the race is shown: `order`, 1st first, and `winner` = order[0]; a round raced before
+//   the order existed has `winner` only and pays its 1st place alone) / rocket 'flying' (the crash point is drawn, never shown before the crash) →
 //   rocket 'crashed' → `{ id, game, status: 'done', endedAt }`.
 // - Each member's stake stays in their own economy record until it is settled:
 //     ccCasinoBets: [{ round, game, channelId, bet, choice | target | horse, at }]
@@ -27,7 +28,7 @@
 //   Settling removes the stake in the same save that pays it, so a stake is paid exactly once whoever settles
 //   it (the round's timer, a double click, the restart check).
 // - A round the bot couldn't finish (restart, crash) is settled from what was saved: a spun roulette pays with
-//   its pocket, a raced horse round with its winner; a flying rocket pays its automatic cash-outs from its crash point and gives the riders who
+//   its pocket, a raced horse round with its finishing order; a flying rocket pays its automatic cash-outs from its crash point and gives the riders who
 //   cash out by hand their bet back (they couldn't click), unless the crash had been announced ('crashed');
 //   a round still taking bets gives every bet back. A stake whose round is gone is given back too.
 
@@ -41,7 +42,7 @@ import { updateCCState } from './ccService.js';
 import {
     allInMark, betFor, draw, drawCrashPoint, isBetRequest, isValidCrashTarget, multiplyHundredths, payOut, returnBet, secureRandomInt, takeBet,
 } from './casinoService.js';
-import { HORSES, drawWinningHorse, horsesPayout } from './casinoHorses.js';
+import { HORSES, drawFinishOrder, horsesPayout } from './casinoHorses.js';
 import { DEFAULT_LANG, isLang, readLang } from './lang.js';
 
 const ACTIVE = new Set(['open', 'spun', 'raced', 'flying', 'crashed']);
@@ -81,8 +82,18 @@ const isRouletteChoice = (choice) => choice === 'red' || choice === 'black'
 
 // ---- Horses ----
 
-/** A horse number of the race (1–6). */
+/** A horse number of the race (1 … HORSES_COUNT). */
 export const isHorseNumber = (horse) => Number.isSafeInteger(horse) && HORSES.some((entry) => entry.number === horse);
+
+/** A saved finishing order: every horse of the race once, 1st first. */
+export const isFinishOrder = (order) => Array.isArray(order) && order.length === HORSES.length
+    && order.every(isHorseNumber) && new Set(order).size === order.length;
+
+/** The finishing order a raced round pays by: its saved order, or its winner alone (a round saved before the order). */
+export const roundFinish = (round) => (isFinishOrder(round?.order) ? round.order : [round?.winner]);
+
+/** The horse `userId` already bet on in `round` (a member bets on one horse per race), or null. */
+export const memberHorse = (round, userId) => round.bets.find((entry) => entry.userId === userId)?.horse ?? null;
 
 // ---- Rocket ----
 
@@ -123,6 +134,7 @@ export function readRound(raw) {
     if (!Array.isArray(raw.bets) || !raw.bets.every(isBetEntry) || !Number.isFinite(raw.closesAt)) return null;
     if (raw.status === 'spun' && !(Number.isSafeInteger(raw.pocket) && raw.pocket >= 0 && raw.pocket < CASINO.roulette.pockets)) return null;
     if (raw.status === 'raced' && !isHorseNumber(raw.winner)) return null;
+    if (raw.status === 'raced' && raw.order !== undefined && !(isFinishOrder(raw.order) && raw.order[0] === raw.winner)) return null;
     if ((raw.status === 'flying' || raw.status === 'crashed') && !(Number.isSafeInteger(raw.crash) && raw.crash > 0 && Number.isFinite(raw.flightAt))) return null;
     if (!isLang(raw.lang)) raw.lang = DEFAULT_LANG;
     return raw;
@@ -168,7 +180,7 @@ function newRound(game, guildId, channelId, now, lang) {
     };
 }
 
-/** Why `pick` can't be bet in `game` (roulette: 'red', 'black' or 0–36; horses: 1–6; rocket: null or a target ×1.01–×100). */
+/** Why `pick` can't be bet in `game` (roulette: 'red', 'black' or 0–36; horses: 1 … HORSES_COUNT; rocket: null or a target ×1.01–×100). */
 function badPick(game, pick) {
     if (game === 'roulette') return isRouletteChoice(pick) ? null : 'bad_choice';
     if (game === 'horses') return isHorseNumber(pick) ? null : 'bad_horse';
@@ -182,8 +194,9 @@ function badPick(game, pick) {
  * null); `lang` the language the member bets in (a new round takes it for its message). Returns
  * `{ ok: true, round, created, stake, before, balance }` (`stake.bet` the real amount, `stake.allIn` for an all-in)
  * or `{ ok: false, reason }`: bad_bet, bad_choice, bad_target, busy (a round is being played, with `round`), full,
- * too_many (the member's roulette bets in the round), joined (already on this rocket), no_cc (with `balance`; an
- * all-in under the smallest bet too).
+ * too_many (the member's roulette or horse bets in the round, with `max`), other_horse (the member already bet on
+ * another horse of this race, with `horse`: one horse per member per race, more bets only add to it), joined
+ * (already on this rocket), no_cc (with `balance`; an all-in under the smallest bet too).
  */
 export async function joinRound(client, guildId, userId, game, { channelId, bet: asked, pick = null, lang = null } = {}, { now = Date.now() } = {}) {
     if (!GROUP_GAMES.includes(game) || !channelId) return { ok: false, reason: 'busy' };
@@ -196,6 +209,10 @@ export async function joinRound(client, guildId, userId, game, { channelId, bet:
         if (saved && (saved.status !== 'open' || now >= saved.closesAt)) return { ok: false, reason: 'busy', round: saved, skipSave: true };
         const round = saved || newRound(game, guildId, channelId, now, lang);
         const mine = round.bets.filter((entry) => entry.userId === userId).length;
+        if (game === 'horses') {
+            const horse = memberHorse(round, userId);
+            if (horse !== null && horse !== pick) return { ok: false, reason: 'other_horse', horse, skipSave: true };
+        }
         if (game === 'roulette' || game === 'horses') {
             if (round.bets.length >= CASINO[game].maxBets) return { ok: false, reason: 'full', skipSave: true };
             if (mine >= CASINO[game].maxBetsPerMember) return { ok: false, reason: 'too_many', max: CASINO[game].maxBetsPerMember, skipSave: true };
@@ -307,8 +324,8 @@ export async function spinRoulette(client, key, roundId, { now = Date.now(), ran
 }
 
 /**
- * Horses: the winner is drawn once for the round (crypto, by the odds table of casinoHorses.js) and saved before the
- * race is shown or anybody is paid. Idempotent.
+ * Horses: the whole finishing order is drawn once for the round (crypto, a uniform random order: every horse
+ * equally likely at every place) and saved with its winner before the race is shown or anybody is paid. Idempotent.
  */
 export async function raceHorses(client, key, roundId, { now = Date.now(), randomInt = secureRandomInt } = {}) {
     return atomically(client, async () => {
@@ -316,7 +333,8 @@ export async function raceHorses(client, key, roundId, { now = Date.now(), rando
         if (!round || round.game !== 'horses') return null;
         if (round.status === 'raced') return round;
         round.status = 'raced';
-        round.winner = drawWinningHorse((max) => draw(randomInt, max)).number;
+        round.order = drawFinishOrder((max) => draw(randomInt, max));
+        [round.winner] = round.order;
         round.racedAt = now;
         await saveRound(client, key, round);
         return round;
@@ -380,10 +398,13 @@ export function rocketEndPayout(round, stake) {
     return round.capped ? multiplyHundredths(stake.bet, round.crash) : 0;
 }
 
-/** The settlement of every stake of a finished round: the spun pocket, the race's winner, or the crashed rocket. */
+/** The settlement of every stake of a finished round: the spun pocket, the race's places, or the crashed rocket. */
 export function endDecision(round) {
     if (round.game === 'roulette') return (stake) => ({ payout: roulettePayout(stake.bet, stake.choice, round.pocket) });
-    if (round.game === 'horses') return (stake) => ({ payout: horsesPayout(stake.bet, stake.horse, round.winner) });
+    if (round.game === 'horses') {
+        const finish = roundFinish(round);
+        return (stake) => ({ payout: horsesPayout(stake.bet, stake.horse, finish) });
+    }
     return (stake) => ({ payout: rocketEndPayout(round, stake) });
 }
 

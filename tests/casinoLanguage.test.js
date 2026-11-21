@@ -125,7 +125,7 @@ describe('the language resolver', () => {
         };
         const roulette = { id: 'abcabcabcabc', game: 'roulette', status: 'spun', closesAt: T0, pocket: 32, bets: [{ userId: A, bet: 100, choice: 'red' }, { userId: B, bet: 50, choice: 17 }] };
         const results = [{ userId: A, settled: [{ bet: 100, payout: 200, refunded: false, choice: 'red' }] }, { userId: B, settled: [{ bet: 50, payout: 50, refunded: true, choice: 17 }] }];
-        const reasons = ['bad_bet', 'no_cc', 'active', 'bad_target', 'bad_dice', 'too_many', 'bad_mines', 'bad_side', 'cooldown', 'bad_choice', 'busy', 'full', 'joined'];
+        const reasons = ['bad_bet', 'no_cc', 'active', 'bad_target', 'bad_dice', 'too_many', 'bad_mines', 'bad_side', 'cooldown', 'bad_choice', 'busy', 'full', 'joined', 'other_horse'];
         const clicks = [{ ok: true, multiplier: 150, payout: 150, balance: 1050 }, ...['not_in', 'already', 'not_started', 'crashed', 'stale'].map((reason) => ({ ok: false, reason, multiplier: 150, payout: 150 })), { ok: false, reason: 'crashed', round: { capped: true, crash: 10_000 } }];
         const texts = (lang) => [
             minesBoardPayload({ ...game, lang }, A),

@@ -2,7 +2,7 @@ import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { CC } from '../../config/cc.js';
 import { isAllowedGuild, isCasinoChannel } from '../../config/runtime.js';
 import {
-    ALL_IN, CASINO, CASINO_COMMAND, isPercentAsk, GROUP_GAMES, SOLO_GAMES, betFirst, betWord, casinoChannelNotice, casinoGuildNotice, coinSide, diceDirection, readGameArgs, rouletteChoice, targetHundredths,
+    ALL_IN, CASINO, CASINO_COMMAND, HORSES_COUNT, isPercentAsk, GROUP_GAMES, SOLO_GAMES, betFirst, betWord, casinoChannelNotice, casinoGuildNotice, coinSide, diceDirection, readGameArgs, rouletteChoice, targetHundredths,
 } from '../../config/casino.js';
 import {
     isBetRequest, isValidMineCount, isValidCrashTarget, diceChance, startMines, cashOutMines, startChicken, cashOutChicken,
@@ -208,13 +208,13 @@ export default {
                 .setName('choice')
                 .setDescription('red, black, green or a number 0-36 (احمر، اسود، اخضر)')
                 .setRequired(true)))
-        .addSubcommand((sub) => sub.setName('horses').setDescription('Group horse race: the room bets on horses 1-6, one race for everybody')
+        .addSubcommand((sub) => sub.setName('horses').setDescription(`Group horse race: the room bets on horses 1-${HORSES_COUNT}, the first 3 pay, one race for everybody`)
             .addIntegerOption(betOption)
             .addIntegerOption((option) => option
                 .setName('horse')
-                .setDescription('Horse number (1-6, default 1)')
+                .setDescription(`Horse number (1-${HORSES_COUNT}, default 1)`)
                 .setMinValue(1)
-                .setMaxValue(6)))
+                .setMaxValue(HORSES_COUNT)))
         .addSubcommand((sub) => sub.setName('rocket').setDescription('Group crash: ride the rocket with the room and cash out before it blows up')
             .addIntegerOption(betOption)
             .addNumberOption(targetOption('Optional automatic cash-out multiplier'))),

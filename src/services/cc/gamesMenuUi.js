@@ -9,10 +9,11 @@
 // so Discord keeps the Arabic lines in order.
 
 import { CC, ccEmbed } from '../../config/cc.js';
-import { CASINO } from '../../config/casino.js';
+import { CASINO, HORSES_COUNT } from '../../config/casino.js';
 import { casinoChannelIds, prefix } from '../../config/runtime.js';
 import { casinoEdges, chickenMultiplierHundredths, chickenSurvivePercent } from './casinoService.js';
 import { multiplierText } from './casinoGroupUi.js';
+import { placesLine } from './casinoHorses.js';
 
 const number = (value) => Number(value || 0).toLocaleString('en-US');
 const seconds = (ms) => Math.round(ms / 1000);
@@ -54,7 +55,7 @@ function menuText(lang) {
             groupTitle: '👥 Group — one round for the whole room',
             group: [
                 block('🎡 **Roulette**', `🔴 red or ⚫ black ×${roulette.colorPays}, a number 0-36 ×${roulette.numberPays}; the wheel spins ${wait}s after the first bet`, ['roulette 100 red', 'roulette 50 17']),
-                block('🏇 **Horses**', `bet on horse 1-6 (up to ×38): the race starts ${race}s after the first bet and everyone watches it`, ['horses 100 1', 'horses 100 3']),
+                block('🏇 **Horses**', `bet on one horse 1-${HORSES_COUNT}, all equally likely, the first 3 pay (${placesLine()}): the race starts ${race}s after the first bet and everyone watches it`, ['horses 100 1', 'horses 100 3']),
                 block('🚀 **Rocket** (same as `crash`)', `everyone rides together: press 💰 Cash out before it crashes (up to ${multiplierText(crash.maxTarget)}), or add a target to cash out by itself`, ['rocket 100', 'rocket 100 2']),
             ],
             footer: `⚖️ House edge: Mines ${edges.mines}% · Coinflip ${edges.coinflip}% · Slots ${edges.slots}% · Dice ${edges.dice}% · Chicken ${edges.chicken}% · Blackjack ${edges.blackjack}% · Roulette ${edges.roulette}% · Rocket ${edges.rocket}% · Horses ${edges.horses}%  ・  Play for fun  ・  العربية: العاب`,
@@ -80,7 +81,7 @@ function menuText(lang) {
         groupTitle: '👥 جماعية — جولة واحدة للروم كله',
         group: [
             block('🎡 **روليت**', `🔴 أحمر أو ⚫ أسود ×${roulette.colorPays}، رقم 0-36 ×${roulette.numberPays}؛ العجلة بتلف بعد ${wait} ثانية من أول رهان`, ['روليت 100 احمر', 'روليت 50 17']),
-            block('🏇 **سباق الخيول**', `راهن على حصان من 1 لـ 6 (لحد ×38): السباق بيبدأ بعد ${race} ثانية من أول رهان والكل بيتفرج`, ['احصنة 100 1', 'احصنة 100 3']),
+            block('🏇 **سباق الخيول**', `راهن على حصان واحد من 1 لـ ${HORSES_COUNT} (كلهم فرصتهم متساوية)، وأول 3 بيكسبوا (${placesLine()}): السباق بيبدأ بعد ${race} ثانية من أول رهان والكل بيتفرج`, ['احصنة 100 1', 'احصنة 100 3']),
             block('🚀 **صاروخ** (هو نفسه `كراش`)', `الكل بيركب مع بعض: دوس 💰 كاش أوت قبل ما ينفجر (لحد ${multiplierText(crash.maxTarget)}) أو حط هدف يخرّجك لوحده`, ['صاروخ 100', 'صاروخ 100 2']),
         ],
         footer: `⚖️ نسبة البيت: ماينز ${edges.mines}% · عملة ${edges.coinflip}% · سلوت ${edges.slots}% · نرد ${edges.dice}% · فرخة ${edges.chicken}% · بلاك جاك ${edges.blackjack}% · روليت ${edges.roulette}% · صاروخ ${edges.rocket}% · احصنة ${edges.horses}%  ・  العب بمزاج  ・  English: games`,

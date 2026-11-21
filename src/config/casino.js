@@ -43,6 +43,10 @@
 //                 A cash-out by button pays the multiplier at the click, rounded down to ×0.01, and only counts
 //                 while the crash point is still above it, which only adds to the edge. The rocket stops at ×100
 //                 at the latest and pays ×100 to everybody still on board (the same as a ×100 target, 97%).
+//   horses   6.25%: HORSES_COUNT (8) horses, all equally likely at every place: the whole finishing order is a
+//                 uniform random order (casinoHorses.js drawFinishOrder). The first three places pay the bets on their
+//                 horse by HORSES_PLACE_MULTIPLIERS (1st ×4, 2nd ×2, 3rd ×1.5), the others lose. Each horse finishes
+//                 at each place with probability 1/8, so a bet on any horse returns (4 + 2 + 1.5) / 8 = 93.75%.
 // Payouts are rounded down to whole CC, so rounding only ever adds to the edge, by under 1 CC per paid game:
 // under 1 point from 100 CC bets, more on the smallest ones (a 10 CC coinflip win pays 19, a 5% edge; 10 CC
 // with 1 mine cashed out after one cell pays back just the 10, an 11% edge; 10 CC of chicken cashed out after one
@@ -65,6 +69,16 @@ export const GAMES_COMMAND = 'games';
 export const SOLO_GAMES = ['mines', 'coinflip', 'slots', 'dice', 'chicken', 'blackjack'];
 // The horse race is a group round since 2026-11-20: `احصنة 100 1` opens the room's race or joins it.
 export const GROUP_GAMES = ['roulette', 'rocket', 'horses'];
+// The horse race: HORSES_COUNT horses (numbered 1 … HORSES_COUNT, all equally likely), and the first places pay:
+// a bet on the horse that finishes 1st gets bet × 4, 2nd bet × 2, 3rd bet × 1.5 (rounded down to whole CC); every
+// other place loses. A race with fewer horses only pays its places.
+export const HORSES_COUNT = 8;
+export const HORSES_PLACE_MULTIPLIERS = [4, 2, 1.5];
+/** The horse race's house edge (percent): 1 − expected return, the expected return being sum(multipliers) / horses. */
+export function horsesEdgePercent(count = HORSES_COUNT, multipliers = HORSES_PLACE_MULTIPLIERS) {
+    const paid = multipliers.slice(0, count).reduce((sum, m) => sum + m, 0);
+    return Math.round((1 - paid / count) * 10_000) / 100;
+}
 
 export const CASINO = {
     minBet: CASINO_BET_LIMITS.min,
@@ -124,14 +138,16 @@ export const CASINO = {
         edgePercent: 1.5,
     },
     horses: {
-        runners: 6,
-        edgePercent: 2.58,
+        runners: HORSES_COUNT,
+        // The same for every horse (see the header): 6.25% with 8 horses.
+        edgePercent: horsesEdgePercent(),
         // A group race: the first bet opens a round that takes bets for joinMs, then one race for everybody.
         joinMs: 15_000,
         // The race message is edited once per tickMs (Discord's edit rate limit), `frames` times, then the result.
         tickMs: 1_800,
         frames: 6,
-        // Most bets in one round, and per member in one round (on the same horse or on different ones).
+        // Most bets in one round, and per member in one round: a member bets on ONE horse per race (more bets
+        // only add to that same horse, up to maxBetsPerMember; another horse is refused, 'other_horse').
         maxBets: 40,
         maxBetsPerMember: 3,
     },
@@ -332,7 +348,7 @@ export function readGameArgs(game, words) {
         let horse = 1;
         if (rest.length === 2) {
             const h = Number.parseInt(rest[1], 10);
-            if (!Number.isSafeInteger(h) || h < 1 || h > 6) return usage;
+            if (!Number.isSafeInteger(h) || h < 1 || h > HORSES_COUNT) return usage;
             horse = h;
         }
         return { values: { bet, horse } };

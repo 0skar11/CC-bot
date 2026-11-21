@@ -198,8 +198,8 @@ test('registry and help menu: خريطة / map and تمويه / camo load withou
     // `العاب` → the single games page lists them and its play select can start them.
     const page = helpEmbed({ lang: 'ar', category: 'single' });
     const text = [page.description, ...(page.fields || []).flatMap((field) => [field.name, field.value])].join('\n');
-    assert.match(text, /`\.خريطة` `\.map`/u);
-    assert.match(text, /`\.تمويه` `\.camo`/u);
+    assert.match(text, /`\.خريطة` ・ `\.map`/u);
+    assert.match(text, /`\.تمويه` ・ `\.camo`/u);
     const ids = startableGames('single').map((game) => game.id);
     assert.ok(ids.includes('map') && ids.includes('camo'), ids.join(','));
     const options = helpMenuPayload({ token: 't', lang: 'ar', category: 'single', user: ALICE }).components

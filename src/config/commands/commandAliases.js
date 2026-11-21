@@ -1,5 +1,5 @@
 import { findAsset, isSellAllWord } from '../store/bourse.js';
-import { coinSide, diceDirection, isAllInWord, multiplierHundredths, readGameArgs, rouletteChoice } from '../casino.js';
+import { HORSES_COUNT, coinSide, diceDirection, isAllInWord, multiplierHundredths, readGameArgs, rouletteChoice } from '../casino.js';
 import { looksLikeAmount, parseAmount } from '../amount.js';
 
 // Stock market and read-only CC aliases from DISbot, the casino's games (`مينز 100 3`, `عملة 100 ملك`,
@@ -109,7 +109,7 @@ const OPTION_WORDS = {
     'casino dice': (word) => diceDirection(word) !== null,
     'casino roulette': (word) => rouletteChoice(word) !== null,
     'casino rocket': (word) => multiplierHundredths(word) !== null,
-    'casino horses': (word) => /^[1-6]$/u.test(word),
+    'casino horses': (word) => /^\d{1,2}$/u.test(word) && Number(word) >= 1 && Number(word) <= HORSES_COUNT,
     // A mistyped amount (`5q @member تحويل`) still reaches the transfer, which answers `❌ المبلغ مش مفهوم`.
     give: looksLikeAmount,
     addcc: looksLikeAmount,
