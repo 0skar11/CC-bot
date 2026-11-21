@@ -2,6 +2,7 @@
 // src/games/helpMenu.js attaches it as attachment://help-banner.png). A dark purple gradient panel, `CC BOT` and
 // `HELP MENU` in big bold silver letters, and a small Arabic subtitle, drawn with sharp and the bundled Tajawal font
 // (assets/fonts/, OFL) so no system font is used. Run it again after a change: `node scripts/buildHelpBanner.js`.
+// With a picture it uses that as the background instead of the drawn panel: `node scripts/buildHelpBanner.js bg.jpg [out.png]`.
 
 import { writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -65,18 +66,31 @@ ${dots.join('\n')}
 </svg>`);
 }
 
-/** The banner as a PNG Buffer. */
-export async function renderHelpBanner() {
+/** A picture (any size, wide) as the banner's background: cropped to 3:1 around its centre, with a soft dark pool under the text. */
+async function pictureBackground(file) {
+    const meta = await sharp(file).metadata();
+    const height = Math.round(meta.width / 3);
+    const top = Math.max(0, Math.round((meta.height - height) / 2));
+    const base = await sharp(file).extract({ left: 0, top, width: meta.width, height: Math.min(height, meta.height) }).resize(WIDTH, HEIGHT).toBuffer();
+    const pool = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}">
+<defs><radialGradient id="v" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#12072b" stop-opacity="0.55"/><stop offset="1" stop-color="#12072b" stop-opacity="0"/></radialGradient></defs>
+<ellipse cx="${WIDTH / 2}" cy="${HEIGHT / 2}" rx="520" ry="190" fill="url(#v)"/>
+<rect x="300" y="276" width="600" height="3" rx="1.5" fill="#e3d6ff" fill-opacity="0.8"/></svg>`);
+    return sharp(base).composite([{ input: pool }]).png().toBuffer();
+}
+
+/** The banner as a PNG Buffer. `background` (a picture file) replaces the drawn gradient panel. */
+export async function renderHelpBanner(background = null) {
     const title = await silverText({ text: 'CC BOT', file: FONT_BOLD, font: 'Tajawal Bold', size: 128, letterSpacing: 6 });
     const titleShadow = await textLayer({ text: 'CC BOT', file: FONT_BOLD, font: 'Tajawal Bold', size: 128, color: '#1a0629', letterSpacing: 6 });
     const menu = await silverText({ text: 'HELP MENU', file: FONT_BOLD, font: 'Tajawal Bold', size: 70, letterSpacing: 10 });
     const menuShadow = await textLayer({ text: 'HELP MENU', file: FONT_BOLD, font: 'Tajawal Bold', size: 70, color: '#1a0629', letterSpacing: 10 });
     const subtitle = await textLayer({ text: SUBTITLE, file: FONT_MEDIUM, font: 'Tajawal Medium', size: 32, color: '#e3cffa' });
     const centre = (layer) => Math.round((WIDTH - layer.info.width) / 2);
-    const titleTop = 44;
+    const titleTop = background ? 74 : 44; // the picture version sits lower on the banner
     const menuTop = titleTop + title.info.height + 22;
     const subtitleTop = 304;
-    return sharp(backgroundSvg()).composite([
+    return sharp(background ? await pictureBackground(background) : backgroundSvg()).composite([
         { input: titleShadow.data, left: centre(titleShadow) + 5, top: titleTop + 6 },
         { input: title.data, left: centre(title), top: titleTop },
         { input: menuShadow.data, left: centre(menuShadow) + 4, top: menuTop + 4 },
@@ -86,7 +100,9 @@ export async function renderHelpBanner() {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-    const png = await renderHelpBanner();
-    await writeFile(OUT, png);
-    console.log(`Wrote ${OUT} (${png.length} bytes)`);
+    // `node scripts/buildHelpBanner.js [background picture] [output file]`
+    const out = process.argv[3] || OUT;
+    const png = await renderHelpBanner(process.argv[2] || null);
+    await writeFile(out, png);
+    console.log(`Wrote ${out} (${png.length} bytes)`);
 }
