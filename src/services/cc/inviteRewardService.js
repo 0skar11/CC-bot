@@ -6,7 +6,8 @@
 //      counted by src/services/cc/chatCounter.js while the gift is pending, in the tracked servers).
 // The payment is checked on each level-up announcement and when the member's 50th message is counted.
 // An account younger than CC.inviteReward.minAccountAgeDays (7) days when it joined is a fake: never counted
-// (inviteTracker.js). The notice under the welcome (inviteWelcomeNotice) tells who invited the member and the gift.
+// (inviteTracker.js). Nothing is posted when the member joins (GH #329): Aether (DISbot) says in its welcome who invited
+// them and the gift, from its copy of CC.inviteReward and inviteConditions() (DISbot src/config/ccInviteGift.js).
 // - Only the level bot (LEVEL_BOT_IDS) in its level-up rooms (LEVEL_CHANNEL_IDS, src/config/invites.js) of an
 //   allowed server counts; a webhook or another bot never does.
 // - Only a real level-up announcement counts, read from the message text, its embeds and components (parseLevel):
@@ -323,32 +324,11 @@ export async function payInviteReward(client, guildId, memberId, { level = null,
 export const inviteRewardText = ({ inviterId, memberId, level, amount, balance }) =>
     `🎁 <@${inviterId}> خدت ${formatCC(amount)} هدية انفايت: <@${memberId}> اللي دعيته وصل لفل **${level}** وكتب **${CC.inviteReward.messages}** رسالة ・ رصيدك: ${formatCC(balance)}`;
 
-/** What the invited member has to do for the gift: `يوصل لفل 5 ويكتب 50 رسالة`. */
-export const inviteConditions = () => `يوصل لفل ${CC.inviteReward.level} ويكتب ${CC.inviteReward.messages} رسالة`;
-
-const WARNING = String.fromCharCode(0x26a0, 0xfe0f);
-
 /**
- * The small notice under the welcome (src/services/welcomeService.js), from what the join is worth (`join`: the
- * record handleMemberJoin saved, or its reading of a rejoin): who invited the member and the gift the inviter gets,
- * or why this invite doesn't count (a fake account, a rejoin). null when nobody is known to have invited them
- * (unknown, ambiguous, vanity), their own invite or a bot's.
+ * What the invited member has to do for the gift: `يوصل لفل 5 ويكتب 50 رسالة`. Aether (DISbot) has a copy for its
+ * welcome (src/config/ccInviteGift.js inviteGiftConditions, with CC.inviteReward): change both together.
  */
-export function inviteWelcomeNotice(memberId, join) {
-    const inviterId = String(join?.inviterId ?? '');
-    if (!snowflake.test(inviterId) || inviterId === String(memberId)) return null;
-    const lines = [`-# 📨 دعاه <@${inviterId}>`];
-    if (join.status === 'pending') {
-        lines.push(`-# 🎁 <@${inviterId}> هياخد ${formatCC(CC.inviteReward.amount)} لما <@${memberId}> ${inviteConditions()}`);
-    } else if (join.reason === 'fake') {
-        lines.push(`-# ${WARNING} الدعوة دي مش محسوبة: الحساب عمره أقل من ${CC.inviteReward.minAccountAgeDays} أيام`);
-    } else if (join.reason === 'rejoin') {
-        lines.push(`-# ${WARNING} الدعوة دي مش محسوبة: <@${memberId}> كان في السيرفر قبل كده`);
-    } else {
-        return null;
-    }
-    return lines.join('\n');
-}
+export const inviteConditions = () => `يوصل لفل ${CC.inviteReward.level} ويكتب ${CC.inviteReward.messages} رسالة`;
 
 // ─── The messages condition ───
 

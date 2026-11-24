@@ -1,23 +1,20 @@
-// welcomeService.js — the welcome every server gets when a member joins (guildMemberAdd: src/events/guildMemberAdd.js),
-// in each server's own name:
-//   1. `welcome to <the server's name> @member 👋` in the server's welcome channel (src/config/welcome.js: the channel
-//      set for it, else its system channel, else a text channel named `welcome`), pinging only the member; the
-//      server's name is escaped, so its markdown or an `@everyone` in it stay plain text.
-//   2. Under it, a small notice from the invite tracker (src/services/cc/inviteTracker.js), pinging nobody: who
-//      invited the member and the gift the inviter gets once the member reaches level 5 and writes 50 messages, or
-//      why that invite doesn't count (an account younger than 7 days, a rejoin). Nothing when nobody is known to have
-//      invited them (unknown, vanity link, their own invite, a bot's), or when the invite gift is off.
-// Bots joining get nothing; neither do servers the bot does not serve (BOURSE_GUILD_IDS). WELCOME_ENABLED=false turns
-// it off. The wave is the bot's own application emoji named `smileywave` when it has one (uploaded in the developer
-// portal → Emojis; it then shows in every server), else 👋. Needs the Server Members Intent (developer portal → Bot)
-// to see members join, and View Channel + Send Messages in the welcome channel: a channel without them is skipped for
-// the next one, with a warning in the log at most once an hour per server.
+// welcomeService.js — the welcome line this bot can send when a member joins (guildMemberAdd: src/events/guildMemberAdd.js),
+// in each server's own name: `welcome to <the server's name> @member 👋` in the server's welcome channel
+// (src/config/welcome.js: the channel set for it, else its system channel, else a text channel named `welcome`),
+// pinging only the member; the server's name is escaped, so its markdown or an `@everyone` in it stay plain text.
+// OFF unless WELCOME_ENABLED=true: Aether (DISbot) sends the welcome. Nothing about the invite is ever posted here
+// (GH #329): Aether's welcome says who invited the member and what the inviter gets (DISbot
+// src/services/welcomeInviteNote.js), while this bot keeps tracking the invite and paying the gift
+// (src/services/cc/inviteTracker.js, src/services/cc/inviteRewardService.js).
+// Bots joining get nothing; neither do servers the bot does not serve (BOURSE_GUILD_IDS). The wave is the bot's own
+// application emoji named `smileywave` when it has one (uploaded in the developer portal → Emojis; it then shows in
+// every server), else 👋. Needs the Server Members Intent (developer portal → Bot) to see members join, and View
+// Channel + Send Messages in the welcome channel: a channel without them is skipped for the next one, with a warning in
+// the log at most once an hour per server.
 
 import { ChannelType, GatewayIntentBits, PermissionFlagsBits, escapeMarkdown } from 'discord.js';
 import { isAllowedGuild } from '../config/runtime.js';
 import { welcomeChannelSetting, welcomeEnabled } from '../config/welcome.js';
-import { inviteRewardEnabled } from '../config/invites.js';
-import { inviteWelcomeNotice } from './cc/inviteRewardService.js';
 import { logger } from '../utils/logger.js';
 
 export const WELCOME_EMOJI_NAME = 'smileywave';
@@ -89,45 +86,25 @@ export async function welcomeChannel(guild, { env = process.env, now = Date.now(
 }
 
 /**
- * guildMemberAdd: the welcome, then the invite notice under it once `join` (the promise of handleMemberJoin, started
- * at the join) tells who invited the member. Returns what happened. Never throws.
+ * guildMemberAdd: the welcome line, when WELCOME_ENABLED is on; never anything about the invite (GH #329: Aether says
+ * it). Returns what happened. Never throws.
  */
-export async function welcomeMember(member, client, { join = null, env = process.env, now = Date.now(), waitNoticeMs = null } = {}) {
+export async function welcomeMember(member, client, { env = process.env, now = Date.now() } = {}) {
     try {
         const guild = member?.guild;
         if (!guild?.id || !isAllowedGuild(guild.id)) return { status: 'not_allowed' };
         if (!member.id || member.user?.bot) return { status: 'bot' };
+        if (!welcomeEnabled(env)) return { status: 'disabled' };
         const channel = await welcomeChannel(guild, { env, now });
         if (!channel) return { status: 'no_channel' };
         const memberId = String(member.id);
-        let sentWelcome = false;
-
-        if (welcomeEnabled(env)) {
-            const content = welcomeText(guild.name, memberId, welcomeEmoji(client ?? member.client));
-            const sent = await Promise.resolve().then(() => channel.send({ content, allowedMentions: { users: [memberId] } })).catch((error) => {
-                warnOnce(`send:${guild.id}`, `[WELCOME] Could not send the welcome in ${channel.id} of ${guild.id}: ${errorText(error)}`, now);
-                return null;
-            });
-            if (!sent) return { status: 'failed', channelId: channel.id };
-            sentWelcome = true;
-        }
-
-        const delay = waitNoticeMs ?? ((env.NODE_ENV ?? process.env.NODE_ENV) === 'test' ? 0 : 1500);
-        if (delay > 0) {
-            await new Promise((resolve) => setTimeout(resolve, delay));
-        }
-
-        const joinResult = await Promise.resolve(join).catch(() => null);
-        const notice = inviteWelcomeNotice(memberId, joinResult?.join);
-        if (notice) {
-            const posted = await Promise.resolve().then(() => channel.send({ content: notice, allowedMentions: { parse: [] } })).catch((error) => {
-                logger.warn(`[WELCOME] Could not send the invite notice in ${channel.id} of ${guild.id}: ${errorText(error)}`);
-                return null;
-            });
-            return { status: 'sent', channelId: channel.id, notice: Boolean(posted) };
-        }
-        if (sentWelcome) return { status: 'sent', channelId: channel.id, notice: false };
-        return { status: 'disabled' };
+        const content = welcomeText(guild.name, memberId, welcomeEmoji(client ?? member.client));
+        const sent = await Promise.resolve().then(() => channel.send({ content, allowedMentions: { users: [memberId] } })).catch((error) => {
+            warnOnce(`send:${guild.id}`, `[WELCOME] Could not send the welcome in ${channel.id} of ${guild.id}: ${errorText(error)}`, now);
+            return null;
+        });
+        if (!sent) return { status: 'failed', channelId: channel.id };
+        return { status: 'sent', channelId: channel.id };
     } catch (error) {
         logger.warn(`[WELCOME] Could not welcome a member: ${errorText(error)}`);
         return { status: 'failed' };

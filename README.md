@@ -18,7 +18,7 @@ npm start
 
 Enable **Message Content Intent** in the Discord developer portal for typed commands. Invite with `bot` and `applications.commands`, and grant View Channels, Send Messages, Embed Links and Read Message History. Trader roles additionally require Manage Roles, with the bot's role above the trader role and any configured anchor.
 
-Every server gets a welcome when a member joins: `welcome to <server name> @member 👋` in its welcome channel (`WELCOME_CHANNEL_IDS`, else the server's system messages channel, else a text channel named `welcome`), with a small notice under it saying who invited the member and the invite gift. It needs **Server Members Intent** switched on in the developer portal (to see members join) and View Channel + Send Messages in that channel. `WELCOME_ENABLED=false` turns it off.
+The welcome is Aether's (DISbot): one message, `welcome to <server name> @member 👋`, with who invited the member and this bot's invite gift under it (GH #329). This bot posts nothing about the invite; it only tracks it and pays the gift. Its own welcome line (`welcome to <server name> @member 👋` in the welcome channel: `WELCOME_CHANNEL_IDS`, else the server's system messages channel, else a text channel named `welcome`) is off unless `WELCOME_ENABLED=true`; leave it off where Aether welcomes. It needs **Server Members Intent** switched on in the developer portal (to see members join) and View Channel + Send Messages in that channel.
 
 The invite gift (5000 CC to the inviter once the invited member reaches level 5, read from the level bot's announcements in `LEVEL_CHANNEL_IDS`, and has written 50 chat messages in that server, in either order; accounts younger than 7 days and rejoins never count) is off unless `INVITE_REWARD_ENABLED=true`. It also needs **Server Members Intent** and **Manage Server** in that server to read the invites. Without them the bot still starts (it checks the intent before logging in) and logs a warning; no gift can be paid until they are given.
 
@@ -49,9 +49,9 @@ For public installation, turn **Public Bot on**, enable Guild Install and config
 | `TRUSTED_USER_IDS` | Optional comma-separated user IDs trusted with the games: they may start any game in any channel of the server. |
 | `TRUSTED_ROLE_IDS` | Optional comma-separated role IDs whose members are trusted with the games, like `TRUSTED_USER_IDS`. |
 | `OPEN_GAMES_CHANNEL_IDS` | Optional comma-separated channel/category IDs where any member may start games (elsewhere a member who is not trusted gets no reply). Empty uses `1570728118182744145`. |
-| `WELCOME_ENABLED` | The welcome of every server; on unless `false` (or `0`, `off`, `no`). Separate from the invite gift. |
+| `WELCOME_ENABLED` | This bot's own welcome line; off unless `true` (or `1`, `yes`, `on`): Aether sends the welcome. Separate from the invite gift. |
 | `WELCOME_CHANNEL_IDS` | Optional `guildId:channelId` pairs, comma-separated, on top of the defaults (CHAOS `1155236281706627173:1547305745417113700`, Zenith `1569932761471524874:1570728122259611779`); `guildId:off` sends no welcome in that server. A server without a channel set uses its system messages channel, else a text channel named `welcome`. |
-| `INVITE_REWARD_ENABLED` | `true` turns on the invite gift (invite tracking, the 50-message count, the notice under the welcome); off by default. |
+| `INVITE_REWARD_ENABLED` | `true` turns on the invite gift (invite tracking, the 50-message count); off by default. Aether tells the gift in its welcome from its own copy of this switch and of `LEVEL_CHANNEL_IDS` (DISbot `CC_INVITE_GIFT_ENABLED`, `CC_LEVEL_CHANNEL_IDS`): change them together. |
 | `LEVEL_BOT_IDS`, `LEVEL_CHANNEL_IDS` | The level bot and its level-up rooms (defaults `1513858357142880346`, `1571798045580984360`). Invites are tracked, and messages counted, only in the servers of these rooms. |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` or `silent`; default `info`. Logs go to the console. |
 

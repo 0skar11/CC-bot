@@ -1,8 +1,8 @@
-// welcome.js — the welcome every server gets when a member joins (src/services/welcomeService.js):
-// `welcome to <the server's name> @member 👋` in the server's welcome channel, and under it the invite notice (who
-// invited the member and the invite gift, src/services/cc/inviteRewardService.js, when INVITE_REWARD_ENABLED=true).
-// - WELCOME_ENABLED: on unless `false` (or `0`, `off`, `no`). The invite gift has its own switch, so the welcome can
-//   run without it.
+// welcome.js — the welcome line this bot can send when a member joins (src/services/welcomeService.js):
+// `welcome to <the server's name> @member 👋` in the server's welcome channel. Nothing about the invite (GH #329):
+// Aether (DISbot) sends the welcome with who invited the member and the invite gift; this bot only tracks and pays it.
+// - WELCOME_ENABLED: off unless `true` (or `1`, `yes`, `on`); leave it off where Aether welcomes, or the member gets
+//   two welcomes. The invite gift has its own switch (src/config/invites.js).
 // - WELCOME_CHANNEL_IDS: `guildId:channelId` pairs, comma-separated, on top of DEFAULT_WELCOME_CHANNELS (a server
 //   listed there uses the channel given there); `guildId:off` sends no welcome in that server.
 // - A server without a channel set (or whose channel is gone or closed to the bot): its system channel (Server

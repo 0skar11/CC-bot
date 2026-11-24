@@ -5,10 +5,11 @@
 // CC.inviteReward.amount exactly once through updateCCState (outside the games' daily cap) when the level and the 50
 // messages are both there, in either order, and the inviter who left.
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { afterEach, describe, test } from 'node:test';
 import { ChannelType, GatewayIntentBits, GuildMemberFlags, MessageType } from 'discord.js';
 import { createSnapshot } from '../scripts/lib/bourseBackup.js';
-import { CC } from '../src/config/cc.js';
+import { CC, formatCC } from '../src/config/cc.js';
 import { DEFAULT_LEVEL_BOT_ID, DEFAULT_LEVEL_CHANNEL_ID, levelBotIds, levelChannelIds, inviteRewardEnabled, validateInviteConfig } from '../src/config/invites.js';
 import messageCreate from '../src/events/messageCreate.js';
 import { getProfile, updateCCState } from '../src/services/cc/ccService.js';
@@ -18,9 +19,10 @@ import {
     onInviteCreate, onInviteDelete, primeGuild, startInviteTracking, trackedGuildIds,
 } from '../src/services/cc/inviteTracker.js';
 import {
-    forgetLevelMessages, handleChatMessage, handleLevelUpMessage, inviteConditions, inviteWelcomeNotice, isChatMessage, noteInviteJoin,
+    forgetLevelMessages, handleChatMessage, handleLevelUpMessage, inviteConditions, isChatMessage, noteInviteJoin,
     parseLevel, parseLevelUp, payInviteReward,
 } from '../src/services/cc/inviteRewardService.js';
+import * as inviteRewardService from '../src/services/cc/inviteRewardService.js';
 import { getChatCountKey, getEconomyKey, getInviteRecordKey } from '../src/utils/database/keys.js';
 
 const GUILD = '100000000000000002';
@@ -34,7 +36,6 @@ const T0 = Date.UTC(2026, 10, 16, 12);
 const DAY = 24 * 60 * 60_000;
 const AMOUNT = CC.inviteReward.amount;
 const NEEDED = CC.inviteReward.messages;
-const WARNING = String.fromCharCode(0x26a0, 0xfe0f);
 
 function fakeDb(records = {}) {
     const store = new Map(Object.entries(records));
@@ -119,8 +120,10 @@ afterEach(() => {
 
 describe('the configuration', () => {
     test('5000 CC at level 5 and 50 messages, 7 days for an account, the level bot and room by default, overridable, checked at start', () => {
+        // Aether (DISbot src/config/ccInviteGift.js) tells these in its welcome (GH #329): change both together.
         assert.deepEqual(CC.inviteReward, { amount: 5000, level: 5, messages: 50, minAccountAgeDays: 7 });
         assert.equal(inviteConditions(), 'يوصل لفل 5 ويكتب 50 رسالة');
+        assert.equal(formatCC(CC.inviteReward.amount), '**5,000** 🌀 CC');
         assert.deepEqual([...levelBotIds()], ['1513858357142880346']);
         assert.deepEqual([...levelChannelIds()], ['1571798045580984360']);
         assert.deepEqual([...levelBotIds({ LEVEL_BOT_IDS: '300000000000000001, 300000000000000002' })], ['300000000000000001', '300000000000000002']);
@@ -553,26 +556,14 @@ describe('fake accounts and the notice under the welcome', () => {
         const fresh = { ...joining(guild), user: { id: MEMBER, bot: false, createdTimestamp: T0 - 2 * DAY } };
         const result = await handleMemberJoin(fresh, client, { now: T0 });
         assert.deepEqual([result.status, result.record.status, result.record.reason, result.record.inviterId], ['saved', 'excluded', 'fake', INVITER]);
-        assert.equal(inviteWelcomeNotice(MEMBER, result.join), `-# 📨 دعاه <@${INVITER}>\n-# ${WARNING} الدعوة دي مش محسوبة: الحساب عمره أقل من 7 أيام`);
+        assert.deepEqual([result.join.status, result.join.reason, result.join.inviterId], ['excluded', 'fake', INVITER]);
         assert.equal((await payInviteReward(client, GUILD, MEMBER, { level: 9 })).status, 'done');
         assert.equal(await handleChatMessage(chat(client, 1), { now: T0 }), false, 'its messages are not counted');
         assert.equal(await balance(client, INVITER), 0);
     });
 
-    test('the notice: who invited and the gift; a fake or a rejoin does not count; nothing for unknown, self or a bot', () => {
-        const record = (extra = {}) => ({ ...pending(), ...extra });
-        assert.equal(inviteWelcomeNotice(MEMBER, record()), [
-            `-# 📨 دعاه <@${INVITER}>`,
-            `-# 🎁 <@${INVITER}> هياخد **5,000** 🌀 CC لما <@${MEMBER}> يوصل لفل 5 ويكتب 50 رسالة`,
-        ].join('\n'));
-        assert.equal(inviteWelcomeNotice(MEMBER, record({ status: 'excluded', reason: 'rejoin' })), `-# 📨 دعاه <@${INVITER}>\n-# ${WARNING} الدعوة دي مش محسوبة: <@${MEMBER}> كان في السيرفر قبل كده`);
-        for (const reason of ['unknown', 'ambiguous', 'vanity', 'no_inviter', 'self', 'bot_inviter']) {
-            assert.equal(inviteWelcomeNotice(MEMBER, record({ status: 'excluded', reason })), null, reason);
-        }
-        assert.equal(inviteWelcomeNotice(MEMBER, record({ status: 'excluded', reason: 'unknown', inviterId: null })), null);
-        assert.equal(inviteWelcomeNotice(MEMBER, record({ inviterId: MEMBER })), null, 'their own invite');
-        assert.equal(inviteWelcomeNotice(MEMBER, null), null);
-        assert.equal(inviteWelcomeNotice(MEMBER, record({ inviterId: 'abc' })), null, 'not a Discord ID');
+    test('no invite notice any more (GH #329): Aether posts who invited the member and the gift in its welcome', () => {
+        assert.equal('inviteWelcomeNotice' in inviteRewardService, false);
     });
 
     test('a member saved before who joins again: the first record stays, and this join reads as a rejoin', async () => {
@@ -585,7 +576,6 @@ describe('fake accounts and the notice under the welcome', () => {
         assert.equal(again.status, 'kept');
         assert.equal(again.record.inviterId, INVITER);
         assert.deepEqual([again.join.status, again.join.reason, again.join.inviterId], ['excluded', 'rejoin', OTHER]);
-        assert.match(inviteWelcomeNotice(MEMBER, again.join), /^-# 📨 دعاه <@200000000000000103>\n.*كان في السيرفر قبل كده$/u);
         assert.equal(client.db.store.get(getInviteRecordKey(GUILD, MEMBER)).status, 'pending', 'nothing rewritten');
     });
 });
@@ -783,5 +773,16 @@ describe('the level and the 50 messages, in either order', () => {
         assert.equal(await balance(client, INVITER), AMOUNT);
         assert.deepEqual([levelRoom(client).sent.length, client.channels.cache.get(SECOND_ROOM).sent.length], [1, 0]);
         assert.deepEqual([client.db.store.get(getInviteRecordKey(SCOPE, MEMBER)).status, client.db.store.get(getInviteRecordKey(SCOPE, MEMBER)).level], ['pending', undefined]);
+    });
+});
+
+describe('Aether\'s copy of the gift (GH #329)', () => {
+    const disbot = new URL('../../DISbot/src/config/ccInviteGift.js', import.meta.url);
+    test('the same numbers, conditions, amount and level room as here (a DISbot checkout next to this one)', { skip: existsSync(disbot) ? false : 'no ../DISbot checkout' }, async () => {
+        const copy = await import(disbot.href);
+        assert.deepEqual({ ...copy.CC_INVITE_GIFT }, { ...CC.inviteReward }, 'CC.inviteReward changed: change DISbot src/config/ccInviteGift.js too');
+        assert.equal(copy.inviteGiftConditions(), inviteConditions());
+        assert.equal(copy.formatGiftAmount(CC.inviteReward.amount), formatCC(CC.inviteReward.amount));
+        assert.equal(copy.DEFAULT_CC_LEVEL_CHANNEL_ID, DEFAULT_LEVEL_CHANNEL_ID);
     });
 });

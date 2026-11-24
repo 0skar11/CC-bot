@@ -7,7 +7,10 @@
 //   DEFAULT_LEVEL_CHANNEL_ID. Invites are tracked (and messages counted) only in the servers of these rooms: a
 //   server gets the gift when its level room is listed here.
 // - INVITE_REWARD_ENABLED: the whole feature is off unless `true` (no invite tracking, no message counting, no
-//   GuildInvites intent, no invite notice under the welcome). The welcome has its own switch (src/config/welcome.js).
+//   GuildInvites intent). The welcome has its own switch (src/config/welcome.js). Nothing is posted when a member
+//   joins (GH #329): Aether (DISbot) tells who invited them and the gift in its welcome, from its copy of these
+//   settings (DISbot src/config/ccInviteGift.js: CC_INVITE_GIFT_ENABLED and CC_LEVEL_CHANNEL_IDS mirror
+//   INVITE_REWARD_ENABLED and LEVEL_CHANNEL_IDS; change them together).
 // The bot needs Manage Server in those servers to read the invites (missing: a warning, and no inviter is known),
 // and the Server Members Intent switched on in the developer portal to see members join (src/app.js asks Discord
 // whether it is on before it logs in, so a missing switch never stops the bot).

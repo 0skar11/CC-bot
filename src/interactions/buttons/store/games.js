@@ -11,13 +11,14 @@ import { handleHideButton } from '../../../games/games/hideAndSeek.js';
 import { handleMafiaButton } from '../../../games/games/mafia.js';
 import { handleSnakeButton } from '../../../games/games/snake.js';
 import { handleReactionButton } from '../../../games/games/button.js';
+import { handleReplicaButton } from '../../../games/games/replica.js';
 
 // The chat games' buttons: the lobby's `g:join:<lobbyId>`, `g:leave:<lobbyId>` and `g:start:<lobbyId>`
 // (src/games/engine/lobby.js; a lobby that is gone answers privately that the game ended), and the play-again
 // button `g:again:<gameId>` (src/games/engine/again.js: a new round of the same game, src/games/router.js), and the
 // help menu's `g:help:<token>:go:casino` button (the casino category, router handleHelpSelect), and the two-player
 // boards' `g:duel:<boardId>:<move>` buttons (src/games/engine/duel.js: only the two players may press).
-// Custom game buttons: `chairs`, `hide`, `mafia`, `snake`, `btn`.
+// Custom game buttons: `chairs`, `hide`, `mafia`, `snake`, `btn`, `replica` (the vote on an unlisted word).
 // executeSelect: the help menu's selects `g:help:<token>:cat` / `g:help:<token>:play:<n>` (src/games/helpMenu.js,
 // router handleHelpSelect), the old games menu's `g:menu:<lang>:<n>` (menus posted before it) that starts a chat game,
 // and a board's select `g:duel:<boardId>:<name>` (the connect-four column).
@@ -32,6 +33,7 @@ export default {
         : action === 'mafia' ? handleMafiaButton(interaction, rest)
         : action === 'snake' ? handleSnakeButton(interaction, rest)
         : action === 'btn' ? handleReactionButton(interaction, rest)
+        : action === 'replica' ? handleReplicaButton(interaction, rest)
         : handleLobbyButton(interaction, [action, ...rest])
     ),
     executeSelect: (interaction, client, [action, ...rest] = []) => (action === HELP_ACTION ? handleHelpSelect(interaction, client, rest)

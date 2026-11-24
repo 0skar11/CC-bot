@@ -32,7 +32,7 @@
 | **الوان (colors)** | single | `.الوان` / `!colors` | implemented | نعم (Yes) | اختبار ستروب البصري لسرعة الألوان |
 | **ثعبان (snake)** | single | `.ثعبان` / `!snake` | implemented | نعم (Yes) | لعبة أركيد بشبكة 5×5 وأزرار تحكم |
 | **زر (button)** | single | `.زر` / `!button` | implemented | نعم (Yes) | اختبار سرعة رد الفعل عند ظهور الزر |
-| **ريبلكا (replica)** | single | `.ريبلكا` / `!replica` | implemented | نعم (Yes) | إنسان/حيوان/جماد/نبات/دولة بحرف معين، أسرع كلمة صح (src/games/data/categories.js) |
+| **ريبلكا (replica)** | group | `.ريبلكا` / `!replica` | implemented | نعم (Yes) | إنسان/حيوان/جماد/نبات/دولة بحرف معين، أسرع كلمة صح: كلمة من القايمة بتكسب على طول، وأي كلمة تانية معقولة باقي اللاعبين بيصوّتوا عليها (src/games/data/categories.js) |
 | **اكس او (xo)** | dual | `.اكس` / `.xo` | implemented | نعم (Yes) | تحدي 1v1 بشبكة أزرار 3×3 وخط فوز ذهبي |
 | **حجره (rps)** | dual | `.حجره` / `.rps` | implemented | نعم (Yes) | حجرة ورقة مقص بلوبي فوري |
 | **توصيل 4 (connect)** | dual | `.توصيل` / `.connect`| implemented | نعم (Yes) | كونكت فور بشبكة 6×7 وأزرار إسقاط |

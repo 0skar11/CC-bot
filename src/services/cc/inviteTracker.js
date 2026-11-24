@@ -212,8 +212,8 @@ export function joinRecord({ memberId, found, rejoined = false, vanityCode = nul
 
 /**
  * guildMemberAdd: finds the invite used and saves the member's record once. Returns what happened, with `join`: what
- * this join is worth (the saved record; for a member already saved, this join read as a rejoin), for the notice
- * under the welcome (inviteWelcomeNotice). Never throws.
+ * this join is worth (the saved record; for a member already saved, this join read as a rejoin). Nothing is posted:
+ * Aether (DISbot) says who invited the member in its welcome (GH #329). Never throws.
  */
 export async function handleMemberJoin(member, client, { now = Date.now() } = {}) {
     try {

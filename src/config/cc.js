@@ -12,6 +12,8 @@ export const CC = {
     // member wrote at least `messages` chat messages in that server (src/services/cc/chatCounter.js), in either order.
     // An account younger than `minAccountAgeDays` days when it joins is a fake: its invite never counts. A fixed
     // amount (no event multiplier), paid apart from the games (never counted in gamesBot.dailyCap).
+    // Aether (DISbot) tells the gift in its welcome from a copy of these numbers (DISbot src/config/ccInviteGift.js
+    // CC_INVITE_GIFT, GH #329): change both together (tests/inviteReward.test.js pins them).
     inviteReward: { amount: 5000, level: 5, messages: 50, minAccountAgeDays: 7 },
     transfer: { minServerDays: 0, minAmount: 10, taxPercent: 5, cheapPerWeek: 3, extraPercentPerTransfer: 5, maxTaxPercent: 50 },
 };

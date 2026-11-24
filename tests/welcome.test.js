@@ -1,11 +1,12 @@
-// The welcome of every server (src/services/welcomeService.js, src/config/welcome.js, src/events/guildMemberAdd.js):
+// The welcome line of every server (src/services/welcomeService.js, src/config/welcome.js, src/events/guildMemberAdd.js):
 // `welcome to <the server's own name> @member 👋` with the name escaped and only the member pinged, the channel chosen
 // in order (the one set for the server, its system channel, a text channel named welcome; only where the bot can
-// post), the invite notice under it (who invited, the gift, or why the invite doesn't count; nothing for unknown,
-// self or a bot), bots and other servers left out, WELCOME_ENABLED, and the bot's own wave emoji.
+// post), bots and other servers left out, WELCOME_ENABLED (off by default: Aether welcomes), and the bot's own wave
+// emoji. Never anything about the invite (GH #329): Aether's welcome says who invited the member and the gift, while
+// this bot still tracks the invite (the record saved, the member's messages counted).
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, test } from 'node:test';
-import { ChannelType, GatewayIntentBits, PermissionFlagsBits } from 'discord.js';
+import { ChannelType, GatewayIntentBits, GuildMemberFlags, PermissionFlagsBits } from 'discord.js';
 import { DEFAULT_LEVEL_CHANNEL_ID } from '../src/config/invites.js';
 import {
     CHAOS_GUILD_ID, DEFAULT_WELCOME_CHANNELS, ZENITH_GUILD_ID, validateWelcomeConfig, welcomeChannelMap, welcomeChannelSetting, welcomeEnabled,
@@ -28,8 +29,6 @@ const MEMBER = '200000000000000102';
 const OTHER = '200000000000000103';
 const WELCOME = '400000000000000001';
 const SYSTEM = '400000000000000002';
-const T0 = Date.UTC(2026, 10, 17, 12);
-const WARNING = String.fromCharCode(0x26a0, 0xfe0f);
 const CHAOS_WELCOME = DEFAULT_WELCOME_CHANNELS[CHAOS_GUILD_ID];
 const ZENITH_WELCOME = DEFAULT_WELCOME_CHANNELS[ZENITH_GUILD_ID];
 
@@ -66,13 +65,12 @@ function server({ id = GUILD, name = 'CHAOS', channels = [], systemChannelId = n
         ...extra,
     };
 }
-const joiner = (guild, id = MEMBER, { bot = false } = {}) => ({ id, guild, user: { id, bot } });
-const pendingJoin = (extra = {}) => ({ status: 'saved', join: { inviterId: INVITER, code: 'abc', source: 'invite', status: 'pending', reason: null, joinedAt: T0, ...extra } });
+const joiner = (guild, id = MEMBER, { bot = false, createdTimestamp = Date.UTC(2020, 0, 1), rejoined = false } = {}) => ({
+    id, guild, user: { id, bot, createdTimestamp }, flags: { bitfield: rejoined ? GuildMemberFlags.DidRejoin : 0 },
+});
 const at = (guildId, channelId) => ({ WELCOME_CHANNEL_IDS: `${guildId}:${channelId}`, WELCOME_ENABLED: 'true' });
-const noticeOf = (memberId = MEMBER, inviterId = INVITER) => [
-    `-# 📨 دعاه <@${inviterId}>`,
-    `-# 🎁 <@${inviterId}> هياخد **5,000** 🌀 CC لما <@${memberId}> يوصل لفل 5 ويكتب 50 رسالة`,
-].join('\n');
+/** Nothing this bot sends may tell the invite: who invited, the gift, or that it doesn't count (Aether does, GH #329). */
+const INVITE_WORDS = /📨|🎁|دعاه|هياخد|مش محسوبة|<@200000000000000101>/u;
 
 afterEach(() => {
     forgetWelcomeWarnings();
@@ -170,15 +168,12 @@ describe('the welcome channel', () => {
 
 describe('welcoming a member', () => {
     beforeEach(() => { process.env.WELCOME_ENABLED = 'true'; });
-    test('the welcome, then the invite notice under it, in the same channel; only the member is pinged, nobody by the notice', async () => {
+    test('the welcome line alone, only the member pinged: no invite notice under it (GH #329)', async () => {
         const room = channel(WELCOME);
         const guild = server({ name: 'CHAOS', channels: [room] });
-        const result = await welcomeMember(joiner(guild), {}, { join: Promise.resolve(pendingJoin()), env: at(GUILD, WELCOME) });
-        assert.deepEqual(result, { status: 'sent', channelId: WELCOME, notice: true });
-        assert.deepEqual(room.sent, [
-            { content: `welcome to CHAOS <@${MEMBER}> 👋`, allowedMentions: { users: [MEMBER] } },
-            { content: noticeOf(), allowedMentions: { parse: [] } },
-        ]);
+        const result = await welcomeMember(joiner(guild), {}, { env: at(GUILD, WELCOME) });
+        assert.deepEqual(result, { status: 'sent', channelId: WELCOME });
+        assert.deepEqual(room.sent, [{ content: `welcome to CHAOS <@${MEMBER}> 👋`, allowedMentions: { users: [MEMBER] } }]);
     });
 
     test('every server in its own name', async () => {
@@ -194,50 +189,21 @@ describe('welcoming a member', () => {
         assert.equal(named.sent[0].content, String.raw`welcome to \*\*Zen\*\* <@200000000000000102> 👋`);
     });
 
-    test('the notice: a fake or a rejoin says the invite does not count; nothing for unknown, self, a bot or the gift off', async () => {
-        const sentWith = async (join) => {
-            const room = channel(WELCOME);
-            await welcomeMember(joiner(server({ channels: [room] })), {}, { join: Promise.resolve(join), env: at(GUILD, WELCOME) });
-            return room.sent.map((payload) => payload.content);
-        };
-        const welcome = `welcome to CHAOS <@${MEMBER}> 👋`;
-        assert.deepEqual(await sentWith(pendingJoin({ status: 'excluded', reason: 'fake' })), [welcome, `-# 📨 دعاه <@${INVITER}>\n-# ${WARNING} الدعوة دي مش محسوبة: الحساب عمره أقل من 7 أيام`]);
-        assert.deepEqual(await sentWith(pendingJoin({ status: 'excluded', reason: 'rejoin' })), [welcome, `-# 📨 دعاه <@${INVITER}>\n-# ${WARNING} الدعوة دي مش محسوبة: <@${MEMBER}> كان في السيرفر قبل كده`]);
-        assert.deepEqual(await sentWith(pendingJoin({ status: 'excluded', reason: 'unknown', inviterId: null })), [welcome]);
-        assert.deepEqual(await sentWith(pendingJoin({ status: 'excluded', reason: 'self', inviterId: MEMBER })), [welcome]);
-        assert.deepEqual(await sentWith(pendingJoin({ status: 'excluded', reason: 'bot_inviter' })), [welcome]);
-        assert.deepEqual(await sentWith({ status: 'disabled' }), [welcome], 'the invite gift off: the welcome alone');
-        assert.deepEqual(await sentWith({ status: 'untracked' }), [welcome]);
-        assert.deepEqual(await sentWith(null), [welcome]);
-        assert.deepEqual(await sentWith(Promise.reject(new Error('down'))), [welcome], 'the tracker failed: the welcome alone');
-    });
-
-    test('the welcome does not wait for the invites to be read', async () => {
-        const room = channel(WELCOME);
-        let resolve;
-        const join = new Promise((done) => { resolve = done; });
-        const welcoming = welcomeMember(joiner(server({ channels: [room] })), {}, { join, env: at(GUILD, WELCOME) });
-        await new Promise((done) => { setImmediate(done); });
-        assert.equal(room.sent.length, 1, 'the welcome is out while the invites are still read');
-        resolve(pendingJoin());
-        await welcoming;
-        assert.equal(room.sent[1].content, noticeOf());
-    });
-
-    test('nothing for a bot, with WELCOME_ENABLED=false, in a server the bot does not serve, or without a channel', async () => {
+    test('nothing for a bot, with WELCOME_ENABLED off (the default), in a server the bot does not serve, or without a channel', async () => {
         const room = channel(WELCOME);
         const guild = server({ channels: [room] });
         assert.equal((await welcomeMember(joiner(guild, BOT, { bot: true }), {}, { env: at(GUILD, WELCOME) })).status, 'bot');
-        assert.equal((await welcomeMember(joiner(guild), {}, { join: Promise.resolve(null), env: { ...at(GUILD, WELCOME), WELCOME_ENABLED: 'false' } })).status, 'disabled');
+        assert.equal((await welcomeMember(joiner(guild), {}, { env: { ...at(GUILD, WELCOME), WELCOME_ENABLED: 'false' } })).status, 'disabled');
+        assert.equal((await welcomeMember(joiner(guild), {}, { env: { WELCOME_CHANNEL_IDS: `${GUILD}:${WELCOME}` } })).status, 'disabled', 'off unless switched on');
         assert.equal((await welcomeMember(joiner(server({ id: NOT_ALLOWED, channels: [room] })), {}, { env: at(NOT_ALLOWED, WELCOME) })).status, 'not_allowed');
-        assert.equal((await welcomeMember(joiner(server({ channels: [] })), {}, { env: {} })).status, 'no_channel');
+        assert.equal((await welcomeMember(joiner(server({ channels: [] })), {}, { env: { WELCOME_ENABLED: 'true' } })).status, 'no_channel');
         assert.equal((await welcomeMember(null, {}, { env: {} })).status, 'not_allowed');
         assert.equal(room.sent.length, 0);
     });
 
-    test('a welcome that could not be sent sends no notice and never throws', async () => {
+    test('a welcome that could not be sent never throws', async () => {
         const room = channel(WELCOME, { fail: true });
-        const result = await welcomeMember(joiner(server({ channels: [room] })), {}, { join: Promise.resolve(pendingJoin()), env: at(GUILD, WELCOME) });
+        const result = await welcomeMember(joiner(server({ channels: [room] })), {}, { env: at(GUILD, WELCOME) });
         assert.deepEqual(result, { status: 'failed', channelId: WELCOME });
         assert.equal(room.sent.length, 0);
     });
@@ -277,14 +243,15 @@ describe('guildMemberAdd', () => {
         return { guild, room, client, use: () => { invites = [{ ...invites[0], uses: invites[0].uses + 1 }]; } };
     }
 
-    test('a member joining through an invite: the welcome, then who invited them and the gift; the record saved; their messages counted', async () => {
+    test('a member joining through an invite: the welcome line alone, no invite notice; the record saved; their messages counted', async () => {
         process.env.WELCOME_CHANNEL_IDS = `${GUILD}:${WELCOME}`;
         try {
             const { guild, room, client, use } = setup();
             assert.equal(await primeGuild(guild), true);
             use();
             await guildMemberAdd.execute(joiner(guild), client);
-            assert.deepEqual(room.sent.map((payload) => payload.content), [`welcome to CHAOS <@${MEMBER}> 👋`, noticeOf()]);
+            assert.deepEqual(room.sent.map((payload) => payload.content), [`welcome to CHAOS <@${MEMBER}> 👋`]);
+            assert.deepEqual(room.sent[0].allowedMentions, { users: [MEMBER] });
             assert.equal(client.db.store.get(getInviteRecordKey(GUILD, MEMBER)).status, 'pending');
             // The join was noted: the first message counts without reading the record again.
             client.db.reads.length = 0;
@@ -294,7 +261,7 @@ describe('guildMemberAdd', () => {
             // A bot joining: nothing.
             use();
             await guildMemberAdd.execute(joiner(guild, BOT, { bot: true }), client);
-            assert.equal(room.sent.length, 2);
+            assert.equal(room.sent.length, 1);
             assert.equal(client.db.store.has(getInviteRecordKey(GUILD, BOT)), false);
         } finally {
             delete process.env.WELCOME_CHANNEL_IDS;
@@ -315,16 +282,49 @@ describe('guildMemberAdd', () => {
         }
     });
 
-    test('WELCOME_ENABLED=false: no welcome, the invite still tracked and notice sent', async () => {
+    test('WELCOME_ENABLED off (production: Aether welcomes): nothing posted at all, the invite still tracked (GH #329)', async () => {
         process.env.WELCOME_CHANNEL_IDS = `${GUILD}:${WELCOME}`;
-        process.env.WELCOME_ENABLED = 'false';
+        for (const setting of ['false', undefined]) {
+            if (setting === undefined) delete process.env.WELCOME_ENABLED;
+            else process.env.WELCOME_ENABLED = setting;
+            forgetInvites();
+            try {
+                const { guild, room, client, use } = setup();
+                assert.equal(await primeGuild(guild), true);
+                use();
+                await guildMemberAdd.execute(joiner(guild), client);
+                assert.equal(room.sent.length, 0, `WELCOME_ENABLED=${setting}`);
+                const record = client.db.store.get(getInviteRecordKey(GUILD, MEMBER));
+                assert.deepEqual([record.status, record.inviterId, record.code], ['pending', INVITER, 'abc']);
+                // The member's messages are counted for the gift at once.
+                client.db.reads.length = 0;
+                const message = { id: '300000000000000002', guildId: GUILD, guild, client, type: 0, author: { id: MEMBER, bot: false }, channel: { type: ChannelType.GuildText } };
+                assert.equal(await handleChatMessage(message), true);
+            } finally {
+                forgetLevelMessages();
+                forgetChatCounts();
+            }
+        }
+        delete process.env.WELCOME_CHANNEL_IDS;
+    });
+
+    test('a fake account or a rejoin: saved as no gift, and nothing about it posted', async () => {
+        process.env.WELCOME_CHANNEL_IDS = `${GUILD}:${WELCOME}`;
         try {
-            const { guild, room, client, use } = setup();
-            assert.equal(await primeGuild(guild), true);
-            use();
-            await guildMemberAdd.execute(joiner(guild), client);
-            assert.deepEqual(room.sent.map((p) => p.content), [noticeOf()]);
-            assert.equal(client.db.store.get(getInviteRecordKey(GUILD, MEMBER)).inviterId, INVITER);
+            const cases = [
+                ['fake', (guild) => joiner(guild, MEMBER, { createdTimestamp: Date.now() - 24 * 60 * 60_000 })],
+                ['rejoin', (guild) => joiner(guild, MEMBER, { rejoined: true })],
+            ];
+            for (const [reason, make] of cases) {
+                forgetInvites();
+                const { guild, room, client, use } = setup();
+                assert.equal(await primeGuild(guild), true);
+                use();
+                await guildMemberAdd.execute(make(guild), client);
+                assert.deepEqual([client.db.store.get(getInviteRecordKey(GUILD, MEMBER)).status, client.db.store.get(getInviteRecordKey(GUILD, MEMBER)).reason], ['excluded', reason]);
+                assert.deepEqual(room.sent.map((payload) => payload.content), [`welcome to CHAOS <@${MEMBER}> 👋`], reason);
+                for (const payload of room.sent) assert.doesNotMatch(payload.content, INVITE_WORDS);
+            }
         } finally {
             delete process.env.WELCOME_CHANNEL_IDS;
         }
